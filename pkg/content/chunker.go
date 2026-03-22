@@ -5,6 +5,31 @@ import (
 	"io"
 )
 
+// supportedMediaTypes lists the MIME types accepted for media uploads.
+var supportedMediaTypes = map[string]bool{
+	// Images
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+	"image/gif":  true,
+	// Video
+	"video/mp4":  true,
+	"video/webm": true,
+	// Audio
+	"audio/mpeg": true,
+	"audio/ogg":  true,
+	"audio/wav":  true,
+}
+
+// ValidateMediaType checks whether the given MIME type is in the set of
+// supported media formats. Returns an error for unsupported types.
+func ValidateMediaType(mimeType string) error {
+	if !supportedMediaTypes[mimeType] {
+		return fmt.Errorf("unsupported media type: %s", mimeType)
+	}
+	return nil
+}
+
 const (
 	// ChunkSize is the maximum size of a single media chunk (256KB).
 	ChunkSize = 262144

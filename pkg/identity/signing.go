@@ -2,7 +2,6 @@ package identity
 
 import (
 	"crypto/ed25519"
-	"crypto/sha512"
 	"fmt"
 )
 
@@ -22,7 +21,6 @@ func SignProtoMessage(kp *KeyPair, msg []byte) ([]byte, error) {
 		return nil, fmt.Errorf("invalid private key size: got %d, want %d", len(kp.PrivateKey), ed25519.PrivateKeySize)
 	}
 
-	hash := sha512.Sum512_256(msg)
-	signature := ed25519.Sign(kp.PrivateKey, hash[:])
+	signature := ed25519.Sign(kp.PrivateKey, msg)
 	return signature, nil
 }

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useCallback } from 'react';
 import type { FeedEntry } from '@/lib/types';
 import { createReaction } from '@/lib/api';
+import MediaViewer from './MediaViewer';
 
 function getInitials(name: string): string {
   return name
@@ -106,6 +107,11 @@ export default function PostCard({ entry }: { entry: FeedEntry }) {
           <p className="text-white mt-1 whitespace-pre-wrap break-words">
             {post.content}
           </p>
+
+          {/* Media */}
+          {post.mediaCids && post.mediaCids.length > 0 && (
+            <MediaViewer mediaCids={post.mediaCids} />
+          )}
 
           {/* Tags */}
           {post.tags.length > 0 && (

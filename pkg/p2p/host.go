@@ -30,6 +30,12 @@ type Host struct {
 	// Topic management
 	mu     sync.RWMutex
 	topics map[string]*topicHandle
+
+	// Rate limiting for incoming pubsub messages.
+	rateLimiter *pubsubRateLimiter
+
+	// Replay protection: tracks seen message CIDs.
+	seenMessages *seenCache
 }
 
 // topicHandle holds references to a joined topic and its subscription.
@@ -105,12 +111,14 @@ func NewHost(ctx context.Context, privKey crypto.PrivKey, cfg *Config) (*Host, e
 	}
 
 	return &Host{
-		host:      h,
-		dht:       kadDHT,
-		bwCounter: bwCounter,
-		cfg:       cfg,
-		startTime: time.Now(),
-		topics:    make(map[string]*topicHandle),
+		host:         h,
+		dht:          kadDHT,
+		bwCounter:    bwCounter,
+		cfg:          cfg,
+		startTime:    time.Now(),
+		topics:       make(map[string]*topicHandle),
+		rateLimiter:  newPubsubRateLimiter(),
+		seenMessages: newSeenCache(defaultSeenCacheMaxAge),
 	}, nil
 }
 
@@ -130,6 +138,11 @@ func (h *Host) Close() error {
 		delete(h.topics, name)
 	}
 	h.mu.Unlock()
+
+	// Stop the seen cache cleanup goroutine.
+	if h.seenMessages != nil {
+		h.seenMessages.Stop()
+	}
 
 	if h.dht != nil {
 		if err := h.dht.Close(); err != nil {

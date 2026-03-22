@@ -145,6 +145,55 @@ func scanPostRows(rows *sql.Rows) ([]PostRow, error) {
 	return posts, rows.Err()
 }
 
+// InsertPostTags bulk-inserts rows into the post_tags table, linking a post to
+// its hashtags. Duplicate (post_cid, tag) pairs are silently ignored.
+func (db *DB) InsertPostTags(postCID []byte, tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	// Build a single INSERT with multiple value tuples for efficiency.
+	placeholders := make([]string, len(tags))
+	args := make([]interface{}, 0, len(tags)*2)
+	for i, tag := range tags {
+		placeholders[i] = "(?, ?)"
+		args = append(args, postCID, tag)
+	}
+
+	query := fmt.Sprintf(
+		`INSERT OR IGNORE INTO post_tags (post_cid, tag) VALUES %s`,
+		strings.Join(placeholders, ", "),
+	)
+
+	if _, err := db.Exec(query, args...); err != nil {
+		return fmt.Errorf("insert post tags: %w", err)
+	}
+	return nil
+}
+
+// GetPostsByTag returns posts that have been tagged with the given hashtag,
+// paginated by timestamp (descending). Pass 0 for before to start from the
+// most recent.
+func (db *DB) GetPostsByTag(tag string, before int64, limit int) ([]PostRow, error) {
+	if before == 0 {
+		before = time.Now().UnixMilli() + 1
+	}
+	rows, err := db.Query(
+		`SELECT p.cid, p.author, p.content, p.reply_to, p.repost_of, p.timestamp, p.signature, p.received_at
+		 FROM posts p
+		 INNER JOIN post_tags pt ON p.cid = pt.post_cid
+		 WHERE pt.tag = ? AND p.timestamp < ?
+		 ORDER BY p.timestamp DESC
+		 LIMIT ?`,
+		tag, before, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get posts by tag: %w", err)
+	}
+	defer rows.Close()
+	return scanPostRows(rows)
+}
+
 // nilIfEmpty returns nil if the byte slice is empty, otherwise returns the
 // slice as-is. This ensures that empty byte slices are stored as NULL in
 // SQLite rather than as empty blobs.

@@ -89,6 +89,13 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 		return nil, fmt.Errorf("store post in DB: %w", err)
 	}
 
+	// Store hashtags.
+	if len(post.Tags) > 0 {
+		if err := s.storage.InsertPostTags(post.Id, post.Tags); err != nil {
+			return nil, fmt.Errorf("store post tags: %w", err)
+		}
+	}
+
 	// Store media references.
 	for i, mediaCID := range mediaCIDs {
 		if err := s.storage.InsertPostMedia(cid, mediaCID, i); err != nil {

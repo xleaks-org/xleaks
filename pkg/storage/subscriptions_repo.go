@@ -127,6 +127,38 @@ func (db *DB) GetFollowing(pubkey []byte) ([][]byte, error) {
 	return following, rows.Err()
 }
 
+// MarkSyncCompleted sets sync_completed=1 for the given subscription pubkey.
+func (db *DB) MarkSyncCompleted(pubkey []byte) error {
+	_, err := db.Exec(`UPDATE subscriptions SET sync_completed = 1 WHERE pubkey = ?`, pubkey)
+	if err != nil {
+		return fmt.Errorf("mark sync completed: %w", err)
+	}
+	return nil
+}
+
+// GetPendingSyncs returns subscriptions where sync_completed=0.
+func (db *DB) GetPendingSyncs() ([]SubscriptionRow, error) {
+	rows, err := db.Query(
+		`SELECT pubkey, followed_at, sync_completed FROM subscriptions WHERE sync_completed = 0 ORDER BY followed_at DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get pending syncs: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []SubscriptionRow
+	for rows.Next() {
+		var s SubscriptionRow
+		var syncInt int
+		if err := rows.Scan(&s.Pubkey, &s.FollowedAt, &syncInt); err != nil {
+			return nil, fmt.Errorf("scan pending sync row: %w", err)
+		}
+		s.SyncCompleted = syncInt == 1
+		subs = append(subs, s)
+	}
+	return subs, rows.Err()
+}
+
 // UpdateFollowerCount recalculates and upserts the follower and following
 // counts for the given public key into the follower_counts table.
 func (db *DB) UpdateFollowerCount(pubkey []byte) error {

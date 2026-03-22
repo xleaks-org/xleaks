@@ -28,6 +28,7 @@ type NodeConfig struct {
 
 type NetworkConfig struct {
 	ListenAddresses    []string `toml:"listen_addresses"`
+	BootstrapPeers     []string `toml:"bootstrap_peers"`
 	EnableRelay        bool     `toml:"enable_relay"`
 	EnableMDNS         bool     `toml:"enable_mdns"`
 	EnableHolePunching bool     `toml:"enable_hole_punching"`
@@ -72,7 +73,12 @@ func DefaultConfig() *Config {
 			MaxStorageGB: 5,
 		},
 		Network: NetworkConfig{
-			ListenAddresses:    []string{"/ip4/0.0.0.0/tcp/7460", "/ip4/0.0.0.0/udp/7460/quic-v1"},
+			ListenAddresses: []string{"/ip4/0.0.0.0/tcp/7460", "/ip4/0.0.0.0/udp/7460/quic-v1"},
+			BootstrapPeers: []string{
+				"/dnsaddr/bootstrap1.xleaks.org/tcp/7460",
+				"/dnsaddr/bootstrap2.xleaks.org/tcp/7460",
+				"/dnsaddr/bootstrap3.xleaks.org/tcp/7460",
+			},
 			EnableRelay:        true,
 			EnableMDNS:         true,
 			EnableHolePunching: true,

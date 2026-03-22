@@ -2,15 +2,21 @@ package p2p
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"log"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+// PeerID is an alias for libp2p peer.ID, exported for use by consumers.
+type PeerID = peer.ID
+
 // MessageHandler is a callback invoked when a message is received on a
 // subscribed topic.
-type MessageHandler func(ctx context.Context, from peer.ID, data []byte)
+type MessageHandler func(ctx context.Context, from PeerID, data []byte)
 
 // InitPubSub initializes GossipSub on this host. It must be called before
 // any Subscribe or Publish operations.
@@ -64,6 +70,52 @@ func (h *Host) Subscribe(topic string, handler MessageHandler) error {
 	return nil
 }
 
+// FilteredMessageHandler is a callback invoked when a message passes rate
+// limiting and replay protection checks. It receives the author's public key
+// hex and the message type in addition to the raw data.
+type FilteredMessageHandler func(ctx context.Context, from peer.ID, data []byte)
+
+// SubscribeWithFilter joins the given topic like Subscribe, but applies
+// rate limiting and replay protection before dispatching messages.
+// The authorExtractor function extracts the author public key hex and
+// message type ("post" or "reaction") from the raw message data. If it
+// returns an error, the message is dropped.
+func (h *Host) SubscribeWithFilter(
+	topic string,
+	handler MessageHandler,
+	authorExtractor func(data []byte) (authorHex string, msgType string, cidHex string, err error),
+) error {
+	// Wrap the handler with rate limiting and replay protection.
+	filtered := func(ctx context.Context, from peer.ID, data []byte) {
+		authorHex, msgType, cidHex, err := authorExtractor(data)
+		if err != nil {
+			log.Printf("dropping message: failed to extract author info: %v", err)
+			return
+		}
+
+		// If no CID was extracted, compute one from the message data.
+		if cidHex == "" {
+			hash := sha256.Sum256(data)
+			cidHex = hex.EncodeToString(hash[:])
+		}
+
+		// Replay protection: drop if we've already seen this CID.
+		if h.seenMessages != nil && h.seenMessages.CheckAndMark(cidHex) {
+			return
+		}
+
+		// Rate limiting: drop if the author has exceeded their limit.
+		if h.rateLimiter != nil && !h.rateLimiter.Allow(authorHex, msgType) {
+			log.Printf("rate limit exceeded for author %s (type: %s)", authorHex, msgType)
+			return
+		}
+
+		handler(ctx, from, data)
+	}
+
+	return h.Subscribe(topic, filtered)
+}
+
 // readLoop continuously reads messages from a subscription and dispatches
 // them to the handler.
 func (h *Host) readLoop(ctx context.Context, sub *pubsub.Subscription, handler MessageHandler) {
@@ -81,6 +133,14 @@ func (h *Host) readLoop(ctx context.Context, sub *pubsub.Subscription, handler M
 
 		handler(ctx, msg.ReceivedFrom, msg.Data)
 	}
+}
+
+// computeMessageCID computes a SHA-256 hash of the message data and returns
+// it as a hex string. This is used as a fallback CID for replay protection
+// when the message doesn't contain an explicit CID.
+func computeMessageCID(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
 }
 
 // Unsubscribe cancels the subscription for the given topic and closes it.

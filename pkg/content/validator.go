@@ -26,8 +26,11 @@ const (
 	// MaxWebsiteLength is the maximum number of characters in a website URL.
 	MaxWebsiteLength = 200
 
-	// DefaultTimestampSkew is the default allowed clock skew for timestamps (±5 minutes).
-	DefaultTimestampSkew = 5 * time.Minute
+	// MaxFutureSkew is the maximum allowed clock skew into the future (5 minutes).
+	MaxFutureSkew = 5 * time.Minute
+
+	// DefaultMaxPastAge is the default maximum age for messages (30 days).
+	DefaultMaxPastAge = 30 * 24 * time.Hour
 
 	// Ed25519PublicKeySize is the expected size of an ed25519 public key.
 	Ed25519PublicKeySize = 32
@@ -43,10 +46,14 @@ const (
 // It is defined as a function type to avoid circular imports with the identity package.
 type SignatureVerifier func(pubkey, message, signature []byte) bool
 
-// TimestampSkew controls how much clock drift is tolerated when validating
-// message timestamps. It defaults to DefaultTimestampSkew but can be widened
-// (e.g., for historical sync).
-var TimestampSkew = DefaultTimestampSkew
+// MaxPastAge controls how far in the past a message timestamp is allowed to be.
+// It defaults to DefaultMaxPastAge (30 days). During historical sync, set
+// HistoricalSyncMode to true to bypass this check.
+var MaxPastAge = DefaultMaxPastAge
+
+// HistoricalSyncMode disables the MaxPastAge check so that old messages can be
+// accepted during historical synchronisation.
+var HistoricalSyncMode bool
 
 // ValidatePost validates all rules for a Post message per the XLeaks specification.
 func ValidatePost(post *pb.Post, verify SignatureVerifier) error {
@@ -79,7 +86,7 @@ func ValidatePost(post *pb.Post, verify SignatureVerifier) error {
 		return fmt.Errorf("reply_to and repost_of are mutually exclusive")
 	}
 
-	// Timestamp must be within ±TimestampSkew of now.
+	// Timestamp must not be too far in the future or too old.
 	if err := validateTimestamp(post.Timestamp); err != nil {
 		return fmt.Errorf("invalid timestamp: %w", err)
 	}
@@ -310,14 +317,23 @@ func ValidateDirectMessage(dm *pb.DirectMessage, verify SignatureVerifier) error
 	return nil
 }
 
-// validateTimestamp checks that a millisecond unix timestamp is within
-// ±TimestampSkew of the current time.
+// validateTimestamp checks that a millisecond unix timestamp is not more than
+// MaxFutureSkew (5 min) in the future and not more than MaxPastAge (30 days)
+// in the past. The past-age check is skipped when HistoricalSyncMode is true.
 func validateTimestamp(tsMillis uint64) error {
 	ts := time.UnixMilli(int64(tsMillis))
 	now := time.Now()
-	if ts.Before(now.Add(-TimestampSkew)) || ts.After(now.Add(TimestampSkew)) {
-		return fmt.Errorf("timestamp %v is outside the allowed window of ±%v from now", ts, TimestampSkew)
+
+	// Reject messages with timestamps too far in the future.
+	if ts.After(now.Add(MaxFutureSkew)) {
+		return fmt.Errorf("timestamp %v is more than %v in the future", ts, MaxFutureSkew)
 	}
+
+	// Reject messages with timestamps too far in the past (unless syncing history).
+	if !HistoricalSyncMode && ts.Before(now.Add(-MaxPastAge)) {
+		return fmt.Errorf("timestamp %v is more than %v in the past", ts, MaxPastAge)
+	}
+
 	return nil
 }
 

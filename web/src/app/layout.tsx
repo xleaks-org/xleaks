@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import Sidebar from '@/components/Sidebar';
 import NodeStatus from '@/components/NodeStatus';
+import TrendingList from '@/components/TrendingList';
+import SearchBar from '@/components/SearchBar';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -51,19 +53,11 @@ export default function RootLayout({
           {/* Right sidebar - Status/Trending */}
           <div className="hidden lg:block w-80 shrink-0">
             <div className="sticky top-0 p-4 space-y-4">
+              <SearchBar />
+
               <NodeStatus />
 
-              {/* Trending placeholder */}
-              <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
-                <h3 className="text-sm font-semibold text-white mb-3">
-                  Trending
-                </h3>
-                <div className="space-y-3">
-                  <p className="text-sm text-gray-400">
-                    Connect to a node to see trending topics
-                  </p>
-                </div>
-              </div>
+              <TrendingList />
 
               {/* About */}
               <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">

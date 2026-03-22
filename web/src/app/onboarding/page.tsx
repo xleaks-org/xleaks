@@ -4,7 +4,18 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createIdentity, importIdentity, updateProfile } from '@/lib/api';
 
-type Step = 'welcome' | 'create' | 'import' | 'seed' | 'passphrase' | 'profile' | 'done';
+type Step = 'welcome' | 'create' | 'import' | 'seed' | 'seed_confirm' | 'passphrase' | 'profile' | 'done';
+
+function pickRandomPositions(wordCount: number, count: number): number[] {
+  const positions: number[] = [];
+  while (positions.length < count) {
+    const pos = Math.floor(Math.random() * wordCount);
+    if (!positions.includes(pos)) {
+      positions.push(pos);
+    }
+  }
+  return positions.sort((a, b) => a - b);
+}
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -17,6 +28,8 @@ export default function OnboardingPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [seedConfirmed, setSeedConfirmed] = useState(false);
+  const [confirmPositions, setConfirmPositions] = useState<number[]>([]);
+  const [confirmInputs, setConfirmInputs] = useState<Record<number, string>>({});
 
   const handleCreate = useCallback(async () => {
     if (!passphrase) {
@@ -284,12 +297,107 @@ export default function OnboardingPage() {
             </label>
 
             <button
-              onClick={() => setStep('profile')}
+              onClick={() => {
+                const words = seedPhrase.split(' ');
+                const positions = pickRandomPositions(words.length, 3);
+                setConfirmPositions(positions);
+                setConfirmInputs({});
+                setError('');
+                setStep('seed_confirm');
+              }}
               disabled={!seedConfirmed}
               className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-bold py-3 rounded-full transition-colors"
             >
               Continue
             </button>
+          </div>
+        )}
+
+        {/* Seed Phrase Confirmation */}
+        {step === 'seed_confirm' && (
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-2">
+              Confirm Your Seed Phrase
+            </h2>
+            <p className="text-gray-400 mb-6 text-sm">
+              Enter the missing words to verify you have saved your seed phrase
+              correctly.
+            </p>
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4 text-sm text-red-400">
+                {error}
+              </div>
+            )}
+
+            <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-6">
+              <div className="grid grid-cols-3 gap-2">
+                {seedPhrase.split(' ').map((word, i) => {
+                  const isBlank = confirmPositions.includes(i);
+                  return (
+                    <div
+                      key={i}
+                      className="bg-gray-900 rounded px-2 py-1.5 text-sm text-center"
+                    >
+                      <span className="text-gray-500 mr-1">{i + 1}.</span>
+                      {isBlank ? (
+                        <input
+                          type="text"
+                          value={confirmInputs[i] ?? ''}
+                          onChange={(e) =>
+                            setConfirmInputs((prev) => ({
+                              ...prev,
+                              [i]: e.target.value.toLowerCase().trim(),
+                            }))
+                          }
+                          className="bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-white text-sm w-16 outline-none focus:border-blue-500 text-center"
+                          placeholder="?"
+                          autoComplete="off"
+                        />
+                      ) : (
+                        <span className="text-white">{word}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setStep('seed');
+                  setError('');
+                }}
+                className="flex-1 border border-gray-600 text-white py-2.5 rounded-full hover:border-gray-500 transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => {
+                  const words = seedPhrase.split(' ');
+                  const allCorrect = confirmPositions.every(
+                    (pos) => confirmInputs[pos] === words[pos]
+                  );
+                  if (!allCorrect) {
+                    setError(
+                      'Some words do not match. Please check and try again.'
+                    );
+                    return;
+                  }
+                  setError('');
+                  setStep('profile');
+                }}
+                disabled={
+                  confirmPositions.some(
+                    (pos) => !confirmInputs[pos]?.trim()
+                  )
+                }
+                className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-bold py-2.5 rounded-full transition-colors"
+              >
+                Verify
+              </button>
+            </div>
           </div>
         )}
 

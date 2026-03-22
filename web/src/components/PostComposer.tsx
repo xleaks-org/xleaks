@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
-import { createPost, uploadMedia } from '@/lib/api';
+import { useState, useCallback } from 'react';
+import { createPost } from '@/lib/api';
+import MediaUploader from './MediaUploader';
 
 const MAX_CHARS = 5000;
 
@@ -15,8 +16,7 @@ export default function PostComposer({
   const [content, setContent] = useState('');
   const [posting, setPosting] = useState(false);
   const [mediaCids, setMediaCids] = useState<string[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showUploader, setShowUploader] = useState(false);
 
   const charCount = content.length;
   const isOverLimit = charCount > MAX_CHARS;
@@ -47,19 +47,9 @@ export default function PostComposer({
     }
   }, [canPost, content, mediaCids, replyTo, onPostCreated]);
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const result = await uploadMedia(file);
-      setMediaCids((prev) => [...prev, result.cid]);
-    } catch {
-      // Handle error
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  const handleMediaUpload = useCallback((cids: string[]) => {
+    setMediaCids((prev) => [...prev, ...cids]);
+    setShowUploader(false);
   }, []);
 
   return (
@@ -79,6 +69,13 @@ export default function PostComposer({
             className="w-full bg-transparent text-white text-lg placeholder-gray-500 resize-none outline-none min-h-[80px]"
             rows={3}
           />
+
+          {/* Media uploader */}
+          {showUploader && (
+            <div className="mt-3">
+              <MediaUploader onUpload={handleMediaUpload} />
+            </div>
+          )}
 
           {/* Media previews */}
           {mediaCids.length > 0 && (
@@ -105,27 +102,20 @@ export default function PostComposer({
           {/* Bottom bar */}
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-800">
             <div className="flex items-center gap-2">
-              {/* Media upload */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
+              {/* Media upload toggle */}
               <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="text-blue-500 hover:text-blue-400 p-1.5 rounded-full hover:bg-blue-500/10 transition-colors disabled:opacity-50"
+                onClick={() => setShowUploader((prev) => !prev)}
+                className={`p-1.5 rounded-full transition-colors ${
+                  showUploader
+                    ? 'text-blue-400 bg-blue-500/10'
+                    : 'text-blue-500 hover:text-blue-400 hover:bg-blue-500/10'
+                }`}
                 aria-label="Upload media"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
                 </svg>
               </button>
-              {uploading && (
-                <span className="text-xs text-gray-400">Uploading...</span>
-              )}
             </div>
 
             <div className="flex items-center gap-3">
