@@ -134,54 +134,46 @@ func run() error {
 
 	p2pHost, err := p2p.NewHost(ctx, p2pPrivKey, p2pCfg)
 	if err != nil {
-		return fmt.Errorf("failed to create P2P host: %w", err)
+		log.Printf("WARNING: P2P host failed to start: %v", err)
+		log.Println("Running in offline mode — local data is still accessible.")
+		p2pHost = nil
 	}
-	defer p2pHost.Close()
-
-	log.Printf("P2P host started. Peer ID: %s", p2pHost.ID())
-	for _, addr := range p2pHost.Addrs() {
-		log.Printf("  Listening on: %s/p2p/%s", addr, p2pHost.ID())
-	}
-
-	// Initialize GossipSub.
-	if err := p2pHost.InitPubSub(ctx); err != nil {
-		return fmt.Errorf("failed to initialize GossipSub: %w", err)
-	}
-
-	// Bootstrap DHT with known peers.
-	go func() {
-		if err := p2pHost.Bootstrap(ctx, cfg.Network.BootstrapPeers); err != nil {
-			log.Printf("Warning: DHT bootstrap failed: %v", err)
-		}
-	}()
-
-	// Set up mDNS for local discovery.
-	if cfg.Network.EnableMDNS {
-		if err := p2pHost.SetupMDNS(ctx); err != nil {
-			log.Printf("Warning: mDNS setup failed: %v", err)
+	if p2pHost != nil {
+		defer p2pHost.Close()
+		log.Printf("P2P host started. Peer ID: %s", p2pHost.ID())
+		for _, addr := range p2pHost.Addrs() {
+			log.Printf("  Listening on: %s/p2p/%s", addr, p2pHost.ID())
 		}
 	}
 
-	// Subscribe to own DM topic.
-	ownPubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
-	if err := p2pHost.Subscribe(p2p.DMTopic(ownPubkeyHex), func(ctx context.Context, _ p2p.PeerID, data []byte) {
-		log.Printf("Received DM from peer")
-	}); err != nil {
-		log.Printf("Warning: failed to subscribe to DM topic: %v", err)
-	}
+	// Initialize P2P networking (only if host started successfully).
+	if p2pHost != nil {
+		if err := p2pHost.InitPubSub(ctx); err != nil {
+			log.Printf("Warning: GossipSub init failed: %v", err)
+		}
 
-	// Subscribe to global topic.
-	if err := p2pHost.Subscribe(p2p.GlobalTopic(), func(ctx context.Context, _ p2p.PeerID, data []byte) {
-		log.Printf("Received global announcement")
-	}); err != nil {
-		log.Printf("Warning: failed to subscribe to global topic: %v", err)
-	}
+		go func() {
+			if err := p2pHost.Bootstrap(ctx, cfg.Network.BootstrapPeers); err != nil {
+				log.Printf("Warning: DHT bootstrap failed: %v", err)
+			}
+		}()
 
-	// Subscribe to profiles topic.
-	if err := p2pHost.Subscribe(p2p.ProfilesTopic(), func(ctx context.Context, _ p2p.PeerID, data []byte) {
-		log.Printf("Received profile update")
-	}); err != nil {
-		log.Printf("Warning: failed to subscribe to profiles topic: %v", err)
+		if cfg.Network.EnableMDNS {
+			if err := p2pHost.SetupMDNS(ctx); err != nil {
+				log.Printf("Warning: mDNS setup failed: %v", err)
+			}
+		}
+
+		ownPubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+		p2pHost.Subscribe(p2p.DMTopic(ownPubkeyHex), func(ctx context.Context, _ p2p.PeerID, data []byte) {
+			log.Printf("Received DM from peer")
+		})
+		p2pHost.Subscribe(p2p.GlobalTopic(), func(ctx context.Context, _ p2p.PeerID, data []byte) {
+			log.Printf("Received global announcement")
+		})
+		p2pHost.Subscribe(p2p.ProfilesTopic(), func(ctx context.Context, _ p2p.PeerID, data []byte) {
+			log.Printf("Received profile update")
+		})
 	}
 
 	// Initialize social services.
@@ -197,23 +189,21 @@ func run() error {
 		log.Printf("Warning: failed to load subscriptions: %v", err)
 	}
 
-	// Wire feed subscriptions to P2P topic subscriptions.
-	feedManager.OnSubscribe = func(ctx context.Context, pubkeyHex string) error {
-		return p2pHost.Subscribe(p2p.PostsTopic(pubkeyHex), func(ctx context.Context, _ p2p.PeerID, data []byte) {
-			log.Printf("Received post from followed publisher %s", pubkeyHex[:16])
-		})
-	}
-	feedManager.OnUnsubscribe = func(pubkeyHex string) error {
-		return p2pHost.Unsubscribe(p2p.PostsTopic(pubkeyHex))
-	}
-
-	// Subscribe to all currently followed publishers.
-	for _, pubkeyHex := range feedManager.FollowedPubkeys() {
-		topicName := p2p.PostsTopic(pubkeyHex)
-		if err := p2pHost.Subscribe(topicName, func(ctx context.Context, _ p2p.PeerID, data []byte) {
-			log.Printf("Received post from followed publisher")
-		}); err != nil {
-			log.Printf("Warning: failed to subscribe to %s: %v", topicName, err)
+	// Wire feed subscriptions to P2P topic subscriptions (only if P2P is active).
+	if p2pHost != nil {
+		feedManager.OnSubscribe = func(ctx context.Context, pubkeyHex string) error {
+			return p2pHost.Subscribe(p2p.PostsTopic(pubkeyHex), func(ctx context.Context, _ p2p.PeerID, data []byte) {
+				log.Printf("Received post from followed publisher %s", pubkeyHex[:16])
+			})
+		}
+		feedManager.OnUnsubscribe = func(pubkeyHex string) error {
+			return p2pHost.Unsubscribe(p2p.PostsTopic(pubkeyHex))
+		}
+		for _, pubkeyHex := range feedManager.FollowedPubkeys() {
+			topicName := p2p.PostsTopic(pubkeyHex)
+			p2pHost.Subscribe(topicName, func(ctx context.Context, _ p2p.PeerID, data []byte) {
+				log.Printf("Received post from followed publisher")
+			})
 		}
 	}
 
@@ -228,7 +218,10 @@ func run() error {
 	replicator.StartStorageManager(ctx, maxStorageBytes, 5*time.Minute)
 
 	// Set up content exchange (serve stored content to peers).
-	ce := p2pHost.ContentExchange()
+	var ce *p2p.ContentExchange
+	if p2pHost != nil {
+		ce = p2pHost.ContentExchange()
+	}
 	if ce != nil {
 		ce.SetContentFetcher(func(cidHex string) ([]byte, error) {
 			cidBytes, err := content.HexToCID(cidHex)

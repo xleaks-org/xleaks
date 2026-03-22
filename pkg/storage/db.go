@@ -44,3 +44,17 @@ func (db *DB) Migrate() error {
 	}
 	return nil
 }
+
+// WithTransaction executes fn within a database transaction. If fn returns
+// an error the transaction is rolled back; otherwise it is committed.
+func (db *DB) WithTransaction(fn func(tx *sql.Tx) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	if err := fn(tx); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}

@@ -1,4 +1,5 @@
 import type { WSEvent } from './types';
+import { snakeToCamel } from './api';
 
 type EventHandler = (event: WSEvent) => void;
 
@@ -40,7 +41,9 @@ class WebSocketClient {
 
       this.ws.onmessage = (event) => {
         try {
-          const parsed = JSON.parse(event.data) as WSEvent;
+          const raw = JSON.parse(event.data);
+          // Transform snake_case keys from the server to camelCase
+          const parsed = snakeToCamel(raw) as WSEvent;
           this.emit(parsed);
         } catch {
           // Ignore malformed messages

@@ -11,6 +11,25 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
+/**
+ * Recursively transforms snake_case keys to camelCase.
+ * The Go API returns JSON with snake_case field names but
+ * the TypeScript types use camelCase.
+ */
+export function snakeToCamel(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(snakeToCamel);
+  if (typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([k, v]) => [
+        k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()),
+        snakeToCamel(v),
+      ])
+    );
+  }
+  return obj;
+}
+
 let apiToken: string | null = null;
 
 /**
@@ -54,7 +73,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`API error ${res.status}: ${text}`);
   }
-  return res.json() as Promise<T>;
+  const data = await res.json();
+  return snakeToCamel(data) as T;
 }
 
 // Feed
@@ -134,31 +154,33 @@ export async function getNotifications(): Promise<Notification[]> {
 }
 
 export async function markNotificationsRead(): Promise<void> {
-  await request('/notifications/read', { method: 'POST' });
+  // Backend uses PUT /api/notifications/read
+  await request('/notifications/read', { method: 'PUT' });
 }
 
 export async function getUnreadCount(): Promise<{ count: number }> {
   return request('/notifications/unread-count');
 }
 
-// Direct Messages
+// Direct Messages — backend uses /dm not /messages
 export async function getConversations(): Promise<ConversationSummary[]> {
-  return request('/messages');
+  return request('/dm');
 }
 
 export async function getConversation(
   pubkey: string
 ): Promise<DirectMessage[]> {
-  return request(`/messages/${pubkey}`);
+  return request(`/dm/${pubkey}`);
 }
 
 export async function sendDM(data: {
   recipient: string;
   content: string;
 }): Promise<DirectMessage> {
-  return request('/messages', {
+  // Backend route: POST /api/dm/{pubkey}
+  return request(`/dm/${data.recipient}`, {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify({ content: data.content }),
   });
 }
 
@@ -182,7 +204,8 @@ export async function uploadMedia(file: File): Promise<{ cid: string }> {
   if (!res.ok) {
     throw new Error(`Upload failed: ${res.statusText}`);
   }
-  return res.json();
+  const data = await res.json();
+  return snakeToCamel(data) as { cid: string };
 }
 
 // Node
@@ -259,17 +282,17 @@ export async function getActiveIdentity(): Promise<{
   }
 }
 
-// Search
+// Search — backend uses GET /api/search with type and q query params
 export async function searchPosts(
   query: string
 ): Promise<{ entries: FeedEntry[] }> {
-  return request(`/search/posts?q=${encodeURIComponent(query)}`);
+  return request(`/search?type=posts&q=${encodeURIComponent(query)}`);
 }
 
 export async function searchUsers(
   query: string
 ): Promise<{ profiles: Profile[] }> {
-  return request(`/search/users?q=${encodeURIComponent(query)}`);
+  return request(`/search?type=users&q=${encodeURIComponent(query)}`);
 }
 
 // Trending
@@ -280,10 +303,13 @@ export async function getTrending(): Promise<{
   return request('/trending');
 }
 
-// User posts
+// User posts — backend uses /users/{pubkey}/posts not /profiles/{pubkey}/{tab}
 export async function getUserPosts(
   pubkey: string,
   tab: 'posts' | 'replies' | 'media' | 'likes' = 'posts'
 ): Promise<{ entries: FeedEntry[] }> {
-  return request(`/profiles/${pubkey}/${tab}`);
+  const params = new URLSearchParams();
+  if (tab !== 'posts') params.set('tab', tab);
+  const qs = params.toString();
+  return request(`/users/${pubkey}/posts${qs ? `?${qs}` : ''}`);
 }
