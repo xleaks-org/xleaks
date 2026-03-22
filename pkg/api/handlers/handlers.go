@@ -19,6 +19,7 @@ type Handler struct {
 	db        *storage.DB
 	cas       *content.ContentStore
 	kp        *identity.KeyPair
+	identity  *identity.Holder
 	posts     *social.PostService
 	reactions *social.ReactionService
 	profiles  *social.ProfileService
@@ -42,6 +43,11 @@ func New(db *storage.DB, cas *content.ContentStore, kp *identity.KeyPair, posts 
 		feed:      feed,
 		timeline:  timeline,
 	}
+}
+
+// SetIdentityHolder sets the shared identity holder for create/unlock/lock operations.
+func (h *Handler) SetIdentityHolder(holder *identity.Holder) {
+	h.identity = holder
 }
 
 // respondJSON writes a JSON response with the given status code.

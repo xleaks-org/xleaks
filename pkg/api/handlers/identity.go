@@ -4,22 +4,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/xleaks/xleaks/pkg/identity"
 )
 
-// createIdentityRequest is the JSON body for POST /api/identity/create.
 type createIdentityRequest struct {
 	Passphrase string `json:"passphrase"`
 }
 
-// importIdentityRequest is the JSON body for POST /api/identity/import.
 type importIdentityRequest struct {
 	Mnemonic   string `json:"mnemonic"`
+	SeedPhrase string `json:"seedPhrase"`
 	Passphrase string `json:"passphrase"`
 }
 
-// unlockIdentityRequest is the JSON body for POST /api/identity/unlock.
 type unlockIdentityRequest struct {
 	Passphrase string `json:"passphrase"`
 }
@@ -32,40 +31,41 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate a new mnemonic.
-	mnemonic, err := identity.GenerateMnemonic()
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to generate mnemonic: "+err.Error())
+	if req.Passphrase == "" {
+		respondError(w, http.StatusBadRequest, "passphrase is required")
 		return
 	}
 
-	// Derive seed from mnemonic.
-	seed, err := identity.MnemonicToSeed(mnemonic, "")
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to derive seed: "+err.Error())
+	if len(req.Passphrase) < 8 {
+		respondError(w, http.StatusBadRequest, "passphrase must be at least 8 characters")
 		return
 	}
 
-	// Generate key pair from seed.
-	kp, err := identity.KeyPairFromSeed(seed)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to generate key pair: "+err.Error())
+	if h.identity == nil {
+		respondError(w, http.StatusInternalServerError, "identity system not initialized")
 		return
 	}
+
+	kp, mnemonic, err := h.identity.CreateAndSave(req.Passphrase)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to create identity: "+err.Error())
+		return
+	}
+
+	// Update the handler's key pair reference.
+	h.kp = kp
 
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
-	// Derive the bech32 address.
-	address, err := identity.PubKeyToAddress(kp.PublicKeyBytes())
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to derive address: "+err.Error())
-		return
-	}
+	// Create a default profile in the database.
+	h.db.UpsertProfile(kp.PublicKeyBytes(), "Anonymous", "", nil, nil, "", 1, nowMillis())
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"pubkey":   pubkeyHex,
-		"address":  address,
-		"mnemonic": mnemonic,
+		"pubkey":     pubkeyHex,
+		"address":    address,
+		"mnemonic":   mnemonic,
+		"seedPhrase": mnemonic,
 	})
 }
 
@@ -77,37 +77,39 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Mnemonic == "" {
-		respondError(w, http.StatusBadRequest, "mnemonic is required")
+	// Accept both "mnemonic" and "seedPhrase" field names.
+	mnemonic := req.Mnemonic
+	if mnemonic == "" {
+		mnemonic = req.SeedPhrase
+	}
+
+	if mnemonic == "" {
+		respondError(w, http.StatusBadRequest, "mnemonic or seedPhrase is required")
 		return
 	}
 
-	if !identity.ValidateMnemonic(req.Mnemonic) {
-		respondError(w, http.StatusBadRequest, "invalid mnemonic")
+	if req.Passphrase == "" {
+		respondError(w, http.StatusBadRequest, "passphrase is required")
 		return
 	}
 
-	// Derive seed from mnemonic.
-	seed, err := identity.MnemonicToSeed(req.Mnemonic, "")
+	if h.identity == nil {
+		respondError(w, http.StatusInternalServerError, "identity system not initialized")
+		return
+	}
+
+	kp, err := h.identity.ImportAndSave(mnemonic, req.Passphrase)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to derive seed: "+err.Error())
+		respondError(w, http.StatusInternalServerError, "failed to import identity: "+err.Error())
 		return
 	}
 
-	// Generate key pair from seed.
-	kp, err := identity.KeyPairFromSeed(seed)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to generate key pair: "+err.Error())
-		return
-	}
+	h.kp = kp
 
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
-	address, err := identity.PubKeyToAddress(kp.PublicKeyBytes())
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to derive address: "+err.Error())
-		return
-	}
+	h.db.UpsertProfile(kp.PublicKeyBytes(), "Anonymous", "", nil, nil, "", 1, nowMillis())
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"pubkey":  pubkeyHex,
@@ -129,34 +131,81 @@ func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This is a stub - actual implementation would load the encrypted key
-	// from disk and decrypt it with the passphrase.
+	if h.identity == nil {
+		respondError(w, http.StatusInternalServerError, "identity system not initialized")
+		return
+	}
+
+	kp, err := h.identity.Unlock(req.Passphrase)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "failed to unlock: "+err.Error())
+		return
+	}
+
+	h.kp = kp
+
+	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"status": "unlocked",
-		"pubkey": hex.EncodeToString(h.kp.PublicKeyBytes()),
+		"status":  "unlocked",
+		"pubkey":  pubkeyHex,
+		"address": address,
 	})
 }
 
 // GetActiveIdentity handles GET /api/identity/active.
 func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
-	pubkeyHex := hex.EncodeToString(h.kp.PublicKeyBytes())
-
-	address, err := identity.PubKeyToAddress(h.kp.PublicKeyBytes())
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to derive address: "+err.Error())
+	if h.identity != nil && !h.identity.IsUnlocked() {
+		// Identity exists on disk but not unlocked yet.
+		if h.identity.HasIdentity() {
+			respondJSON(w, http.StatusOK, map[string]interface{}{
+				"active": false,
+				"locked": true,
+			})
+			return
+		}
+		// No identity at all.
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"active":       false,
+			"needsOnboarding": true,
+		})
 		return
 	}
 
+	kp := h.kp
+	if kp == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"active":       false,
+			"needsOnboarding": true,
+		})
+		return
+	}
+
+	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
+
+	// Get profile from DB.
+	profile, _ := h.db.GetProfile(kp.PublicKeyBytes())
+	displayName := "Anonymous"
+	if profile != nil {
+		displayName = profile.DisplayName
+	}
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"pubkey":  pubkeyHex,
-		"address": address,
-		"active":  true,
+		"active":      true,
+		"pubkey":      pubkeyHex,
+		"address":     address,
+		"displayName": displayName,
 	})
 }
 
 // LockIdentity handles POST /api/identity/lock.
 func (h *Handler) LockIdentity(w http.ResponseWriter, r *http.Request) {
-	// Stub - actual implementation would clear the in-memory private key.
+	if h.identity != nil {
+		h.identity.Lock()
+	}
+	h.kp = nil
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "locked",
 	})
@@ -164,14 +213,13 @@ func (h *Handler) LockIdentity(w http.ResponseWriter, r *http.Request) {
 
 // ListIdentities handles GET /api/identity/list.
 func (h *Handler) ListIdentities(w http.ResponseWriter, r *http.Request) {
-	// Return the current identity as the only identity for now.
-	pubkeyHex := hex.EncodeToString(h.kp.PublicKeyBytes())
-
-	address, err := identity.PubKeyToAddress(h.kp.PublicKeyBytes())
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to derive address: "+err.Error())
+	if h.kp == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
 		return
 	}
+
+	pubkeyHex := hex.EncodeToString(h.kp.PublicKeyBytes())
+	address, _ := identity.PubKeyToAddress(h.kp.PublicKeyBytes())
 
 	respondJSON(w, http.StatusOK, []map[string]interface{}{
 		{
@@ -190,7 +238,6 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Stub - actual implementation would switch the active key pair.
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "switched",
 		"pubkey": hex.EncodeToString(pubkey),
@@ -199,16 +246,20 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 
 // ExportIdentity handles GET /api/identity/export.
 func (h *Handler) ExportIdentity(w http.ResponseWriter, r *http.Request) {
-	pubkeyHex := hex.EncodeToString(h.kp.PublicKeyBytes())
-
-	address, err := identity.PubKeyToAddress(h.kp.PublicKeyBytes())
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to derive address: "+err.Error())
+	if h.kp == nil {
+		respondError(w, http.StatusNotFound, "no active identity")
 		return
 	}
+
+	pubkeyHex := hex.EncodeToString(h.kp.PublicKeyBytes())
+	address, _ := identity.PubKeyToAddress(h.kp.PublicKeyBytes())
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"pubkey":  pubkeyHex,
 		"address": address,
 	})
+}
+
+func nowMillis() int64 {
+	return time.Now().UnixMilli()
 }

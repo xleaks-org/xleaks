@@ -15,16 +15,17 @@ import (
 
 // HandlerDeps contains all dependencies needed by API handlers.
 type HandlerDeps struct {
-	DB       *storage.DB
-	CAS      *content.ContentStore
-	KeyPair  *identity.KeyPair
-	Posts    *social.PostService
-	Reactions *social.ReactionService
-	Profiles *social.ProfileService
-	DMs      *social.DMService
-	Notifs   *social.NotificationService
-	Feed     *feed.Manager
-	Timeline *feed.Timeline
+	DB             *storage.DB
+	CAS            *content.ContentStore
+	KeyPair        *identity.KeyPair
+	IdentityHolder *identity.Holder
+	Posts          *social.PostService
+	Reactions      *social.ReactionService
+	Profiles       *social.ProfileService
+	DMs            *social.DMService
+	Notifs         *social.NotificationService
+	Feed           *feed.Manager
+	Timeline       *feed.Timeline
 }
 
 // NewRouter creates the chi router with all API routes.
@@ -37,6 +38,9 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 
 	h := handlers.New(deps.DB, deps.CAS, deps.KeyPair, deps.Posts, deps.Reactions,
 		deps.Profiles, deps.DMs, deps.Notifs, deps.Feed, deps.Timeline)
+	if deps.IdentityHolder != nil {
+		h.SetIdentityHolder(deps.IdentityHolder)
+	}
 
 	r.Route("/api", func(r chi.Router) {
 		// Identity
