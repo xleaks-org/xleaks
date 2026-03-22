@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 
-const MEDIA_BASE = 'http://localhost:7470/api/media';
+const MEDIA_BASE = (process.env.NEXT_PUBLIC_API_URL || '/api') + '/media';
 
 function isVideoUrl(cid: string): boolean {
   // We can't know from CID alone, but we'll try to render as image first

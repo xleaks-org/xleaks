@@ -2,7 +2,13 @@ import type { WSEvent } from './types';
 
 type EventHandler = (event: WSEvent) => void;
 
-const WS_URL = 'ws://localhost:7470/ws';
+function getWSUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  if (typeof window === 'undefined') return 'ws://localhost:7470/ws';
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/ws`;
+}
+const WS_URL = getWSUrl();
 const RECONNECT_INTERVAL = 3000;
 const MAX_RECONNECT_INTERVAL = 30000;
 

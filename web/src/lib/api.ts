@@ -9,7 +9,7 @@ import type {
   NodeStatus,
 } from './types';
 
-const API_BASE = 'http://localhost:7470/api';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
