@@ -124,9 +124,8 @@ CREATE TABLE IF NOT EXISTS direct_messages (
     read INTEGER DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_dm_conversation ON direct_messages(
-    MIN(author, recipient), MAX(author, recipient), timestamp DESC
-);
+CREATE INDEX IF NOT EXISTS idx_dm_author ON direct_messages(author, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_dm_recipient ON direct_messages(recipient, timestamp DESC);
 
 -- Notifications
 CREATE TABLE IF NOT EXISTS notifications (

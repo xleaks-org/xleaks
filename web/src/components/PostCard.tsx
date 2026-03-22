@@ -32,10 +32,10 @@ function truncatePubkey(pubkey: string): string {
 
 export default function PostCard({ entry }: { entry: FeedEntry }) {
   const { post, authorName, likeCount, replyCount, repostCount, isLiked, isReposted } = entry;
-  const [liked, setLiked] = useState(isLiked);
-  const [likes, setLikes] = useState(likeCount);
-  const [reposted, setReposted] = useState(isReposted);
-  const [reposts, setReposts] = useState(repostCount);
+  const [liked, setLiked] = useState(isLiked ?? false);
+  const [likes, setLikes] = useState(likeCount ?? 0);
+  const [reposted, setReposted] = useState(isReposted ?? false);
+  const [reposts, setReposts] = useState(repostCount ?? 0);
 
   const handleLike = useCallback(
     async (e: React.MouseEvent) => {
@@ -68,8 +68,10 @@ export default function PostCard({ entry }: { entry: FeedEntry }) {
     [post.id, reposted]
   );
 
-  const displayName = authorName || truncatePubkey(post.author);
+  const displayName = authorName || truncatePubkey(post.author ?? '');
   const isRepostType = !!post.repostOf;
+  const mediaCids = post.mediaCids ?? [];
+  const tags = post.tags ?? [];
 
   return (
     <Link
@@ -105,7 +107,7 @@ export default function PostCard({ entry }: { entry: FeedEntry }) {
               {displayName}
             </span>
             <span className="text-gray-500 truncate">
-              {truncatePubkey(post.author)}
+              {truncatePubkey(post.author ?? '')}
             </span>
             <span className="text-gray-600">&middot;</span>
             <span className="text-gray-500 shrink-0">
@@ -142,14 +144,14 @@ export default function PostCard({ entry }: { entry: FeedEntry }) {
           )}
 
           {/* Media */}
-          {post.mediaCids && post.mediaCids.length > 0 && (
-            <MediaViewer mediaCids={post.mediaCids} />
+          {mediaCids.length > 0 && (
+            <MediaViewer mediaCids={mediaCids} />
           )}
 
           {/* Tags */}
-          {post.tags.length > 0 && (
+          {tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
-              {post.tags.map((tag) => (
+              {tags.map((tag) => (
                 <span
                   key={tag}
                   className="text-blue-400 text-sm hover:underline"
@@ -170,7 +172,7 @@ export default function PostCard({ entry }: { entry: FeedEntry }) {
               <svg className="w-4.5 h-4.5 group-hover:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337z" />
               </svg>
-              <span className="text-xs">{replyCount > 0 ? replyCount : ''}</span>
+              <span className="text-xs">{(replyCount ?? 0) > 0 ? replyCount : ''}</span>
             </button>
 
             {/* Repost */}

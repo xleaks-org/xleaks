@@ -57,6 +57,10 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 
 	h := handlers.New(deps.DB, deps.CAS, deps.KeyPair, deps.Posts, deps.Reactions,
 		deps.Profiles, deps.DMs, deps.Notifs, deps.Feed, deps.Timeline)
+	// Wire WebSocket event broadcasts into API handlers.
+	h.SetBroadcaster(func(eventType string, data interface{}) {
+		wsHub.Broadcast(WSEvent{Type: eventType, Data: data})
+	})
 	if deps.IdentityHolder != nil {
 		h.SetIdentityHolder(deps.IdentityHolder)
 	}

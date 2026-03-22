@@ -41,13 +41,15 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
+	reactionData := map[string]interface{}{
 		"id":            hex.EncodeToString(reaction.Id),
 		"author":        hex.EncodeToString(reaction.Author),
 		"target":        hex.EncodeToString(reaction.Target),
 		"reaction_type": reaction.ReactionType,
 		"timestamp":     reaction.Timestamp,
-	})
+	}
+	h.emit("new_reaction", reactionData)
+	respondJSON(w, http.StatusCreated, reactionData)
 }
 
 // CreateRepost handles POST /api/repost.

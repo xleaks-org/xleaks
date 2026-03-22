@@ -17,6 +17,9 @@ import (
 	"github.com/xleaks/xleaks/pkg/storage"
 )
 
+// EventBroadcaster is a callback that broadcasts real-time events to WebSocket clients.
+type EventBroadcaster func(eventType string, data interface{})
+
 // Handler holds all dependencies for HTTP API handlers.
 type Handler struct {
 	db             *storage.DB
@@ -34,6 +37,18 @@ type Handler struct {
 	p2pHost        *p2p.Host
 	cfg            *config.Config
 	cfgPath        string
+	broadcast      EventBroadcaster
+}
+
+// SetBroadcaster sets the WebSocket event broadcaster.
+func (h *Handler) SetBroadcaster(b EventBroadcaster) {
+	h.broadcast = b
+}
+
+func (h *Handler) emit(eventType string, data interface{}) {
+	if h.broadcast != nil {
+		h.broadcast(eventType, data)
+	}
 }
 
 // New creates a new Handler with all dependencies.

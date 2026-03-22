@@ -176,16 +176,26 @@ func (s *PostService) CreateRepost(ctx context.Context, originalCID []byte) (*pb
 	return post, nil
 }
 
+const maxTagsPerPost = 20
+const maxTagLength = 100
+
 // extractHashtags extracts unique hashtags from text content.
+// Limited to 20 tags of max 100 chars each.
 func extractHashtags(text string) []string {
 	matches := hashtagRe.FindAllStringSubmatch(text, -1)
 	seen := make(map[string]bool)
 	var tags []string
 	for _, match := range matches {
 		tag := strings.ToLower(match[1])
+		if len(tag) > maxTagLength {
+			continue
+		}
 		if !seen[tag] {
 			seen[tag] = true
 			tags = append(tags, tag)
+			if len(tags) >= maxTagsPerPost {
+				break
+			}
 		}
 	}
 	return tags

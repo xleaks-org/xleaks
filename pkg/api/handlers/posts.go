@@ -53,13 +53,15 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
+	postData := map[string]interface{}{
 		"id":        hex.EncodeToString(post.Id),
 		"author":    hex.EncodeToString(post.Author),
 		"content":   post.Content,
 		"timestamp": post.Timestamp,
 		"tags":      post.Tags,
-	})
+	}
+	h.emit("new_post", postData)
+	respondJSON(w, http.StatusCreated, postData)
 }
 
 // GetPost handles GET /api/posts/{cid}.
