@@ -112,13 +112,17 @@ export async function unfollowUser(pubkey: string): Promise<void> {
 
 // Profiles
 export async function getProfile(pubkey: string): Promise<Profile> {
-  return request(`/profiles/${pubkey}`);
+  return request(`/users/${pubkey}`);
+}
+
+export async function getOwnProfile(): Promise<Profile> {
+  return request('/profile');
 }
 
 export async function updateProfile(
   data: Partial<Omit<Profile, 'author' | 'version'>>
 ): Promise<Profile> {
-  return request('/profiles', {
+  return request('/profile', {
     method: 'PUT',
     body: JSON.stringify(data),
   });

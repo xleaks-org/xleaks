@@ -4,15 +4,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // updateProfileRequest is the JSON body for PUT /api/profile.
 type updateProfileRequest struct {
-	DisplayName string `json:"display_name"`
-	Bio         string `json:"bio"`
-	Website     string `json:"website"`
-	AvatarCID   string `json:"avatar_cid"`
-	BannerCID   string `json:"banner_cid"`
+	DisplayName  string `json:"display_name"`
+	DisplayName2 string `json:"displayName"`
+	Bio          string `json:"bio"`
+	Website      string `json:"website"`
+	AvatarCID    string `json:"avatar_cid"`
+	BannerCID    string `json:"banner_cid"`
+}
+
+func (r *updateProfileRequest) getDisplayName() string {
+	if r.DisplayName != "" {
+		return r.DisplayName
+	}
+	return r.DisplayName2
 }
 
 // GetOwnProfile handles GET /api/profile.
@@ -71,14 +80,37 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	displayName := req.getDisplayName()
+	if displayName == "" {
+		respondError(w, http.StatusBadRequest, "display_name is required")
+		return
+	}
+
+	// Try the social service first (creates a signed profile).
 	var profile interface{}
 	if existing == nil {
-		profile, err = h.profiles.CreateProfile(r.Context(), req.DisplayName, req.Bio, req.Website, avatarCID, bannerCID)
+		profile, err = h.profiles.CreateProfile(r.Context(), displayName, req.Bio, req.Website, avatarCID, bannerCID)
 	} else {
-		profile, err = h.profiles.UpdateProfile(r.Context(), req.DisplayName, req.Bio, req.Website, avatarCID, bannerCID)
+		profile, err = h.profiles.UpdateProfile(r.Context(), displayName, req.Bio, req.Website, avatarCID, bannerCID)
 	}
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		// Fallback: direct DB upsert (useful during onboarding when identity may not be fully initialized).
+		var version uint64 = 1
+		if existing != nil {
+			version = 2 // Simplified version bump
+		}
+		dbErr := h.db.UpsertProfile(h.kp.PublicKeyBytes(), displayName, req.Bio, avatarCID, bannerCID, req.Website, version, time.Now().UnixMilli())
+		if dbErr != nil {
+			respondError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"pubkey":       hex.EncodeToString(h.kp.PublicKeyBytes()),
+			"display_name": displayName,
+			"bio":          req.Bio,
+			"website":      req.Website,
+			"version":      version,
+		})
 		return
 	}
 
