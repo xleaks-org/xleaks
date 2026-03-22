@@ -56,8 +56,8 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update the handler's key pair reference.
-	h.kp = kp
+	// Update the handler's key pair reference and propagate to all services.
+	h.updateIdentity(kp)
 
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())

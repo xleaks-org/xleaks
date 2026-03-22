@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useNotifications } from '@/hooks/useNotifications';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getActiveIdentity } from '@/lib/api';
 import { formatPubkey } from '@/lib/formatters';
 
@@ -79,6 +79,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { unreadCount } = useNotifications();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const router = useRouter();
   const [userName, setUserName] = useState('Anonymous');
   const [userPubkey, setUserPubkey] = useState('');
 
@@ -90,6 +91,15 @@ export default function Sidebar() {
       }
     }).catch(() => {});
   }, [pathname]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch('/api/identity/lock', { method: 'POST' });
+      router.push('/onboarding');
+    } catch {
+      router.push('/onboarding');
+    }
+  }, [router]);
 
   return (
     <>
@@ -182,6 +192,15 @@ export default function Sidebar() {
               </p>
               <p className="text-xs text-gray-400 truncate">{userPubkey ? formatPubkey(userPubkey) : 'Not connected'}</p>
             </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-gray-800 transition-colors"
+              title="Lock & Logout"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
           </div>
         </div>
       </aside>

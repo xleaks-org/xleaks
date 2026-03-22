@@ -51,6 +51,23 @@ func (h *Handler) emit(eventType string, data interface{}) {
 	}
 }
 
+// updateIdentity propagates a new key pair to all services that need it.
+func (h *Handler) updateIdentity(kp *identity.KeyPair) {
+	h.kp = kp
+	if h.posts != nil {
+		h.posts.SetIdentity(kp)
+	}
+	if h.reactions != nil {
+		h.reactions.SetIdentity(kp)
+	}
+	if h.profiles != nil {
+		h.profiles.SetIdentity(kp)
+	}
+	if h.dms != nil {
+		h.dms.SetIdentity(kp)
+	}
+}
+
 // New creates a new Handler with all dependencies.
 func New(db *storage.DB, cas *content.ContentStore, kp *identity.KeyPair, posts *social.PostService, reactions *social.ReactionService, profiles *social.ProfileService, dms *social.DMService, notifs *social.NotificationService, feed *feed.Manager, timeline *feed.Timeline) *Handler {
 	return &Handler{

@@ -26,6 +26,8 @@ func NewProfileService(db *storage.DB, kp *identity.KeyPair) *ProfileService {
 	}
 }
 
+func (s *ProfileService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+
 // CreateProfile creates a new profile (version 1).
 func (s *ProfileService) CreateProfile(ctx context.Context, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
 	profile := &pb.Profile{
