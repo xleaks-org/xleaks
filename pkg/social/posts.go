@@ -32,6 +32,11 @@ func NewPostService(db *storage.DB, cas *content.ContentStore, kp *identity.KeyP
 	}
 }
 
+// SetIdentity updates the active key pair used for signing.
+func (s *PostService) SetIdentity(kp *identity.KeyPair) {
+	s.identity = kp
+}
+
 // CreatePost creates, signs, and stores a new post.
 func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][]byte, replyTo []byte) (*pb.Post, error) {
 	// Extract hashtags from the text.

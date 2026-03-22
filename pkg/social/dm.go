@@ -28,6 +28,8 @@ func NewDMService(db *storage.DB, kp *identity.KeyPair) *DMService {
 	}
 }
 
+func (s *DMService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+
 // SendDM encrypts and sends a direct message to the given recipient.
 func (s *DMService) SendDM(ctx context.Context, recipientPubKey []byte, plaintext string) (*pb.DirectMessage, error) {
 	// Encrypt the message.

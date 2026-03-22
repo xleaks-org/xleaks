@@ -26,6 +26,8 @@ func NewReactionService(db *storage.DB, kp *identity.KeyPair) *ReactionService {
 	}
 }
 
+func (s *ReactionService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+
 // CreateReaction creates a new "like" reaction on the given target post.
 func (s *ReactionService) CreateReaction(ctx context.Context, targetCID []byte) (*pb.Reaction, error) {
 	reaction := &pb.Reaction{
