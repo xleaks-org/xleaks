@@ -100,7 +100,7 @@ export async function markNotificationsRead(): Promise<void> {
 }
 
 export async function getUnreadCount(): Promise<{ count: number }> {
-  return request('/notifications/unread');
+  return request('/notifications/unread-count');
 }
 
 // Direct Messages
