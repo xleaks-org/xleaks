@@ -4,16 +4,8 @@ import Link from 'next/link';
 import { useState, useCallback } from 'react';
 import type { FeedEntry } from '@/lib/types';
 import { createReaction, createRepost } from '@/lib/api';
+import { getInitials, truncatePubkey } from '@/lib/formatters';
 import MediaViewer from './MediaViewer';
-
-function getInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
 
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now() / 1000;
@@ -23,11 +15,6 @@ function formatRelativeTime(timestamp: number): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
   return new Date(timestamp * 1000).toLocaleDateString();
-}
-
-function truncatePubkey(pubkey: string): string {
-  if (pubkey.length <= 12) return pubkey;
-  return `${pubkey.slice(0, 6)}...${pubkey.slice(-4)}`;
 }
 
 export default function PostCard({ entry }: { entry: FeedEntry }) {

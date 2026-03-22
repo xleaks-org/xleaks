@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/xleaks/xleaks/pkg/content"
@@ -137,7 +135,7 @@ func (r *Replicator) StartStorageManager(ctx context.Context, maxBytes int64, in
 // content in batches until usage drops below 90% of maxBytes.
 func (r *Replicator) checkAndEvict(maxBytes int64) {
 	dataDir := r.cas.BasePath()
-	currentSize, err := dirSize(dataDir)
+	currentSize, err := content.DirSize(dataDir)
 	if err != nil {
 		return
 	}
@@ -154,7 +152,7 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 		}
 
 		// Recalculate size after eviction.
-		newSize, err := dirSize(dataDir)
+		newSize, err := content.DirSize(dataDir)
 		if err != nil {
 			break
 		}
@@ -167,16 +165,3 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 	}
 }
 
-// dirSize recursively walks a directory and returns the total size in bytes
-// of all files it contains.
-func dirSize(path string) (int64, error) {
-	var size int64
-	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return nil
-		}
-		size += info.Size()
-		return nil
-	})
-	return size, err
-}

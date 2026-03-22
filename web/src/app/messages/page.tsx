@@ -4,20 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getConversations } from '@/lib/api';
 import type { ConversationSummary } from '@/lib/types';
-
-function truncatePubkey(pubkey: string): string {
-  if (pubkey.length <= 12) return pubkey;
-  return `${pubkey.slice(0, 6)}...${pubkey.slice(-4)}`;
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
+import { getInitials, truncatePubkey } from '@/lib/formatters';
 
 function formatTime(timestamp: number): string {
   const now = Date.now() / 1000;

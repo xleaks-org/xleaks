@@ -2,11 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import DMConversation from '@/components/DMConversation';
-
-function truncatePubkey(pubkey: string): string {
-  if (pubkey.length <= 12) return pubkey;
-  return `${pubkey.slice(0, 6)}...${pubkey.slice(-4)}`;
-}
+import { truncatePubkey } from '@/lib/formatters';
 
 export default function ConversationPage() {
   const params = useParams<{ pubkey: string }>();

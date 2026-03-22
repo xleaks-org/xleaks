@@ -2,20 +2,7 @@
 
 import Link from 'next/link';
 import type { Profile } from '@/lib/types';
-
-function getInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
-
-function truncatePubkey(pubkey: string): string {
-  if (pubkey.length <= 12) return pubkey;
-  return `${pubkey.slice(0, 6)}...${pubkey.slice(-4)}`;
-}
+import { getInitials, truncatePubkey } from '@/lib/formatters';
 
 export default function UserCard({ profile }: { profile: Profile }) {
   const displayName = profile.displayName || truncatePubkey(profile.author);

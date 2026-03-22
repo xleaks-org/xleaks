@@ -4,11 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getTrending } from '@/lib/api';
 import type { FeedEntry } from '@/lib/types';
-
-function truncatePubkey(pubkey: string): string {
-  if (pubkey.length <= 12) return pubkey;
-  return `${pubkey.slice(0, 6)}...${pubkey.slice(-4)}`;
-}
+import { truncatePubkey } from '@/lib/formatters';
 
 export default function TrendingList() {
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);

@@ -74,3 +74,16 @@ func (cs *ContentStore) objectPath(cid []byte) string {
 	shard := hexCID[:2]
 	return filepath.Join(cs.basePath, shard, hexCID)
 }
+
+// DirSize calculates the total size in bytes of a directory tree.
+func DirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		size += info.Size()
+		return nil
+	})
+	return size, err
+}
