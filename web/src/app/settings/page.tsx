@@ -74,7 +74,7 @@ export default function SettingsPage() {
               <span className="text-sm text-gray-400">Storage Used</span>
               <span className="text-sm text-white">
                 {status
-                  ? `${status.storage.usedGB.toFixed(1)} / ${status.storage.maxGB.toFixed(0)} GB`
+                  ? `${(status.storage.usedGB ?? 0).toFixed(1)} / ${(status.storage.maxGB ?? 0).toFixed(0)} GB`
                   : 'N/A'}
               </span>
             </div>

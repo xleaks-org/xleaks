@@ -56,8 +56,8 @@ export interface FeedEntry {
 
 export interface NodeStatus {
   peers: number;
-  bandwidth: { totalIn: number; totalOut: number };
-  storage: { usedGB: number; maxGB: number };
+  bandwidth: { totalIn: number; totalOut: number; total_in?: number; total_out?: number; rate_in?: number; rate_out?: number };
+  storage: { usedGB: number; maxGB: number; used?: number; limit?: number };
   uptime: number;
 }
 

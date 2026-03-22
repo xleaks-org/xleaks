@@ -12,8 +12,21 @@ export function useNodeStatus() {
 
   const load = useCallback(async () => {
     try {
-      const data = await getNodeStatus();
-      setStatus(data);
+      const raw = await getNodeStatus();
+      // Normalize API response to match expected interface
+      const normalized: NodeStatus = {
+        peers: raw.peers ?? 0,
+        bandwidth: {
+          totalIn: raw.bandwidth?.totalIn ?? raw.bandwidth?.total_in ?? 0,
+          totalOut: raw.bandwidth?.totalOut ?? raw.bandwidth?.total_out ?? 0,
+        },
+        storage: {
+          usedGB: raw.storage?.usedGB ?? (raw.storage?.used ?? 0) / (1024 * 1024 * 1024),
+          maxGB: raw.storage?.maxGB ?? (raw.storage?.limit ?? 0) / (1024 * 1024 * 1024),
+        },
+        uptime: raw.uptime ?? 0,
+      };
+      setStatus(normalized);
     } catch {
       // Node not available
     } finally {
