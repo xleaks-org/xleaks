@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { getActiveIdentity, unlockIdentity } from '@/lib/api';
 import PassphrasePrompt from './PassphrasePrompt';
@@ -11,20 +11,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [state, setState] = useState<'loading' | 'ready' | 'onboarding' | 'locked'>('loading');
-  const [error, setError] = useState('');
 
-  useEffect(() => {
-    checkIdentity();
-  }, []);
-
-  async function checkIdentity() {
+  const checkIdentity = useCallback(async () => {
     try {
       const identity = await getActiveIdentity();
-      if (!identity) {
-        setState('onboarding');
-        return;
-      }
-      if (identity.needsOnboarding) {
+      if (!identity || identity.needsOnboarding) {
         setState('onboarding');
         return;
       }
@@ -38,10 +29,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       }
       setState('onboarding');
     } catch {
-      // API not reachable — show the app anyway, it'll handle errors per-component
       setState('ready');
     }
-  }
+  }, []);
+
+  // Re-check identity whenever pathname changes (e.g., after onboarding completes)
+  useEffect(() => {
+    checkIdentity();
+  }, [pathname, checkIdentity]);
 
   // Allow access to public paths always
   if (PUBLIC_PATHS.includes(pathname)) {
@@ -68,17 +63,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <PassphrasePrompt
         onUnlock={async (passphrase: string) => {
-          setError('');
-          try {
-            await unlockIdentity({ passphrase });
-            setState('ready');
-          } catch (err) {
-            throw err;
-          }
+          await unlockIdentity({ passphrase });
+          setState('ready');
         }}
-        onCancel={() => {
-          // Can't cancel — must unlock
-        }}
+        onCancel={() => {}}
       />
     );
   }

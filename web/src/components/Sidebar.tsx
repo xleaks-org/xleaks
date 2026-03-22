@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useNotifications } from '@/hooks/useNotifications';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getActiveIdentity } from '@/lib/api';
+import { formatPubkey } from '@/lib/formatters';
 
 const NAV_ITEMS = [
   {
@@ -77,6 +79,17 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { unreadCount } = useNotifications();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userName, setUserName] = useState('Anonymous');
+  const [userPubkey, setUserPubkey] = useState('');
+
+  useEffect(() => {
+    getActiveIdentity().then((id) => {
+      if (id?.active) {
+        setUserName(id.displayName || 'Anonymous');
+        setUserPubkey(id.pubkey || '');
+      }
+    }).catch(() => {});
+  }, [pathname]);
 
   return (
     <>
@@ -160,14 +173,14 @@ export default function Sidebar() {
         {/* User info at bottom */}
         <div className="p-4 border-t border-gray-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold text-white">
-              ?
+            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white">
+              {userName.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-white truncate">
-                Anonymous
+                {userName}
               </p>
-              <p className="text-xs text-gray-400 truncate">Not connected</p>
+              <p className="text-xs text-gray-400 truncate">{userPubkey ? formatPubkey(userPubkey) : 'Not connected'}</p>
             </div>
           </div>
         </div>
