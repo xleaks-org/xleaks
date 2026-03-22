@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import NodeStatus from '@/components/NodeStatus';
 import TrendingList from '@/components/TrendingList';
 import SearchBar from '@/components/SearchBar';
+import AuthGuard from '@/components/AuthGuard';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -32,6 +33,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <body className="min-h-full bg-gray-950 text-white">
+        <AuthGuard>
         <div className="mx-auto flex max-w-7xl">
           {/* Left sidebar - Navigation */}
           <div className="hidden md:block md:w-64 shrink-0">
@@ -72,6 +74,7 @@ export default function RootLayout({
             </div>
           </div>
         </div>
+        </AuthGuard>
       </body>
     </html>
   );

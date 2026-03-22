@@ -81,10 +81,12 @@ func run() error {
 	}
 	_ = mediaCAS // Used for media chunk storage
 
+	// Initialize identity holder.
+	idHolder := identity.NewHolder(dataDir)
+
 	// Try to load identity. If none exists, the UI will handle onboarding.
 	var kp *identity.KeyPair
-	keyPath := filepath.Join(dataDir, "identity", "primary.key")
-	if _, err := os.Stat(keyPath); err == nil {
+	if idHolder.HasIdentity() {
 		log.Println("Identity found. Unlock via API to activate.")
 	} else {
 		log.Println("No identity found. The UI will guide you through onboarding.")
@@ -217,16 +219,17 @@ func run() error {
 
 	// Create API server.
 	deps := &api.HandlerDeps{
-		DB:        db,
-		CAS:       cas,
-		KeyPair:   kp,
-		Posts:     postService,
-		Reactions: reactionService,
-		Profiles:  profileService,
-		DMs:       dmService,
-		Notifs:    notifService,
-		Feed:      feedManager,
-		Timeline:  timeline,
+		DB:             db,
+		CAS:            cas,
+		KeyPair:        kp,
+		IdentityHolder: idHolder,
+		Posts:          postService,
+		Reactions:      reactionService,
+		Profiles:       profileService,
+		DMs:            dmService,
+		Notifs:         notifService,
+		Feed:           feedManager,
+		Timeline:       timeline,
 	}
 
 	server := api.NewServer(cfg.API.ListenAddress, deps)

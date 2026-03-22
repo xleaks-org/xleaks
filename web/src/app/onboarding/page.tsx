@@ -44,7 +44,7 @@ export default function OnboardingPage() {
     setError('');
     try {
       const result = await createIdentity({ passphrase });
-      setSeedPhrase(result.seedPhrase);
+      setSeedPhrase(result.seedPhrase || result.mnemonic);
       setStep('seed');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create identity');

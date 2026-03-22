@@ -146,7 +146,7 @@ export async function getNodeStatus(): Promise<NodeStatus> {
 // Identity
 export async function createIdentity(data: {
   passphrase: string;
-}): Promise<{ pubkey: string; seedPhrase: string }> {
+}): Promise<{ pubkey: string; seedPhrase: string; mnemonic: string; address: string }> {
   return request('/identity/create', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -156,10 +156,10 @@ export async function createIdentity(data: {
 export async function importIdentity(data: {
   seedPhrase: string;
   passphrase: string;
-}): Promise<{ pubkey: string }> {
+}): Promise<{ pubkey: string; address: string }> {
   return request('/identity/import', {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify({ mnemonic: data.seedPhrase, passphrase: data.passphrase }),
   });
 }
 
@@ -173,8 +173,12 @@ export async function unlockIdentity(data: {
 }
 
 export async function getActiveIdentity(): Promise<{
-  pubkey: string;
-  displayName: string;
+  active: boolean;
+  locked?: boolean;
+  needsOnboarding?: boolean;
+  pubkey?: string;
+  address?: string;
+  displayName?: string;
 } | null> {
   try {
     return await request('/identity/active');
