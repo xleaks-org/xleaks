@@ -94,12 +94,13 @@ export default function Sidebar() {
 
   const handleLogout = useCallback(async () => {
     try {
-      await fetch('/api/identity/lock', { method: 'POST' });
-      router.push('/onboarding');
+      await fetch('/api/identity/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
     } catch {
-      router.push('/onboarding');
+      // ignore
     }
-  }, [router]);
+    // Full page reload to clear all cached state
+    window.location.href = '/onboarding';
+  }, []);
 
   return (
     <>

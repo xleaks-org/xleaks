@@ -30,6 +30,20 @@ export function snakeToCamel(obj: unknown): unknown {
   return obj;
 }
 
+function camelToSnake(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(camelToSnake);
+  if (typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([k, v]) => [
+        k.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase()),
+        camelToSnake(v),
+      ])
+    );
+  }
+  return obj;
+}
+
 let apiToken: string | null = null;
 
 /**
@@ -65,9 +79,20 @@ function authHeaders(): Record<string, string> {
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   await initToken();
 
+  // Transform request body from camelCase to snake_case for the Go API.
+  const opts = { ...options };
+  if (opts.body && typeof opts.body === 'string') {
+    try {
+      const parsed = JSON.parse(opts.body);
+      opts.body = JSON.stringify(camelToSnake(parsed));
+    } catch {
+      // Not JSON, leave as-is
+    }
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     headers: authHeaders(),
-    ...options,
+    ...opts,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
