@@ -2,21 +2,8 @@
 
 import { useNodeStatus } from '@/hooks/useNodeStatus';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { formatBytes, formatDuration } from '@/lib/formatters';
 
-function formatUptime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 export default function NodeStatus() {
   const { status } = useNodeStatus();
@@ -48,7 +35,7 @@ export default function NodeStatus() {
             <div className="flex items-center justify-between">
               <span className="text-gray-400">Uptime</span>
               <span className="text-gray-300">
-                {formatUptime(status.uptime)}
+                {formatDuration(status.uptime)}
               </span>
             </div>
             <div className="flex items-center justify-between">
