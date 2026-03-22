@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/xleaks/xleaks/pkg/storage"
-	pb "github.com/xleaks/xleaks/proto/gen"
+	"github.com/xleaks-org/xleaks/pkg/storage"
+	pb "github.com/xleaks-org/xleaks/proto/gen"
 )
 
 // ThreadNode represents a node in a comment thread tree.

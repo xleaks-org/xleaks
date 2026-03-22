@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // IdentityInfo contains display information for an identity.

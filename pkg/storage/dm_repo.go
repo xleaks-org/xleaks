@@ -75,14 +75,17 @@ func (db *DB) GetConversation(pubkey1, pubkey2 []byte, before int64, limit int) 
 
 // GetConversations lists all conversations for the given own public key,
 // returning one summary per conversation partner with the latest message info.
+// It uses a single aggregation query to avoid N+1 round-trips.
 func (db *DB) GetConversations(ownPubkey []byte) ([]ConversationSummary, error) {
 	rows, err := db.Query(
 		`SELECT
-		     CASE WHEN author = ? THEN recipient ELSE author END AS peer,
-		     MAX(timestamp) AS last_ts
+		     CASE WHEN author < recipient THEN author ELSE recipient END AS peer_a,
+		     CASE WHEN author > recipient THEN author ELSE recipient END AS peer_b,
+		     MAX(timestamp) AS last_ts,
+		     SUM(CASE WHEN read = 0 AND recipient = ? THEN 1 ELSE 0 END) AS unread
 		 FROM direct_messages
 		 WHERE author = ? OR recipient = ?
-		 GROUP BY peer
+		 GROUP BY peer_a, peer_b
 		 ORDER BY last_ts DESC`,
 		ownPubkey, ownPubkey, ownPubkey,
 	)
@@ -93,37 +96,35 @@ func (db *DB) GetConversations(ownPubkey []byte) ([]ConversationSummary, error) 
 
 	var summaries []ConversationSummary
 	for rows.Next() {
+		var peerA, peerB []byte
 		var cs ConversationSummary
-		if err := rows.Scan(&cs.PeerPubkey, &cs.LastTimestamp); err != nil {
+		if err := rows.Scan(&peerA, &peerB, &cs.LastTimestamp, &cs.UnreadCount); err != nil {
 			return nil, fmt.Errorf("scan conversation summary: %w", err)
 		}
 
-		// Fetch the last message details for this conversation.
-		err := db.QueryRow(
-			`SELECT author, encrypted_content, nonce
-			 FROM direct_messages
-			 WHERE ((author = ? AND recipient = ?) OR (author = ? AND recipient = ?))
-			 ORDER BY timestamp DESC
-			 LIMIT 1`,
-			ownPubkey, cs.PeerPubkey, cs.PeerPubkey, ownPubkey,
-		).Scan(&cs.LastAuthor, &cs.EncryptedContent, &cs.Nonce)
-		if err != nil {
-			return nil, fmt.Errorf("fetch last message: %w", err)
-		}
-
-		// Count unread messages from the peer.
-		err = db.QueryRow(
-			`SELECT COUNT(*) FROM direct_messages
-			 WHERE author = ? AND recipient = ? AND read = 0`,
-			cs.PeerPubkey, ownPubkey,
-		).Scan(&cs.UnreadCount)
-		if err != nil {
-			return nil, fmt.Errorf("count unread: %w", err)
+		// The "other peer" is whichever of peer_a/peer_b doesn't match ownPubkey.
+		if bytesEqual(peerA, ownPubkey) {
+			cs.PeerPubkey = peerB
+		} else {
+			cs.PeerPubkey = peerA
 		}
 
 		summaries = append(summaries, cs)
 	}
 	return summaries, rows.Err()
+}
+
+// bytesEqual returns true if two byte slices are equal.
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // MarkDMRead marks a direct message as read by its CID.

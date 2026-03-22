@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // Manager handles subscription management (follow/unfollow logic) and

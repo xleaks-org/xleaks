@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // Replicator handles fetching and pinning content from followed publishers.
@@ -66,22 +67,26 @@ func (r *Replicator) FetchMissingContent(ctx context.Context, authorPubkey []byt
 		cidHex := hex.EncodeToString(post.CID)
 		data, err := r.OnFetchContent(ctx, cidHex)
 		if err != nil {
-			// Log but continue with other content.
+			log.Printf("replicator: failed to fetch content %s: %v", cidHex, err)
 			continue
 		}
 
 		// Validate the fetched data matches the CID.
 		if !content.ValidateCID(post.CID, data) {
+			log.Printf("replicator: CID validation failed for %s", cidHex)
 			continue
 		}
 
 		// Store the fetched content.
 		if err := r.cas.Put(post.CID, data); err != nil {
+			log.Printf("replicator: failed to store content %s: %v", cidHex, err)
 			continue
 		}
 
 		// Track access for eviction purposes.
-		_ = r.db.TrackContentAccess(post.CID, false)
+		if err := r.db.TrackContentAccess(post.CID, false); err != nil {
+			log.Printf("replicator: failed to track content access for %s: %v", cidHex, err)
+		}
 	}
 
 	return nil
@@ -102,11 +107,17 @@ func (r *Replicator) EvictStaleContent(maxBytes int64) error {
 	}
 
 	for _, cid := range cids {
+		cidHex := hex.EncodeToString(cid)
+
 		// Remove from content-addressed store.
-		_ = r.cas.Delete(cid)
+		if err := r.cas.Delete(cid); err != nil {
+			log.Printf("replicator: eviction: failed to delete content %s from CAS: %v", cidHex, err)
+		}
 
 		// Remove from tracking table.
-		_ = r.db.DeleteContentAccess(cid)
+		if err := r.db.DeleteContentAccess(cid); err != nil {
+			log.Printf("replicator: eviction: failed to delete content access tracking for %s: %v", cidHex, err)
+		}
 	}
 
 	return nil
@@ -132,11 +143,12 @@ func (r *Replicator) StartStorageManager(ctx context.Context, maxBytes int64, in
 }
 
 // checkAndEvict calculates the current CAS directory size and evicts LRU
-// content in batches until usage drops below 90% of maxBytes.
+// content in batches until usage drops below 85% of maxBytes.
 func (r *Replicator) checkAndEvict(maxBytes int64) {
 	dataDir := r.cas.BasePath()
 	currentSize, err := content.DirSize(dataDir)
 	if err != nil {
+		log.Printf("replicator: checkAndEvict: failed to compute DirSize for %s: %v", dataDir, err)
 		return
 	}
 
@@ -144,24 +156,35 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 		return
 	}
 
-	// Evict until we're under 90% of max.
-	target := int64(float64(maxBytes) * 0.9)
-	for currentSize > target {
-		if err := r.EvictStaleContent(maxBytes); err != nil {
+	log.Printf("replicator: checkAndEvict: starting eviction — current=%d bytes, max=%d bytes", currentSize, maxBytes)
+
+	// Evict until we're under 85% of max.
+	targetBytes := int64(float64(maxBytes) * 0.85)
+	for currentSize > targetBytes {
+		items, err := r.db.GetLRUContent(100)
+		if err != nil || len(items) == 0 {
 			break
+		}
+		for _, cid := range items {
+			_ = r.cas.Delete(cid)
+			_ = r.db.DeleteContentAccess(cid)
 		}
 
 		// Recalculate size after eviction.
 		newSize, err := content.DirSize(dataDir)
 		if err != nil {
+			log.Printf("replicator: checkAndEvict: failed to recompute DirSize after eviction: %v", err)
 			break
 		}
 
-		// If no progress was made (nothing to evict), stop.
+		// If no progress was made (nothing left to evict), stop.
 		if newSize >= currentSize {
+			log.Printf("replicator: checkAndEvict: no progress made, stopping eviction")
 			break
 		}
 		currentSize = newSize
 	}
+
+	log.Printf("replicator: checkAndEvict: eviction complete — current=%d bytes", currentSize)
 }
 

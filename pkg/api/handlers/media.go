@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/content"
 )
 
 // UploadMedia handles POST /api/media (multipart file upload).

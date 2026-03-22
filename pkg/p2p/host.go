@@ -20,6 +20,7 @@ import (
 // Host wraps a libp2p host with additional XLeaks networking capabilities
 // including GossipSub, Kademlia DHT, and bandwidth tracking.
 type Host struct {
+	ctx       context.Context
 	host      libp2phost.Host
 	pubsub    *pubsub.PubSub
 	dht       *dht.IpfsDHT
@@ -114,6 +115,7 @@ func NewHost(ctx context.Context, privKey crypto.PrivKey, cfg *Config) (*Host, e
 	}
 
 	return &Host{
+		ctx:          ctx,
 		host:         h,
 		dht:          kadDHT,
 		bwCounter:    bwCounter,
@@ -176,9 +178,13 @@ func (h *Host) LibP2PHost() libp2phost.Host {
 	return h.host
 }
 
-// ContentExchange creates and returns a new ContentExchange instance attached
-// to this host. The caller is responsible for configuring the content fetcher,
-// server, and calling ServeContent to register the stream handler.
+// ContentExchange returns the ContentExchange instance attached to this host,
+// creating it lazily on first access. The caller is responsible for
+// configuring the content fetcher, server, and calling ServeContent to
+// register the stream handler.
 func (h *Host) ContentExchange() *ContentExchange {
-	return NewContentExchange(h)
+	if h.contentExchange == nil {
+		h.contentExchange = NewContentExchange(h)
+	}
+	return h.contentExchange
 }

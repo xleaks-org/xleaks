@@ -7,14 +7,14 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/xleaks/xleaks/pkg/config"
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/feed"
-	"github.com/xleaks/xleaks/pkg/identity"
-	"github.com/xleaks/xleaks/pkg/indexer"
-	"github.com/xleaks/xleaks/pkg/p2p"
-	"github.com/xleaks/xleaks/pkg/social"
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/config"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/feed"
+	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/indexer"
+	"github.com/xleaks-org/xleaks/pkg/p2p"
+	"github.com/xleaks-org/xleaks/pkg/social"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // EventBroadcaster is a callback that broadcasts real-time events to WebSocket clients.

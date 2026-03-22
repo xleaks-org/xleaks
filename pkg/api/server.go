@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/api/middleware"
+	"github.com/xleaks-org/xleaks/pkg/api/middleware"
 )
 
 // ServerConfig holds configuration options for the API server.
@@ -37,7 +37,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 	// Build the middleware chain: LocalOnly -> optional TokenAuth -> CORS -> router.
 	var handler http.Handler = router
-	handler = middleware.CORS(handler)
+	handler = middleware.CORS("*")(handler)
 
 	if cfg.APIToken != "" {
 		handler = middleware.TokenAuth(cfg.APIToken)(handler)

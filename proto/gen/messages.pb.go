@@ -942,7 +942,7 @@ const file_messages_proto_rawDesc = "" +
 	"\fmedia_object\x18\x06 \x01(\v2\x13.xleaks.MediaObjectH\x00R\vmediaObject\x125\n" +
 	"\vmedia_chunk\x18\a \x01(\v2\x12.xleaks.MediaChunkH\x00R\n" +
 	"mediaChunkB\t\n" +
-	"\apayloadB$Z\"github.com/xleaks/xleaks/proto/genb\x06proto3"
+	"\apayloadB(Z&github.com/xleaks-org/xleaks/proto/genb\x06proto3"
 
 var (
 	file_messages_proto_rawDescOnce sync.Once

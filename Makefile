@@ -1,5 +1,5 @@
 BINARY_NAME=xleaks
-MODULE=github.com/xleaks/xleaks
+MODULE=github.com/xleaks-org/xleaks
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-X $(MODULE)/pkg/version.Version=$(VERSION) -X $(MODULE)/pkg/version.BuildTime=$(BUILD_TIME)"

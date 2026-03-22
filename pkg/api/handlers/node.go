@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/version"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/version"
 )
 
 // nodeStartTime records when the node started for uptime calculation.

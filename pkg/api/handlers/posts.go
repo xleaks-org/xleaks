@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/xleaks/xleaks/pkg/feed"
-	"github.com/xleaks/xleaks/pkg/social"
+	"github.com/xleaks-org/xleaks/pkg/feed"
+	"github.com/xleaks-org/xleaks/pkg/social"
 )
 
 // createPostRequest is the JSON body for POST /api/posts.

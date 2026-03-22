@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // NotificationView represents an enriched notification with actor profile info.

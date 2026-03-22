@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xleaks;
 
-option go_package = "github.com/xleaks/xleaks/proto/gen";
+option go_package = "github.com/xleaks-org/xleaks/proto/gen";
 
 // Post represents a user's published content on the network.
 // Posts are immutable once published - they cannot be edited or deleted.
