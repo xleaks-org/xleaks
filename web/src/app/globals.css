@@ -3,6 +3,29 @@
 :root {
   --background: #030712;
   --foreground: #ffffff;
+  --app-font-size: 16px;
+}
+
+html.light {
+  --background: #ffffff;
+  --foreground: #030712;
+}
+
+html.light body {
+  background: #ffffff;
+  color: #030712;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }
 
 @theme inline {
@@ -16,6 +39,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-size: var(--app-font-size);
 }
 
 /* Custom scrollbar for dark theme */

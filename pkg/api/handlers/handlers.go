@@ -7,26 +7,33 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/xleaks/xleaks/pkg/config"
 	"github.com/xleaks/xleaks/pkg/content"
 	"github.com/xleaks/xleaks/pkg/feed"
 	"github.com/xleaks/xleaks/pkg/identity"
+	"github.com/xleaks/xleaks/pkg/indexer"
+	"github.com/xleaks/xleaks/pkg/p2p"
 	"github.com/xleaks/xleaks/pkg/social"
 	"github.com/xleaks/xleaks/pkg/storage"
 )
 
 // Handler holds all dependencies for HTTP API handlers.
 type Handler struct {
-	db        *storage.DB
-	cas       *content.ContentStore
-	kp        *identity.KeyPair
-	identity  *identity.Holder
-	posts     *social.PostService
-	reactions *social.ReactionService
-	profiles  *social.ProfileService
-	dms       *social.DMService
-	notifs    *social.NotificationService
-	feed      *feed.Manager
-	timeline  *feed.Timeline
+	db             *storage.DB
+	cas            *content.ContentStore
+	kp             *identity.KeyPair
+	identity       *identity.Holder
+	posts          *social.PostService
+	reactions      *social.ReactionService
+	profiles       *social.ProfileService
+	dms            *social.DMService
+	notifs         *social.NotificationService
+	feed           *feed.Manager
+	timeline       *feed.Timeline
+	indexerClient  *indexer.IndexerClient
+	p2pHost        *p2p.Host
+	cfg            *config.Config
+	cfgPath        string
 }
 
 // New creates a new Handler with all dependencies.
@@ -48,6 +55,22 @@ func New(db *storage.DB, cas *content.ContentStore, kp *identity.KeyPair, posts 
 // SetIdentityHolder sets the shared identity holder for create/unlock/lock operations.
 func (h *Handler) SetIdentityHolder(holder *identity.Holder) {
 	h.identity = holder
+}
+
+// SetIndexerClient sets the indexer client used for search and trending queries.
+func (h *Handler) SetIndexerClient(client *indexer.IndexerClient) {
+	h.indexerClient = client
+}
+
+// SetP2PHost sets the P2P host for node status and peer queries.
+func (h *Handler) SetP2PHost(host *p2p.Host) {
+	h.p2pHost = host
+}
+
+// SetConfig sets the node configuration and its file path for config endpoints.
+func (h *Handler) SetConfig(cfg *config.Config, cfgPath string) {
+	h.cfg = cfg
+	h.cfgPath = cfgPath
 }
 
 // respondJSON writes a JSON response with the given status code.

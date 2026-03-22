@@ -11,9 +11,43 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
+let apiToken: string | null = null;
+
+/**
+ * Initializes the API token by reading from a cookie. If no cookie is found
+ * the token is left empty. When the server has no token configured, requests
+ * without an Authorization header are allowed through.
+ */
+async function initToken(): Promise<void> {
+  if (apiToken !== null) return;
+
+  // Try reading from cookie first.
+  const cookieToken = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith('xleaks_token='))
+    ?.split('=')[1];
+  if (cookieToken) {
+    apiToken = cookieToken;
+    return;
+  }
+
+  // No cookie found; leave as empty string (no auth header sent).
+  apiToken = '';
+}
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiToken) {
+    headers['Authorization'] = `Bearer ${apiToken}`;
+  }
+  return headers;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  await initToken();
+
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     ...options,
   });
   if (!res.ok) {
@@ -126,10 +160,19 @@ export async function sendDM(data: {
 
 // Media
 export async function uploadMedia(file: File): Promise<{ cid: string }> {
+  await initToken();
+
   const formData = new FormData();
   formData.append('file', file);
+
+  const headers: Record<string, string> = {};
+  if (apiToken) {
+    headers['Authorization'] = `Bearer ${apiToken}`;
+  }
+
   const res = await fetch(`${API_BASE}/media`, {
     method: 'POST',
+    headers,
     body: formData,
   });
   if (!res.ok) {
@@ -141,6 +184,31 @@ export async function uploadMedia(file: File): Promise<{ cid: string }> {
 // Node
 export async function getNodeStatus(): Promise<NodeStatus> {
   return request('/node/status');
+}
+
+export async function getNodeConfig(): Promise<{
+  maxStorageGB: number;
+  bootstrapPeers: string[];
+  relayEnabled: boolean;
+}> {
+  return request('/node/config');
+}
+
+export async function updateNodeConfig(data: {
+  maxStorageGB?: number;
+}): Promise<void> {
+  await request('/node/config', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+// Repost
+export async function createRepost(postCid: string): Promise<Post> {
+  return request('/repost', {
+    method: 'POST',
+    body: JSON.stringify({ post_cid: postCid }),
+  });
 }
 
 // Identity

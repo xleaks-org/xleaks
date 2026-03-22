@@ -18,6 +18,7 @@ import (
 	"github.com/xleaks/xleaks/pkg/content"
 	"github.com/xleaks/xleaks/pkg/feed"
 	"github.com/xleaks/xleaks/pkg/identity"
+	"github.com/xleaks/xleaks/pkg/indexer"
 	"github.com/xleaks/xleaks/pkg/p2p"
 	"github.com/xleaks/xleaks/pkg/social"
 	"github.com/xleaks/xleaks/pkg/storage"
@@ -81,8 +82,9 @@ func run() error {
 	}
 	_ = mediaCAS // Used for media chunk storage
 
-	// Initialize identity holder.
+	// Initialize identity holder with DB access for multi-identity support.
 	idHolder := identity.NewHolder(dataDir)
+	idHolder.SetDB(db)
 
 	// Try to load identity. If none exists, the UI will handle onboarding.
 	var kp *identity.KeyPair
@@ -217,6 +219,29 @@ func run() error {
 
 	timeline := feed.NewTimeline(db, kp.PublicKeyBytes())
 
+	// Initialize indexer client for search/trending queries.
+	idxClient := indexer.NewIndexerClient()
+
+	// Initialize content replication with storage eviction.
+	replicator := feed.NewReplicator(db, cas)
+	maxStorageBytes := int64(cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
+	replicator.StartStorageManager(ctx, maxStorageBytes, 5*time.Minute)
+
+	// Set up content exchange (serve stored content to peers).
+	ce := p2pHost.ContentExchange()
+	if ce != nil {
+		ce.SetContentFetcher(func(cidHex string) ([]byte, error) {
+			cidBytes, err := content.HexToCID(cidHex)
+			if err != nil {
+				return nil, err
+			}
+			return cas.Get(cidBytes)
+		})
+	}
+
+	// Determine config path.
+	cfgPath := filepath.Join(dataDir, "config.toml")
+
 	// Create API server.
 	deps := &api.HandlerDeps{
 		DB:             db,
@@ -230,6 +255,10 @@ func run() error {
 		Notifs:         notifService,
 		Feed:           feedManager,
 		Timeline:       timeline,
+		P2PHost:        p2pHost,
+		Config:         cfg,
+		ConfigPath:     cfgPath,
+		IndexerClient:  idxClient,
 	}
 
 	server := api.NewServer(cfg.API.ListenAddress, deps)
