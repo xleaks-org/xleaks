@@ -1,8 +1,8 @@
 # Binaries
 /bin/
 /build/
-xleaks
-xleaks-*
+/xleaks
+/xleaks-*
 *.exe
 
 # Go

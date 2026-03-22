@@ -1,0 +1,136 @@
+package storage
+
+import (
+	"fmt"
+	"time"
+)
+
+// DMRow represents a single row from the direct_messages table.
+type DMRow struct {
+	CID              []byte
+	Author           []byte
+	Recipient        []byte
+	EncryptedContent []byte
+	Nonce            []byte
+	Timestamp        int64
+	Read             bool
+}
+
+// ConversationSummary represents a DM conversation with the most recent
+// message metadata, used for listing conversations.
+type ConversationSummary struct {
+	PeerPubkey       []byte
+	LastTimestamp     int64
+	LastAuthor       []byte
+	EncryptedContent []byte
+	Nonce            []byte
+	UnreadCount      int
+}
+
+// InsertDM inserts a new direct message.
+func (db *DB) InsertDM(cid, author, recipient, encryptedContent, nonce []byte, timestamp int64) error {
+	_, err := db.Exec(
+		`INSERT OR IGNORE INTO direct_messages (cid, author, recipient, encrypted_content, nonce, timestamp)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		cid, author, recipient, encryptedContent, nonce, timestamp,
+	)
+	if err != nil {
+		return fmt.Errorf("insert dm: %w", err)
+	}
+	return nil
+}
+
+// GetConversation retrieves messages between two parties, paginated by
+// timestamp (descending). Pass 0 for before to start from the most recent.
+func (db *DB) GetConversation(pubkey1, pubkey2 []byte, before int64, limit int) ([]DMRow, error) {
+	if before == 0 {
+		before = time.Now().UnixMilli() + 1
+	}
+	rows, err := db.Query(
+		`SELECT cid, author, recipient, encrypted_content, nonce, timestamp, read
+		 FROM direct_messages
+		 WHERE ((author = ? AND recipient = ?) OR (author = ? AND recipient = ?))
+		   AND timestamp < ?
+		 ORDER BY timestamp DESC
+		 LIMIT ?`,
+		pubkey1, pubkey2, pubkey2, pubkey1, before, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get conversation: %w", err)
+	}
+	defer rows.Close()
+
+	var dms []DMRow
+	for rows.Next() {
+		var d DMRow
+		var readInt int
+		if err := rows.Scan(&d.CID, &d.Author, &d.Recipient, &d.EncryptedContent, &d.Nonce, &d.Timestamp, &readInt); err != nil {
+			return nil, fmt.Errorf("scan dm row: %w", err)
+		}
+		d.Read = readInt == 1
+		dms = append(dms, d)
+	}
+	return dms, rows.Err()
+}
+
+// GetConversations lists all conversations for the given own public key,
+// returning one summary per conversation partner with the latest message info.
+func (db *DB) GetConversations(ownPubkey []byte) ([]ConversationSummary, error) {
+	rows, err := db.Query(
+		`SELECT
+		     CASE WHEN author = ? THEN recipient ELSE author END AS peer,
+		     MAX(timestamp) AS last_ts
+		 FROM direct_messages
+		 WHERE author = ? OR recipient = ?
+		 GROUP BY peer
+		 ORDER BY last_ts DESC`,
+		ownPubkey, ownPubkey, ownPubkey,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get conversations: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []ConversationSummary
+	for rows.Next() {
+		var cs ConversationSummary
+		if err := rows.Scan(&cs.PeerPubkey, &cs.LastTimestamp); err != nil {
+			return nil, fmt.Errorf("scan conversation summary: %w", err)
+		}
+
+		// Fetch the last message details for this conversation.
+		err := db.QueryRow(
+			`SELECT author, encrypted_content, nonce
+			 FROM direct_messages
+			 WHERE ((author = ? AND recipient = ?) OR (author = ? AND recipient = ?))
+			 ORDER BY timestamp DESC
+			 LIMIT 1`,
+			ownPubkey, cs.PeerPubkey, cs.PeerPubkey, ownPubkey,
+		).Scan(&cs.LastAuthor, &cs.EncryptedContent, &cs.Nonce)
+		if err != nil {
+			return nil, fmt.Errorf("fetch last message: %w", err)
+		}
+
+		// Count unread messages from the peer.
+		err = db.QueryRow(
+			`SELECT COUNT(*) FROM direct_messages
+			 WHERE author = ? AND recipient = ? AND read = 0`,
+			cs.PeerPubkey, ownPubkey,
+		).Scan(&cs.UnreadCount)
+		if err != nil {
+			return nil, fmt.Errorf("count unread: %w", err)
+		}
+
+		summaries = append(summaries, cs)
+	}
+	return summaries, rows.Err()
+}
+
+// MarkDMRead marks a direct message as read by its CID.
+func (db *DB) MarkDMRead(cid []byte) error {
+	_, err := db.Exec(`UPDATE direct_messages SET read = 1 WHERE cid = ?`, cid)
+	if err != nil {
+		return fmt.Errorf("mark dm read: %w", err)
+	}
+	return nil
+}
