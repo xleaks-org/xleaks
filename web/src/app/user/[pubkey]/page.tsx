@@ -6,6 +6,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { getUserPosts, followUser, unfollowUser } from '@/lib/api';
 import type { FeedEntry } from '@/lib/types';
 import PostCard from '@/components/PostCard';
+import { getInitials, truncatePubkey } from '@/lib/formatters';
 
 type TabType = 'posts' | 'replies' | 'media' | 'likes';
 
@@ -15,20 +16,6 @@ const TABS: { id: TabType; label: string }[] = [
   { id: 'media', label: 'Media' },
   { id: 'likes', label: 'Likes' },
 ];
-
-function truncatePubkey(pubkey: string): string {
-  if (pubkey.length <= 16) return pubkey;
-  return `${pubkey.slice(0, 8)}...${pubkey.slice(-6)}`;
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
 
 export default function UserProfilePage() {
   const params = useParams<{ pubkey: string }>();

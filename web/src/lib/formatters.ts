@@ -81,3 +81,16 @@ export function formatDuration(seconds: number): string {
   const remainingHours = hours % 24;
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
 }
+
+/**
+ * Get avatar initials from a display name. Returns first letter uppercased.
+ */
+export function getInitials(name: string): string {
+  return (name || '?').charAt(0).toUpperCase();
+}
+
+/**
+ * Truncate a pubkey for display, showing first and last few chars.
+ * Alias for formatPubkey for backward compatibility.
+ */
+export const truncatePubkey = formatPubkey;

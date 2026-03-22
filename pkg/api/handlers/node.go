@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/xleaks/xleaks/pkg/content"
 	"github.com/xleaks/xleaks/pkg/version"
 )
 
@@ -47,8 +47,8 @@ func (h *Handler) GetNodeStatus(w http.ResponseWriter, r *http.Request) {
 		storageLimit = int64(h.cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
 		// Walk the data directory to compute used storage.
 		dataDir := h.cfg.DataDir()
-		if info, err := os.Stat(dataDir); err == nil && info.IsDir() {
-			storageUsed = dirSize(dataDir)
+		if s, err := content.DirSize(filepath.Join(dataDir, "data")); err == nil {
+			storageUsed = s
 		}
 	}
 
@@ -232,17 +232,3 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// dirSize recursively computes the total size of all files under a directory.
-func dirSize(path string) int64 {
-	var size int64
-	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // skip errors
-		}
-		if !info.IsDir() {
-			size += info.Size()
-		}
-		return nil
-	})
-	return size
-}

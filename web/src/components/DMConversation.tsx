@@ -3,17 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getConversation, sendDM } from '@/lib/api';
 import type { DirectMessage } from '@/lib/types';
+import { truncatePubkey } from '@/lib/formatters';
 
 function formatTime(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function truncatePubkey(pubkey: string): string {
-  if (pubkey.length <= 12) return pubkey;
-  return `${pubkey.slice(0, 6)}...${pubkey.slice(-4)}`;
 }
 
 export default function DMConversation({ pubkey }: { pubkey: string }) {
