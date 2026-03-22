@@ -1,0 +1,15 @@
+# Bootstrap peers for initial network connectivity.
+# These are normal nodes with no special authority.
+# Community members can add their own bootstrap peers.
+
+[[peers]]
+# XLeaks project bootstrap node 1
+address = "/dnsaddr/bootstrap1.xleaks.org/tcp/7460"
+
+[[peers]]
+# XLeaks project bootstrap node 2
+address = "/dnsaddr/bootstrap2.xleaks.org/tcp/7460"
+
+[[peers]]
+# Community bootstrap node
+address = "/dnsaddr/bootstrap3.xleaks.org/tcp/7460"

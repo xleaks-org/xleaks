@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package xleaks;
+
+option go_package = "github.com/xleaks/xleaks/proto/gen";
+
+// Post represents a user's published content on the network.
+// Posts are immutable once published - they cannot be edited or deleted.
+message Post {
+  bytes id = 1;                    // CID (content hash of this message)
+  bytes author = 2;                // 32-byte ed25519 public key
+  uint64 timestamp = 3;            // Unix timestamp in milliseconds
+  string content = 4;              // Text content (max 5000 UTF-8 characters)
+  repeated bytes media_cids = 5;   // CIDs of attached media objects
+  bytes reply_to = 6;              // CID of parent post (empty if top-level)
+  bytes repost_of = 7;             // CID of original post (empty if original)
+  repeated string tags = 8;        // Hashtags extracted from content
+  bytes signature = 9;             // ed25519 signature
+}
+
+// Reaction represents a user's reaction to a post (e.g., a "like").
+message Reaction {
+  bytes id = 1;                    // CID
+  bytes author = 2;                // 32-byte ed25519 public key
+  bytes target = 3;                // CID of the post being reacted to
+  string reaction_type = 4;        // "like" (extensible for future types)
+  uint64 timestamp = 5;
+  bytes signature = 6;
+}
+
+// Profile contains a user's public profile information.
+// Profile updates are versioned; only higher versions are accepted.
+message Profile {
+  bytes author = 1;                // 32-byte ed25519 public key
+  string display_name = 2;        // Max 50 UTF-8 characters
+  string bio = 3;                 // Max 500 UTF-8 characters
+  bytes avatar_cid = 4;           // CID of avatar image (optional)
+  bytes banner_cid = 5;           // CID of banner image (optional)
+  string website = 6;             // URL (optional, max 200 chars)
+  uint64 version = 7;             // Monotonically increasing version number
+  uint64 timestamp = 8;
+  bytes signature = 9;
+}
+
+// FollowEvent records a follow or unfollow action between users.
+message FollowEvent {
+  bytes author = 1;                // 32-byte ed25519 public key (follower)
+  bytes target = 2;                // 32-byte ed25519 public key (being followed)
+  string action = 3;               // "follow" or "unfollow"
+  uint64 timestamp = 4;
+  bytes signature = 5;
+}
+
+// DirectMessage is an end-to-end encrypted message between two users.
+message DirectMessage {
+  bytes id = 1;                    // CID
+  bytes author = 2;                // 32-byte ed25519 public key (sender)
+  bytes recipient = 3;             // 32-byte ed25519 public key (recipient)
+  bytes encrypted_content = 4;    // NaCl box encrypted payload
+  bytes nonce = 5;                // 24-byte NaCl nonce
+  uint64 timestamp = 6;
+  bytes signature = 7;
+}
+
+// MediaObject describes a media file (image, video, audio) split into chunks.
+message MediaObject {
+  bytes cid = 1;                   // CID (hash of the complete media file)
+  bytes author = 2;                // 32-byte ed25519 public key
+  string mime_type = 3;            // MIME type (image/jpeg, image/png, video/mp4, etc.)
+  uint64 size = 4;                 // Total size in bytes
+  uint32 chunk_count = 5;          // Number of 256KB chunks
+  repeated bytes chunk_cids = 6;   // Ordered list of chunk CIDs
+  uint32 width = 7;               // Width in pixels (images/video)
+  uint32 height = 8;              // Height in pixels (images/video)
+  uint32 duration = 9;            // Duration in seconds (video/audio, 0 for images)
+  bytes thumbnail_cid = 10;       // CID of thumbnail (auto-generated, max 100KB JPEG)
+  uint64 timestamp = 11;
+  bytes signature = 12;
+}
+
+// MediaChunk is a single chunk of a media file (max 256KB).
+message MediaChunk {
+  bytes cid = 1;                   // CID (hash of this chunk's data)
+  bytes parent_cid = 2;            // CID of the parent MediaObject
+  uint32 index = 3;               // Chunk sequence number (0-indexed)
+  bytes data = 4;                 // Raw bytes (max 262144 bytes = 256KB)
+}
+
+// Envelope wraps any message type for network transport.
+message Envelope {
+  oneof payload {
+    Post post = 1;
+    Reaction reaction = 2;
+    Profile profile = 3;
+    FollowEvent follow_event = 4;
+    DirectMessage direct_message = 5;
+    MediaObject media_object = 6;
+    MediaChunk media_chunk = 7;
+  }
+}
