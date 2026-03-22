@@ -23,6 +23,10 @@ type unlockIdentityRequest struct {
 	Passphrase string `json:"passphrase"`
 }
 
+type switchIdentityRequest struct {
+	Passphrase string `json:"passphrase"`
+}
+
 // CreateIdentity handles POST /api/identity/create.
 func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	var req createIdentityRequest
@@ -167,7 +171,7 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 		}
 		// No identity at all.
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"active":       false,
+			"active":         false,
 			"needsOnboarding": true,
 		})
 		return
@@ -176,7 +180,7 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 	kp := h.kp
 	if kp == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"active":       false,
+			"active":         false,
 			"needsOnboarding": true,
 		})
 		return
@@ -213,46 +217,81 @@ func (h *Handler) LockIdentity(w http.ResponseWriter, r *http.Request) {
 
 // ListIdentities handles GET /api/identity/list.
 func (h *Handler) ListIdentities(w http.ResponseWriter, r *http.Request) {
-	if h.kp == nil {
+	if h.identity == nil {
 		respondJSON(w, http.StatusOK, []interface{}{})
 		return
 	}
 
-	pubkeyHex := hex.EncodeToString(h.kp.PublicKeyBytes())
-	address, _ := identity.PubKeyToAddress(h.kp.PublicKeyBytes())
+	identities, err := h.identity.ListIdentities()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to list identities: "+err.Error())
+		return
+	}
 
-	respondJSON(w, http.StatusOK, []map[string]interface{}{
-		{
-			"pubkey":  pubkeyHex,
-			"address": address,
-			"active":  true,
-		},
-	})
+	if len(identities) == 0 {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, identities)
 }
 
 // SwitchIdentity handles PUT /api/identity/switch/{pubkey}.
 func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
-	pubkey, err := parseHexParam(r, "pubkey")
+	pubkeyBytes, err := parseHexParam(r, "pubkey")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	pubkeyHex := hex.EncodeToString(pubkeyBytes)
+
+	// Read passphrase from request body.
+	var req switchIdentityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	if req.Passphrase == "" {
+		respondError(w, http.StatusBadRequest, "passphrase is required")
+		return
+	}
+
+	if h.identity == nil {
+		respondError(w, http.StatusInternalServerError, "identity system not initialized")
+		return
+	}
+
+	if err := h.identity.SwitchIdentity(pubkeyHex, req.Passphrase); err != nil {
+		respondError(w, http.StatusUnauthorized, "failed to switch identity: "+err.Error())
+		return
+	}
+
+	// Update the handler's key pair reference.
+	h.kp = h.identity.Get()
+
+	address, _ := identity.PubKeyToAddress(pubkeyBytes)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"status": "switched",
-		"pubkey": hex.EncodeToString(pubkey),
+		"status":  "switched",
+		"pubkey":  pubkeyHex,
+		"address": address,
 	})
 }
 
 // ExportIdentity handles GET /api/identity/export.
 func (h *Handler) ExportIdentity(w http.ResponseWriter, r *http.Request) {
-	if h.kp == nil {
+	kp := h.kp
+	if kp == nil && h.identity != nil {
+		kp = h.identity.Get()
+	}
+	if kp == nil {
 		respondError(w, http.StatusNotFound, "no active identity")
 		return
 	}
 
-	pubkeyHex := hex.EncodeToString(h.kp.PublicKeyBytes())
-	address, _ := identity.PubKeyToAddress(h.kp.PublicKeyBytes())
+	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"pubkey":  pubkeyHex,

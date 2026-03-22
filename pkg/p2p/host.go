@@ -36,6 +36,9 @@ type Host struct {
 
 	// Replay protection: tracks seen message CIDs.
 	seenMessages *seenCache
+
+	// Content exchange for DHT-based content discovery and transfer.
+	contentExchange *ContentExchange
 }
 
 // topicHandle holds references to a joined topic and its subscription.
@@ -171,4 +174,11 @@ func (h *Host) PeerCount() int {
 // advanced operations that need direct access to the host interface.
 func (h *Host) LibP2PHost() libp2phost.Host {
 	return h.host
+}
+
+// ContentExchange creates and returns a new ContentExchange instance attached
+// to this host. The caller is responsible for configuring the content fetcher,
+// server, and calling ServeContent to register the stream handler.
+func (h *Host) ContentExchange() *ContentExchange {
+	return NewContentExchange(h)
 }

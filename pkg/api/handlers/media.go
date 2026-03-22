@@ -64,6 +64,14 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	// Detect mime type.
 	mimeType := http.DetectContentType(data)
 
+	// Extract media metadata (width, height, duration).
+	var width, height, duration uint32
+	if meta := content.ExtractMediaMetadata(data, mimeType); meta != nil {
+		width = meta.Width
+		height = meta.Height
+		duration = meta.Duration
+	}
+
 	// Try to generate a thumbnail for images.
 	var thumbnailCID []byte
 	if isImageMime(mimeType) {
@@ -82,7 +90,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		mimeType,
 		uint64(len(data)),
 		uint32(len(chunks)),
-		0, 0, 0, // width, height, duration - not parsed yet
+		width, height, duration,
 		thumbnailCID,
 		timestamp,
 	); err != nil {
@@ -98,6 +106,9 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		"mime_type":     mimeType,
 		"size":          len(data),
 		"chunk_count":   len(chunks),
+		"width":         width,
+		"height":        height,
+		"duration":      duration,
 		"thumbnail_cid": hexOrEmpty(thumbnailCID),
 		"filename":      header.Filename,
 	})

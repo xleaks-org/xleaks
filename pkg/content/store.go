@@ -21,6 +21,11 @@ func NewContentStore(basePath string) (*ContentStore, error) {
 	return &ContentStore{basePath: basePath}, nil
 }
 
+// BasePath returns the root directory of the content store.
+func (cs *ContentStore) BasePath() string {
+	return cs.basePath
+}
+
 // Put stores data under the given CID. The shard directory is created
 // automatically if it does not already exist.
 func (cs *ContentStore) Put(cid []byte, data []byte) error {

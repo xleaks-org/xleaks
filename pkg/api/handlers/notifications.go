@@ -46,6 +46,57 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 			"timestamp":          n.Timestamp,
 			"read":               n.Read,
 		}
+
+		// Enrich: resolve actor profile for pubkey display.
+		if h.db != nil && len(n.ActorPubkey) > 0 {
+			profile, profileErr := h.db.GetProfile(n.ActorPubkey)
+			if profileErr == nil && profile != nil {
+				// Override with freshest profile data from DB.
+				if profile.DisplayName != "" {
+					entry["actor_display_name"] = profile.DisplayName
+				}
+				if len(profile.AvatarCID) > 0 {
+					entry["actor_avatar_cid"] = hex.EncodeToString(profile.AvatarCID)
+				}
+				entry["actor_pubkey_hex"] = hex.EncodeToString(profile.Pubkey)
+			}
+		}
+
+		// Enrich: for like/reply/repost, include a snippet of the target post.
+		switch n.Type {
+		case "like", "repost":
+			if h.db != nil && len(n.TargetPostCID) > 0 {
+				post, postErr := h.db.GetPost(n.TargetPostCID)
+				if postErr == nil && post != nil {
+					entry["target_post_snippet"] = truncate(post.Content, 100)
+				}
+			}
+
+		case "reply":
+			// Include a snippet of the target post (the post being replied to).
+			if h.db != nil && len(n.TargetPostCID) > 0 {
+				post, postErr := h.db.GetPost(n.TargetPostCID)
+				if postErr == nil && post != nil {
+					entry["target_post_snippet"] = truncate(post.Content, 100)
+				}
+			}
+			// Include a snippet of the reply itself (the related CID is the reply).
+			if h.db != nil && len(n.RelatedCID) > 0 {
+				reply, replyErr := h.db.GetPost(n.RelatedCID)
+				if replyErr == nil && reply != nil {
+					entry["reply_snippet"] = truncate(reply.Content, 100)
+				}
+			}
+
+		case "dm":
+			// For DM notifications, only indicate a message was sent.
+			// Do not expose any decrypted content.
+			entry["summary"] = "sent you a message"
+
+		case "follow":
+			entry["summary"] = "started following you"
+		}
+
 		result = append(result, entry)
 	}
 
@@ -95,4 +146,13 @@ func (h *Handler) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"unread_count": count,
 	})
+}
+
+// truncate returns the first n characters of s (by rune), appending "..." if truncated.
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "..."
 }

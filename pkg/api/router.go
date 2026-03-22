@@ -2,13 +2,18 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/xleaks/xleaks/pkg/api/handlers"
+	"github.com/xleaks/xleaks/pkg/api/middleware"
+	"github.com/xleaks/xleaks/pkg/config"
 	"github.com/xleaks/xleaks/pkg/content"
 	"github.com/xleaks/xleaks/pkg/feed"
 	"github.com/xleaks/xleaks/pkg/identity"
+	"github.com/xleaks/xleaks/pkg/indexer"
+	"github.com/xleaks/xleaks/pkg/p2p"
 	"github.com/xleaks/xleaks/pkg/social"
 	"github.com/xleaks/xleaks/pkg/storage"
 )
@@ -26,6 +31,10 @@ type HandlerDeps struct {
 	Notifs         *social.NotificationService
 	Feed           *feed.Manager
 	Timeline       *feed.Timeline
+	P2PHost        *p2p.Host
+	Config         *config.Config
+	ConfigPath     string
+	IndexerClient  *indexer.IndexerClient
 }
 
 // NewRouter creates the chi router with all API routes.
@@ -36,10 +45,29 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 	r.Use(chiMiddleware.Recoverer)
 	r.Use(chiMiddleware.RequestID)
 
+	// Per-route rate limiting.
+	rl := middleware.NewRouteRateLimiter()
+	rl.AddLimit("POST /api/posts", 10, time.Minute)
+	rl.AddLimit("POST /api/reactions", 30, time.Minute)
+	rl.AddLimit("POST /api/dm", 30, time.Minute)
+	rl.AddLimit("POST /api/media", 5, time.Minute)
+	rl.AddLimit("GET", 120, time.Minute)
+	rl.SetGlobalLimit(300, time.Minute)
+	r.Use(rl.Middleware)
+
 	h := handlers.New(deps.DB, deps.CAS, deps.KeyPair, deps.Posts, deps.Reactions,
 		deps.Profiles, deps.DMs, deps.Notifs, deps.Feed, deps.Timeline)
 	if deps.IdentityHolder != nil {
 		h.SetIdentityHolder(deps.IdentityHolder)
+	}
+	if deps.P2PHost != nil {
+		h.SetP2PHost(deps.P2PHost)
+	}
+	if deps.Config != nil {
+		h.SetConfig(deps.Config, deps.ConfigPath)
+	}
+	if deps.IndexerClient != nil {
+		h.SetIndexerClient(deps.IndexerClient)
 	}
 
 	r.Route("/api", func(r chi.Router) {

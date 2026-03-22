@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/xleaks/xleaks/pkg/content"
 	"github.com/xleaks/xleaks/pkg/storage"
@@ -109,4 +112,71 @@ func (r *Replicator) EvictStaleContent(maxBytes int64) error {
 	}
 
 	return nil
+}
+
+// StartStorageManager launches a background goroutine that periodically checks
+// the CAS data directory size and evicts stale content when usage exceeds
+// maxBytes. Eviction continues until usage drops below 90% of maxBytes.
+// The goroutine exits when the context is cancelled.
+func (r *Replicator) StartStorageManager(ctx context.Context, maxBytes int64, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				r.checkAndEvict(maxBytes)
+			}
+		}
+	}()
+}
+
+// checkAndEvict calculates the current CAS directory size and evicts LRU
+// content in batches until usage drops below 90% of maxBytes.
+func (r *Replicator) checkAndEvict(maxBytes int64) {
+	dataDir := r.cas.BasePath()
+	currentSize, err := dirSize(dataDir)
+	if err != nil {
+		return
+	}
+
+	if currentSize <= maxBytes {
+		return
+	}
+
+	// Evict until we're under 90% of max.
+	target := int64(float64(maxBytes) * 0.9)
+	for currentSize > target {
+		if err := r.EvictStaleContent(maxBytes); err != nil {
+			break
+		}
+
+		// Recalculate size after eviction.
+		newSize, err := dirSize(dataDir)
+		if err != nil {
+			break
+		}
+
+		// If no progress was made (nothing to evict), stop.
+		if newSize >= currentSize {
+			break
+		}
+		currentSize = newSize
+	}
+}
+
+// dirSize recursively walks a directory and returns the total size in bytes
+// of all files it contains.
+func dirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		size += info.Size()
+		return nil
+	})
+	return size, err
 }
