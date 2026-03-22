@@ -82,6 +82,20 @@ func (hub *WSHub) Broadcast(event WSEvent) {
 	}
 }
 
+// Close gracefully shuts down all WebSocket connections by sending a close
+// frame and releasing resources.
+func (hub *WSHub) Close() {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	for client := range hub.clients {
+		client.conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"))
+		client.conn.Close()
+		close(client.send)
+		delete(hub.clients, client)
+	}
+}
+
 // ClientCount returns the number of connected WebSocket clients.
 func (hub *WSHub) ClientCount() int {
 	hub.mu.RLock()

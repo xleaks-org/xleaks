@@ -7,9 +7,9 @@ import (
 	"log"
 	"path/filepath"
 
-	pb "github.com/xleaks/xleaks/proto/gen"
+	pb "github.com/xleaks-org/xleaks/proto/gen"
 
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // Indexer represents a node running in indexer mode. It subscribes broadly

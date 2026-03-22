@@ -45,6 +45,7 @@ type IndexerConfig struct {
 	PublicAPIAddress     string   `toml:"public_api_address"`
 	MaxIndexedPublishers int      `toml:"max_indexed_publishers"`
 	TrendingWindows      []string `toml:"trending_windows"`
+	KnownIndexers        []string `toml:"known_indexers"`
 }
 
 type MediaConfig struct {

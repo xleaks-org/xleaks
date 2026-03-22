@@ -3,7 +3,7 @@ package feed
 import (
 	"encoding/hex"
 
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // FeedAssembler builds feed data from the local database, handling

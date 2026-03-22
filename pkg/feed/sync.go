@@ -7,8 +7,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // Syncer handles historical content sync when a user follows a new publisher.
@@ -55,6 +55,7 @@ func (s *Syncer) SyncPublisher(ctx context.Context, pubkey []byte) error {
 
 		cidBytes, err := content.HexToCID(cidHex)
 		if err != nil {
+			log.Printf("sync: invalid CID hex %s: %v", cidHex, err)
 			continue
 		}
 
@@ -65,21 +66,26 @@ func (s *Syncer) SyncPublisher(ctx context.Context, pubkey []byte) error {
 
 		data, err := s.replicator.OnFetchContent(ctx, cidHex)
 		if err != nil {
+			log.Printf("sync: failed to fetch content %s: %v", cidHex, err)
 			continue
 		}
 
 		// Validate the fetched data matches the CID.
 		if !content.ValidateCID(cidBytes, data) {
+			log.Printf("sync: CID validation failed for %s", cidHex)
 			continue
 		}
 
 		// Store the fetched content.
 		if err := s.replicator.cas.Put(cidBytes, data); err != nil {
+			log.Printf("sync: failed to store content %s: %v", cidHex, err)
 			continue
 		}
 
 		// Track access.
-		_ = s.db.TrackContentAccess(cidBytes, false)
+		if err := s.db.TrackContentAccess(cidBytes, false); err != nil {
+			log.Printf("sync: failed to track content access for %s: %v", cidHex, err)
+		}
 	}
 
 	// Mark sync as complete.
@@ -113,35 +119,60 @@ func (s *Syncer) GetPendingSyncs() ([][]byte, error) {
 }
 
 // StartBackgroundSync starts a goroutine that periodically checks for pending syncs.
+// It uses exponential backoff: starts at 30s, doubles on error (max 10min),
+// resets to 30s on success.
 func (s *Syncer) StartBackgroundSync(ctx context.Context) {
+	const (
+		baseInterval = 30 * time.Second
+		maxInterval  = 10 * time.Minute
+	)
+
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
+		backoff := baseInterval
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				pubkeys, err := s.GetPendingSyncs()
-				if err != nil {
-					log.Printf("background sync: failed to get pending syncs: %v", err)
-					continue
+			case <-time.After(backoff):
+			}
+
+			pubkeys, err := s.GetPendingSyncs()
+			if err != nil {
+				log.Printf("background sync: failed to get pending syncs: %v", err)
+				backoff = nextBackoff(backoff, maxInterval)
+				continue
+			}
+
+			hadError := false
+			for _, pubkey := range pubkeys {
+				select {
+				case <-ctx.Done():
+					return
+				default:
 				}
 
-				for _, pubkey := range pubkeys {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-					}
-
-					if err := s.SyncPublisher(ctx, pubkey); err != nil {
-						log.Printf("background sync: failed to sync publisher %s: %v",
-							hex.EncodeToString(pubkey)[:16], err)
-					}
+				if err := s.SyncPublisher(ctx, pubkey); err != nil {
+					log.Printf("background sync: failed to sync publisher %s: %v",
+						hex.EncodeToString(pubkey)[:16], err)
+					hadError = true
 				}
+			}
+
+			if hadError {
+				backoff = nextBackoff(backoff, maxInterval)
+			} else {
+				backoff = baseInterval
 			}
 		}
 	}()
+}
+
+// nextBackoff doubles the current backoff interval, capping at maxInterval.
+func nextBackoff(current, max time.Duration) time.Duration {
+	next := current * 2
+	if next > max {
+		return max
+	}
+	return next
 }

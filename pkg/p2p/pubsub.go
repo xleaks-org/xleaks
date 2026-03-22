@@ -55,7 +55,7 @@ func (h *Host) Subscribe(topic string, handler MessageHandler) error {
 		return fmt.Errorf("subscribing to topic %q: %w", topic, err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(h.ctx)
 
 	th := &topicHandle{
 		topic:  t,

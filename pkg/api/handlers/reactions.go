@@ -77,10 +77,12 @@ func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
+	repostData := map[string]interface{}{
 		"id":        hex.EncodeToString(post.Id),
 		"author":    hex.EncodeToString(post.Author),
 		"repost_of": hex.EncodeToString(post.RepostOf),
 		"timestamp": post.Timestamp,
-	})
+	}
+	h.emit("new_repost", repostData)
+	respondJSON(w, http.StatusCreated, repostData)
 }

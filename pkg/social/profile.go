@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/identity"
-	"github.com/xleaks/xleaks/pkg/storage"
-	pb "github.com/xleaks/xleaks/proto/gen"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/storage"
+	pb "github.com/xleaks-org/xleaks/proto/gen"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -1,4 +1,4 @@
-module github.com/xleaks/xleaks
+module github.com/xleaks-org/xleaks
 
 go 1.25.7
 

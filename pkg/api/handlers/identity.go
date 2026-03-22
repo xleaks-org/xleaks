@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/identity"
 )
 
 type createIdentityRequest struct {

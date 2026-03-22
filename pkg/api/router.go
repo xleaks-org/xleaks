@@ -6,16 +6,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/xleaks/xleaks/pkg/api/handlers"
-	"github.com/xleaks/xleaks/pkg/api/middleware"
-	"github.com/xleaks/xleaks/pkg/config"
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/feed"
-	"github.com/xleaks/xleaks/pkg/identity"
-	"github.com/xleaks/xleaks/pkg/indexer"
-	"github.com/xleaks/xleaks/pkg/p2p"
-	"github.com/xleaks/xleaks/pkg/social"
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/api/handlers"
+	"github.com/xleaks-org/xleaks/pkg/api/middleware"
+	"github.com/xleaks-org/xleaks/pkg/config"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/feed"
+	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/indexer"
+	"github.com/xleaks-org/xleaks/pkg/p2p"
+	"github.com/xleaks-org/xleaks/pkg/social"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // HandlerDeps contains all dependencies needed by API handlers.

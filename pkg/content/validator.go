@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	pb "github.com/xleaks/xleaks/proto/gen"
+	pb "github.com/xleaks-org/xleaks/proto/gen"
 	"google.golang.org/protobuf/proto"
 )
 

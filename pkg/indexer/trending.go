@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // TrendingEngine computes trending content over rolling time windows.

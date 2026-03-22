@@ -13,15 +13,15 @@ import (
 	"time"
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/xleaks/xleaks/pkg/api"
-	"github.com/xleaks/xleaks/pkg/config"
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/feed"
-	"github.com/xleaks/xleaks/pkg/identity"
-	"github.com/xleaks/xleaks/pkg/indexer"
-	"github.com/xleaks/xleaks/pkg/p2p"
-	"github.com/xleaks/xleaks/pkg/social"
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/api"
+	"github.com/xleaks-org/xleaks/pkg/config"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/feed"
+	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/indexer"
+	"github.com/xleaks-org/xleaks/pkg/p2p"
+	"github.com/xleaks-org/xleaks/pkg/social"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 func main() {
@@ -211,6 +211,35 @@ func run() error {
 
 	// Initialize indexer client for search/trending queries.
 	idxClient := indexer.NewIndexerClient()
+	for _, url := range cfg.Indexer.KnownIndexers {
+		idxClient.AddIndexer(url)
+	}
+
+	// Discover indexers via DHT every 5 minutes (only if P2P is active).
+	if p2pHost != nil {
+		go func() {
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					indexers, err := p2pHost.FindIndexers(ctx)
+					if err != nil {
+						log.Printf("DHT indexer discovery failed: %v", err)
+						continue
+					}
+					for _, info := range indexers {
+						for _, addr := range info.Addrs {
+							idxClient.AddIndexer(fmt.Sprintf("http://%s", addr.String()))
+						}
+					}
+					log.Printf("DHT indexer discovery: found %d indexer(s)", len(indexers))
+				}
+			}
+		}()
+	}
 
 	// Initialize content replication with storage eviction.
 	replicator := feed.NewReplicator(db, cas)
@@ -271,13 +300,19 @@ func run() error {
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Printf("Server shutdown error: %v", err)
 		}
-		if err := p2pHost.Close(); err != nil {
-			log.Printf("P2P host shutdown error: %v", err)
+		if p2pHost != nil {
+			if err := p2pHost.Close(); err != nil {
+				log.Printf("P2P host shutdown error: %v", err)
+			}
 		}
 	}()
 
 	log.Printf("XLeaks node starting on %s", cfg.API.ListenAddress)
-	log.Printf("Connected peers: %d", p2pHost.PeerCount())
+	if p2pHost != nil {
+		log.Printf("Connected peers: %d", p2pHost.PeerCount())
+	} else {
+		log.Println("Running in offline mode (no P2P)")
+	}
 
 	if err := server.Start(); err != nil {
 		return fmt.Errorf("server error: %w", err)
