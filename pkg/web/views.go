@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/hex"
+	"net/http"
 
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/storage"
@@ -24,7 +25,7 @@ func (h *Handler) entryToView(e *feed.TimelineEntry) PostView {
 		RepostCount:   e.RepostCount,
 		IsLiked:       e.IsLiked,
 	}
-	// Check if current user has reposted
+	// Check if current user has reposted (try global identity as fallback).
 	if kp := h.identity.Get(); kp != nil {
 		pv.IsReposted = h.db.HasReacted(kp.PublicKeyBytes(), e.Post.CID, "repost")
 	}
@@ -117,8 +118,8 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 }
 
 // buildNewPostView creates a PostView for a freshly created post.
-func (h *Handler) buildNewPostView(postID, content string) PostView {
-	user := h.currentUser()
+func (h *Handler) buildNewPostView(r *http.Request, postID, content string) PostView {
+	user := h.currentUser(r)
 	authorName := "Anonymous"
 	authorInitial := "A"
 	shortPubkey := ""

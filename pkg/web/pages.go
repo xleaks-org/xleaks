@@ -9,25 +9,27 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// homePage serves the main feed page, or redirects to onboarding if needed.
+// homePage serves the main feed page, or shows the landing page for unauthenticated visitors.
 func (h *Handler) homePage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.HasIdentity() {
-		http.Redirect(w, r, "/onboarding", http.StatusSeeOther)
-		return
+	sess := h.sessions.GetFromRequest(r)
+	if sess == nil {
+		// No session — check for global identity fallback.
+		if !h.identity.HasIdentity() {
+			h.renderLanding(w)
+			return
+		}
+		if !h.identity.IsUnlocked() {
+			h.renderLanding(w)
+			return
+		}
 	}
-	if !h.identity.IsUnlocked() {
-		data := h.pageData("", "Unlock")
-		data["Locked"] = true
-		h.renderPage(w, "onboarding.html", data)
-		return
-	}
-	data := h.pageData("home", "Home")
+	data := h.pageData(r, "home", "Home")
 	h.renderPage(w, "home.html", data)
 }
 
 // postPage serves a single post detail page.
 func (h *Handler) postPage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
+	if h.currentUser(r) == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -35,7 +37,7 @@ func (h *Handler) postPage(w http.ResponseWriter, r *http.Request) {
 	cidHex := chi.URLParam(r, "id")
 	cidBytes, err := hex.DecodeString(cidHex)
 	if err != nil {
-		data := h.pageData("", "Post")
+		data := h.pageData(r, "", "Post")
 		data["Post"] = nil
 		h.renderPage(w, "post.html", data)
 		return
@@ -43,7 +45,7 @@ func (h *Handler) postPage(w http.ResponseWriter, r *http.Request) {
 
 	post, err := h.db.GetPost(cidBytes)
 	if err != nil || post == nil {
-		data := h.pageData("", "Post")
+		data := h.pageData(r, "", "Post")
 		data["Post"] = nil
 		h.renderPage(w, "post.html", data)
 		return
@@ -56,7 +58,7 @@ func (h *Handler) postPage(w http.ResponseWriter, r *http.Request) {
 	pv.ReplyCount = replies
 	pv.RepostCount = reposts
 
-	data := h.pageData("", "Post")
+	data := h.pageData(r, "", "Post")
 	data["Post"] = &pv
 
 	// If this post is a reply, load the parent post for context.
@@ -72,7 +74,8 @@ func (h *Handler) postPage(w http.ResponseWriter, r *http.Request) {
 
 // profilePage serves a user's profile page.
 func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
+	user := h.currentUser(r)
+	if user == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -94,13 +97,9 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 		bio = profile.Bio
 	}
 
-	isOwn := false
-	kp := h.identity.Get()
-	if kp != nil {
-		isOwn = hex.EncodeToString(kp.PublicKeyBytes()) == pubkeyHex
-	}
+	isOwn := user.Pubkey == pubkeyHex
 
-	data := h.pageData("", displayName)
+	data := h.pageData(r, "", displayName)
 	data["ProfileUser"] = &ProfileView{
 		DisplayName: displayName,
 		Pubkey:      pubkeyHex,
@@ -126,17 +125,17 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 
 // trendingPage serves the trending page.
 func (h *Handler) trendingPage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
+	if h.currentUser(r) == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	data := h.pageData("trending", "Trending")
+	data := h.pageData(r, "trending", "Trending")
 	h.renderPage(w, "trending.html", data)
 }
 
 // notificationsPage serves the notifications page.
 func (h *Handler) notificationsPage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
+	if h.currentUser(r) == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -173,18 +172,18 @@ func (h *Handler) notificationsPage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	data := h.pageData("notifications", "Notifications")
+	data := h.pageData(r, "notifications", "Notifications")
 	data["Notifications"] = views
 	h.renderPage(w, "notifications.html", data)
 }
 
 // searchPage serves the search page.
 func (h *Handler) searchPage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
+	if h.currentUser(r) == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	data := h.pageData("search", "Search")
+	data := h.pageData(r, "search", "Search")
 
 	q := r.URL.Query().Get("q")
 	data["Query"] = q

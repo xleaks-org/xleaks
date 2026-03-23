@@ -30,7 +30,8 @@ func setupWebHandler(
 	p2pHost *p2p.Host,
 	dataDir string,
 ) chi.Router {
-	webHandler, err := web.NewHandler(db, idHolder, svc.Timeline)
+	sessionMgr := web.NewSessionManager()
+	webHandler, err := web.NewHandler(db, idHolder, svc.Timeline, sessionMgr)
 	if err != nil {
 		log.Printf("Warning: web UI failed to initialize: %v", err)
 		return nil

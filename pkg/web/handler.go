@@ -20,9 +20,11 @@ type IdentityChangeFunc func(kp *identity.KeyPair)
 // Handler serves the web UI HTML pages.
 type Handler struct {
 	pages            map[string]*template.Template
+	landing          *template.Template
 	partials         *template.Template
 	db               *storage.DB
 	identity         *identity.Holder
+	sessions         *SessionManager
 	timeline         *feed.Timeline
 	createPost       CreatePostFunc
 	repostPost       RepostFunc
@@ -97,7 +99,7 @@ func templateFuncMap() template.FuncMap {
 }
 
 // NewHandler creates a new web UI handler.
-func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline) (*Handler, error) {
+func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline, sm *SessionManager) (*Handler, error) {
 	funcMap := templateFuncMap()
 
 	partials, err := template.New("").Funcs(funcMap).ParseFS(
@@ -110,7 +112,7 @@ func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline) (*
 	pageFiles := []string{
 		"home.html", "onboarding.html", "settings.html", "post.html",
 		"profile.html", "notifications.html", "messages.html",
-		"search.html", "trending.html", "conversation.html",
+		"search.html", "trending.html", "conversation.html", "terms.html",
 	}
 
 	pages := make(map[string]*template.Template, len(pageFiles))
@@ -124,11 +126,21 @@ func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline) (*
 		pages[pf] = t
 	}
 
+	// Parse the landing page as a standalone template (no layout).
+	landing, err := template.New("landing.html").Funcs(funcMap).ParseFS(
+		templateFS, "templates/landing.html",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parse landing template: %w", err)
+	}
+
 	return &Handler{
 		pages:    pages,
+		landing:  landing,
 		partials: partials,
 		db:       db,
 		identity: idHolder,
+		sessions: sm,
 		timeline: tl,
 	}, nil
 }
@@ -138,6 +150,10 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	r.Get("/", h.homePage)
+	r.Get("/signup", h.signupPage)
+	r.Get("/signin", h.signinPage)
+	r.Get("/terms", h.termsPage)
+	r.Post("/terms/accept", h.handleAcceptTerms)
 	r.Get("/onboarding", h.onboardingPage)
 	r.Post("/onboarding/create", h.handleCreate)
 	r.Post("/onboarding/verify-step", h.handleVerifyStep)
@@ -172,41 +188,106 @@ func (h *Handler) Routes() chi.Router {
 }
 
 // currentUser returns the UserInfo for the currently active identity, or nil.
-func (h *Handler) currentUser() *UserInfo {
-	kp := h.identity.Get()
-	if kp == nil {
-		return nil
+// It first checks the session cookie, then falls back to the global identity holder.
+func (h *Handler) currentUser(r *http.Request) *UserInfo {
+	// Try session-based identity first.
+	sess := h.sessions.GetFromRequest(r)
+	if sess != nil {
+		pubkeyHex := sess.PubkeyHex
+		address, _ := identity.PubKeyToAddress(sess.KeyPair.PublicKeyBytes())
+
+		displayName := identity.DefaultDisplayName
+		if profile, err := h.db.GetProfile(sess.KeyPair.PublicKeyBytes()); err == nil && profile != nil && profile.DisplayName != "" {
+			displayName = profile.DisplayName
+		}
+
+		short := pubkeyHex
+		if len(short) > 16 {
+			short = shortenHex(short)
+		}
+
+		return &UserInfo{
+			DisplayName: displayName,
+			Address:     address,
+			Pubkey:      pubkeyHex,
+			ShortPubkey: short,
+		}
 	}
 
-	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
-	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
+	// Fallback to global identity (backward compat).
+	if h.identity.IsUnlocked() {
+		kp := h.identity.Get()
+		if kp != nil {
+			pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+			address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
-	displayName := identity.DefaultDisplayName
-	profile, err := h.db.GetProfile(kp.PublicKeyBytes())
-	if err == nil && profile != nil && profile.DisplayName != "" {
-		displayName = profile.DisplayName
+			displayName := identity.DefaultDisplayName
+			profile, err := h.db.GetProfile(kp.PublicKeyBytes())
+			if err == nil && profile != nil && profile.DisplayName != "" {
+				displayName = profile.DisplayName
+			}
+
+			short := pubkeyHex
+			if len(short) > 16 {
+				short = shortenHex(short)
+			}
+
+			return &UserInfo{
+				DisplayName: displayName,
+				Address:     address,
+				Pubkey:      pubkeyHex,
+				ShortPubkey: short,
+			}
+		}
 	}
 
-	short := pubkeyHex
-	if len(short) > 16 {
-		short = shortenHex(short)
-	}
-
-	return &UserInfo{
-		DisplayName: displayName,
-		Address:     address,
-		Pubkey:      pubkeyHex,
-		ShortPubkey: short,
-	}
+	return nil
 }
 
 // pageData returns the base template data for a page.
-func (h *Handler) pageData(active, title string) map[string]interface{} {
+func (h *Handler) pageData(r *http.Request, active, title string) map[string]interface{} {
 	return map[string]interface{}{
 		"Active": active,
 		"Title":  title,
-		"User":   h.currentUser(),
+		"User":   h.currentUser(r),
 	}
+}
+
+// renderLanding renders the standalone landing page for unauthenticated visitors.
+func (h *Handler) renderLanding(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.landing.ExecuteTemplate(w, "landing", nil); err != nil {
+		log.Printf("web: template error rendering landing: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+// signupPage shows the create identity form (reuses onboarding).
+func (h *Handler) signupPage(w http.ResponseWriter, r *http.Request) {
+	sess := h.sessions.GetFromRequest(r)
+	if sess != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	data := h.pageData(r, "", "Join XLeaks")
+	data["NeedsOnboarding"] = true
+	h.renderPage(w, "onboarding.html", data)
+}
+
+// signinPage shows the import/unlock options.
+func (h *Handler) signinPage(w http.ResponseWriter, r *http.Request) {
+	sess := h.sessions.GetFromRequest(r)
+	if sess != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	data := h.pageData(r, "", "Sign In")
+	if h.identity.HasIdentity() {
+		data["Locked"] = true
+	} else {
+		data["NeedsOnboarding"] = true
+	}
+	h.renderPage(w, "onboarding.html", data)
 }
 
 // renderPage renders a full page using the layout and the named content template.
