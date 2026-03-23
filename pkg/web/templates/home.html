@@ -4,7 +4,7 @@
 </header>
 
 <!-- Post Composer -->
-<form hx-post="/api/posts" hx-target="#feed" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful) this.reset()" class="border-b border-gray-800 p-4">
+<form hx-post="/web/post" hx-target="#feed" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful) this.reset()" class="border-b border-gray-800 p-4">
     <div class="flex gap-3">
         {{if .User}}
         <div class="w-10 h-10 rounded-full bg-blue-600 flex-shrink-0 flex items-center justify-center font-bold text-sm">{{slice .User.DisplayName 0 1}}</div>
