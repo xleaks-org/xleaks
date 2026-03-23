@@ -12,13 +12,13 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/identity"
 )
 
-// getKeyPair returns the key pair from the session or falls back to the global identity.
+// getKeyPair returns the key pair from the current session, or nil if not authenticated.
 func (h *Handler) getKeyPair(r *http.Request) *identity.KeyPair {
 	sess := h.sessions.GetFromRequest(r)
 	if sess != nil {
 		return sess.KeyPair
 	}
-	return h.identity.Get()
+	return nil
 }
 
 // settingsPage serves the settings page.
