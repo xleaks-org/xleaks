@@ -104,7 +104,8 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 	if h.identity.IsUnlocked() {
 		kp := h.identity.Get()
 		if kp != nil {
-			h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, "", nil, nil, "", 1, time.Now().UnixMilli())
+			// Use version 2 to ensure it overwrites the default "Anonymous" profile (version 1)
+			h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, "", nil, nil, "", 2, time.Now().UnixMilli())
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
