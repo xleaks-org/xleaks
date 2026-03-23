@@ -25,11 +25,6 @@ func (h *Handler) entryToView(e *feed.TimelineEntry) PostView {
 		RepostCount:   e.RepostCount,
 		IsLiked:       e.IsLiked,
 	}
-	// Check if current user has reposted (try global identity as fallback).
-	if kp := h.identity.Get(); kp != nil {
-		pv.IsReposted = h.db.HasReacted(kp.PublicKeyBytes(), e.Post.CID, "repost")
-	}
-
 	// Populate reply-to metadata if this post is a reply.
 	if len(e.Post.ReplyTo) > 0 {
 		pv.ReplyTo = hex.EncodeToString(e.Post.ReplyTo)
@@ -70,12 +65,6 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 
 	likeCount, replyCount, repostCount, _ := h.db.GetFullReactionCounts(p.CID)
 
-	var isLiked, isReposted bool
-	if kp := h.identity.Get(); kp != nil {
-		isLiked = h.db.HasReacted(kp.PublicKeyBytes(), p.CID, "like")
-		isReposted = h.db.HasReacted(kp.PublicKeyBytes(), p.CID, "repost")
-	}
-
 	pv := PostView{
 		ID:            cidHex,
 		AuthorName:    authorName,
@@ -86,8 +75,6 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 		LikeCount:     likeCount,
 		ReplyCount:    replyCount,
 		RepostCount:   repostCount,
-		IsLiked:       isLiked,
-		IsReposted:    isReposted,
 	}
 
 	// Populate reply-to metadata if this post is a reply.

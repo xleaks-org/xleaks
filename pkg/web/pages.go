@@ -13,15 +13,9 @@ import (
 func (h *Handler) homePage(w http.ResponseWriter, r *http.Request) {
 	sess := h.sessions.GetFromRequest(r)
 	if sess == nil {
-		// No session — check for global identity fallback.
-		if !h.identity.HasIdentity() {
-			h.renderLanding(w)
-			return
-		}
-		if !h.identity.IsUnlocked() {
-			h.renderLanding(w)
-			return
-		}
+		// No session cookie — show landing page. No fallback to global identity.
+		h.renderLanding(w)
+		return
 	}
 	data := h.pageData(r, "home", "Home")
 	h.renderPage(w, "home.html", data)

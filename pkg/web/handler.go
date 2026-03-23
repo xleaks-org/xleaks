@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/hex"
 	"fmt"
 	"html/template"
 	"log"
@@ -214,33 +213,7 @@ func (h *Handler) currentUser(r *http.Request) *UserInfo {
 		}
 	}
 
-	// Fallback to global identity (backward compat).
-	if h.identity.IsUnlocked() {
-		kp := h.identity.Get()
-		if kp != nil {
-			pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
-			address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
-
-			displayName := identity.DefaultDisplayName
-			profile, err := h.db.GetProfile(kp.PublicKeyBytes())
-			if err == nil && profile != nil && profile.DisplayName != "" {
-				displayName = profile.DisplayName
-			}
-
-			short := pubkeyHex
-			if len(short) > 16 {
-				short = shortenHex(short)
-			}
-
-			return &UserInfo{
-				DisplayName: displayName,
-				Address:     address,
-				Pubkey:      pubkeyHex,
-				ShortPubkey: short,
-			}
-		}
-	}
-
+	// No session = not authenticated. No fallback to global identity.
 	return nil
 }
 
