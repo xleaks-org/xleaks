@@ -12,7 +12,7 @@
 <!-- Profile Header -->
 <div class="border-b border-gray-800">
     <!-- Banner -->
-    <div class="h-32 bg-gradient-to-r from-blue-900 via-gray-900 to-gray-950"></div>
+    <div class="h-24 sm:h-32 bg-gradient-to-r from-blue-900 via-gray-900 to-gray-950"></div>
     <!-- Avatar & Info -->
     <div class="px-4 pb-4">
         <div class="flex justify-between items-end -mt-10 mb-3">
@@ -20,15 +20,15 @@
                 {{.ProfileUser.Initial}}
             </div>
             {{if .IsOwnProfile}}
-            <a href="/settings" class="border border-gray-600 hover:border-gray-400 text-white font-bold px-4 py-1.5 rounded-full text-sm transition-colors">Edit Profile</a>
+            <a href="/settings" class="border border-gray-600 hover:border-gray-400 text-white font-bold px-4 py-2 rounded-full text-sm transition-colors">Edit Profile</a>
             {{else}}
                 {{if .IsFollowing}}
                 <form method="POST" action="/web/unfollow/{{.ProfileUser.Pubkey}}" style="display:inline">
-                    <button class="bg-gray-700 hover:bg-red-600 text-white text-sm font-bold px-4 py-1.5 rounded-full transition-colors">Unfollow</button>
+                    <button class="bg-gray-700 hover:bg-red-600 text-white text-sm font-bold px-4 py-2 rounded-full transition-colors">Unfollow</button>
                 </form>
                 {{else}}
                 <form method="POST" action="/web/follow/{{.ProfileUser.Pubkey}}" style="display:inline">
-                    <button class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-1.5 rounded-full transition-colors">Follow</button>
+                    <button class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-full transition-colors">Follow</button>
                 </form>
                 {{end}}
             {{end}}
@@ -43,7 +43,7 @@
         {{if .ProfileUser.Bio}}
         <p class="text-sm mb-2">{{.ProfileUser.Bio}}</p>
         {{end}}
-        <div class="flex gap-4 text-sm mt-2">
+        <div class="flex flex-wrap gap-3 sm:gap-4 text-sm mt-2">
             <span><strong>{{.FollowingCount}}</strong> <span class="text-gray-400">Following</span></span>
             <span><strong>{{.FollowerCount}}</strong> <span class="text-gray-400">Followers</span></span>
             <span><strong>{{.PostCount}}</strong> <span class="text-gray-400">Posts</span></span>
