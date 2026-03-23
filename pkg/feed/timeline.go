@@ -65,6 +65,23 @@ func (t *Timeline) GetFeed(before int64, limit int) ([]TimelineEntry, error) {
 	return t.enrichPosts(posts)
 }
 
+// GetGlobalFeed returns all posts regardless of follow status, paginated.
+func (t *Timeline) GetGlobalFeed(before int64, limit int) ([]TimelineEntry, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	posts, err := t.db.GetAllPosts(before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get global feed: %w", err)
+	}
+
+	return t.enrichPosts(posts)
+}
+
 // GetUserPosts returns posts by a specific user, paginated.
 func (t *Timeline) GetUserPosts(pubkey []byte, before int64, limit int) ([]TimelineEntry, error) {
 	if limit <= 0 {

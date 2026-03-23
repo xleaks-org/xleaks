@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -51,11 +52,32 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 		before, _ = strconv.ParseInt(b, 10, 64)
 	}
 
-	entries, err := h.timeline.GetFeed(before, pageSize+1)
-	if err != nil {
-		log.Printf("web: failed to get feed: %v", err)
-		fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load feed.</p></div>`)
-		return
+	// Use global feed when ?all=1 is present or when the user follows nobody.
+	useGlobal := r.URL.Query().Get("all") == "1"
+	var entries []feed.TimelineEntry
+
+	if !useGlobal {
+		var err error
+		entries, err = h.timeline.GetFeed(before, pageSize+1)
+		if err != nil {
+			log.Printf("web: failed to get feed: %v", err)
+			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load feed.</p></div>`)
+			return
+		}
+		// Fall back to global feed if the user's personal feed is empty.
+		if len(entries) == 0 {
+			useGlobal = true
+		}
+	}
+
+	if useGlobal {
+		var err error
+		entries, err = h.timeline.GetGlobalFeed(before, pageSize+1)
+		if err != nil {
+			log.Printf("web: failed to get global feed: %v", err)
+			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load feed.</p></div>`)
+			return
+		}
 	}
 
 	hasMore := len(entries) > pageSize
@@ -74,9 +96,13 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 
 	if hasMore && len(entries) > 0 {
 		lastTs := entries[len(entries)-1].Post.Timestamp
+		allParam := ""
+		if useGlobal {
+			allParam = "&all=1"
+		}
 		fmt.Fprintf(w, `<div class="text-center py-4">`+
-			`<button hx-get="/web/feed?before=%d" hx-target="closest div" hx-swap="outerHTML" `+
-			`class="text-blue-500 hover:text-blue-400 text-sm">Load more</button></div>`, lastTs)
+			`<button hx-get="/web/feed?before=%d%s" hx-target="closest div" hx-swap="outerHTML" `+
+			`class="text-blue-500 hover:text-blue-400 text-sm">Load more</button></div>`, lastTs, allParam)
 	}
 }
 
@@ -155,7 +181,29 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 		postRows, _ = h.db.SearchPostsByContent(q, 20)
 	}
 
-	if len(postRows) == 0 {
+	posts := make([]PostView, 0, len(postRows))
+	for i := range postRows {
+		posts = append(posts, h.postRowToView(&postRows[i]))
+	}
+
+	// WU-6: If no local results, try the indexer for broader search.
+	if len(posts) == 0 && h.indexerClient != nil && h.indexerClient.Available() {
+		idxResults, err := h.indexerClient.SearchPosts(q, 1, 20)
+		if err == nil && idxResults != nil {
+			for _, hit := range idxResults.Results {
+				posts = append(posts, PostView{
+					ID:            hit.ID,
+					AuthorName:    shortenHex(hit.Author),
+					AuthorInitial: getInitial(hit.Author),
+					ShortPubkey:   shortenHex(hit.Author),
+					Content:       hit.Content,
+					RelativeTime:  "indexer",
+				})
+			}
+		}
+	}
+
+	if len(posts) == 0 {
 		fmt.Fprintf(w, `<div class="text-center py-12 text-gray-400">`+
 			`<p class="text-lg mb-2">No results for "%s"</p>`+
 			`<p class="text-sm">Try a different search term.</p></div>`,
@@ -163,10 +211,6 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	posts := make([]PostView, 0, len(postRows))
-	for i := range postRows {
-		posts = append(posts, h.postRowToView(&postRows[i]))
-	}
 	if err := h.partials.ExecuteTemplate(w, "feed_items.html", map[string]interface{}{"Posts": posts}); err != nil {
 		log.Printf("web: template error rendering search results: %v", err)
 	}

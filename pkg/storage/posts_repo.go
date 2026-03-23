@@ -98,6 +98,27 @@ func (db *DB) GetFeed(followedAuthors [][]byte, before int64, limit int) ([]Post
 	return scanPostRows(rows)
 }
 
+// GetAllPosts returns all posts, paginated by timestamp (descending).
+// Pass 0 for before to start from the most recent.
+func (db *DB) GetAllPosts(before int64, limit int) ([]PostRow, error) {
+	if before == 0 {
+		before = time.Now().UnixMilli() + 1
+	}
+	rows, err := db.Query(
+		`SELECT cid, author, content, reply_to, repost_of, timestamp, signature, received_at
+		 FROM posts
+		 WHERE timestamp < ?
+		 ORDER BY timestamp DESC
+		 LIMIT ?`,
+		before, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get all posts: %w", err)
+	}
+	defer rows.Close()
+	return scanPostRows(rows)
+}
+
 // GetThread returns all direct replies to the given post CID, ordered by
 // timestamp ascending.
 func (db *DB) GetThread(cid []byte) ([]PostRow, error) {

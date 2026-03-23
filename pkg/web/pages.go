@@ -9,6 +9,15 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// ExploreUser holds data for a single user card on the explore page.
+type ExploreUser struct {
+	Pubkey      string
+	DisplayName string
+	ShortPubkey string
+	Initial     string
+	Bio         string
+}
+
 // homePage serves the main feed page, or shows the landing page for unauthenticated visitors.
 func (h *Handler) homePage(w http.ResponseWriter, r *http.Request) {
 	sess := h.sessions.GetFromRequest(r)
@@ -200,7 +209,50 @@ func (h *Handler) searchPage(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
+		// WU-6: If no local results, try the indexer for broader search.
+		if len(results) == 0 && h.indexerClient != nil && h.indexerClient.Available() {
+			idxResults, err := h.indexerClient.SearchPosts(q, 1, 20)
+			if err == nil && idxResults != nil {
+				for _, hit := range idxResults.Results {
+					results = append(results, PostView{
+						ID:            hit.ID,
+						AuthorName:    shortenHex(hit.Author),
+						AuthorInitial: getInitial(hit.Author),
+						ShortPubkey:   shortenHex(hit.Author),
+						Content:       hit.Content,
+						RelativeTime:  "indexer",
+					})
+				}
+			}
+		}
 	}
 	data["Results"] = results
 	h.renderPage(w, "search.html", data)
+}
+
+// explorePage serves the user directory / explore page.
+func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
+	if h.currentUser(r) == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	profiles, err := h.db.GetAllProfiles()
+	if err != nil {
+		log.Printf("web: failed to get all profiles: %v", err)
+	}
+	var users []ExploreUser
+	for _, p := range profiles {
+		pubkeyHex := hex.EncodeToString(p.Pubkey)
+		users = append(users, ExploreUser{
+			Pubkey:      pubkeyHex,
+			DisplayName: p.DisplayName,
+			ShortPubkey: shortenHex(pubkeyHex),
+			Initial:     getInitial(p.DisplayName),
+			Bio:         p.Bio,
+		})
+	}
+	data := h.pageData(r, "explore", "Explore")
+	data["Users"] = users
+	h.renderPage(w, "explore.html", data)
 }

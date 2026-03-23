@@ -11,12 +11,20 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// PostIndexer is an optional interface for indexing posts and profiles
+// as they are received over the P2P network.
+type PostIndexer interface {
+	IndexPost(post *pb.Post) error
+	IndexProfile(profile *pb.Profile) error
+}
+
 // MessageProcessor handles incoming P2P messages by deserializing,
 // validating, and storing them.
 type MessageProcessor struct {
 	db       StorageWriter
 	cas      ContentWriter
 	notifier Notifier
+	indexer  PostIndexer
 }
 
 // StorageWriter defines the storage operations needed for message processing.
@@ -48,6 +56,12 @@ type Notifier interface {
 // NewMessageProcessor creates a new MessageProcessor.
 func NewMessageProcessor(db StorageWriter, cas ContentWriter, notifier Notifier) *MessageProcessor {
 	return &MessageProcessor{db: db, cas: cas, notifier: notifier}
+}
+
+// SetIndexer sets an optional PostIndexer that will be called after each
+// post or profile is stored.
+func (mp *MessageProcessor) SetIndexer(idx PostIndexer) {
+	mp.indexer = idx
 }
 
 // HandleMessage deserializes an Envelope and routes to the appropriate handler.
@@ -98,6 +112,13 @@ func (mp *MessageProcessor) handlePost(_ context.Context, post *pb.Post) error {
 		int64(post.Timestamp), post.Signature,
 	); err != nil {
 		return fmt.Errorf("insert post: %w", err)
+	}
+
+	// Feed into indexer if available.
+	if mp.indexer != nil {
+		if err := mp.indexer.IndexPost(post); err != nil {
+			log.Printf("index post error: %v", err)
+		}
 	}
 
 	// If this is a reply, create a notification and update counts on target.
@@ -179,6 +200,14 @@ func (mp *MessageProcessor) handleProfile(_ context.Context, profile *pb.Profile
 	); err != nil {
 		return fmt.Errorf("upsert profile: %w", err)
 	}
+
+	// Feed into indexer if available.
+	if mp.indexer != nil {
+		if err := mp.indexer.IndexProfile(profile); err != nil {
+			log.Printf("index profile error: %v", err)
+		}
+	}
+
 	return nil
 }
 
