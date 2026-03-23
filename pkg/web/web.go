@@ -11,9 +11,11 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/feed"
@@ -207,7 +209,7 @@ func (h *Handler) currentUser() *UserInfo {
 
 	short := pubkeyHex
 	if len(short) > 16 {
-		short = short[:8] + "..." + short[len(short)-4:]
+		short = shortenHex(short)
 	}
 
 	return &UserInfo{
@@ -305,53 +307,47 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pick 3 random positions for confirmation
-	positions := pickRandomPositions(24, 3)
-
 	data := h.pageData("", "Save Seed Phrase")
 	data["SeedPhrase"] = mnemonic
 	data["SeedWords"] = strings.Fields(mnemonic)
-	data["ConfirmPos1"] = positions[0]
-	data["ConfirmPos2"] = positions[1]
-	data["ConfirmPos3"] = positions[2]
 	h.renderPage(w, "onboarding.html", data)
 }
 
-// pickRandomPositions returns n unique random positions from 0 to total-1.
+func (h *Handler) renderSeedConfirmPage(w http.ResponseWriter, seed string, words []string, errMsg string) {
+	positions := pickRandomPositions(seedPhraseLength, 3)
+	slots, posStr := buildWordSlots(words, positions)
+
+	data := h.pageData("", "Verify Seed Phrase")
+	data["ConfirmSeed"] = true
+	data["HiddenSeed"] = seed
+	data["WordSlots"] = slots
+	data["BlankPositions"] = posStr
+	if errMsg != "" {
+		data["Error"] = errMsg
+	}
+	h.renderPage(w, "onboarding.html", data)
+}
+
+const seedPhraseLength = 24
+
 func pickRandomPositions(total, n int) []int {
 	perm := rand.Perm(total)
 	result := perm[:n]
-	// Sort for display
-	for i := 0; i < len(result); i++ {
-		for j := i + 1; j < len(result); j++ {
-			if result[i] > result[j] {
-				result[i], result[j] = result[j], result[i]
-			}
-		}
-	}
+	sort.Ints(result)
 	return result
 }
 
-// WordSlot represents a word in the seed confirmation grid.
 type WordSlot struct {
 	Word  string
 	Blank bool
 }
 
-// handleVerifyStep shows the seed confirmation page (words hidden, blanks for 3 positions).
-func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	seed := r.FormValue("seed")
-	words := strings.Fields(seed)
-	if len(words) != 24 {
-		h.renderOnboardingError(w, "Invalid seed phrase", true)
-		return
+func buildWordSlots(words []string, positions []int) ([]WordSlot, string) {
+	blankSet := make(map[int]bool, len(positions))
+	for _, p := range positions {
+		blankSet[p] = true
 	}
-
-	positions := pickRandomPositions(24, 3)
-	blankSet := map[int]bool{positions[0]: true, positions[1]: true, positions[2]: true}
-
-	slots := make([]WordSlot, 24)
+	slots := make([]WordSlot, len(words))
 	for i, word := range words {
 		if blankSet[i] {
 			slots[i] = WordSlot{Blank: true}
@@ -359,15 +355,39 @@ func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
 			slots[i] = WordSlot{Word: word}
 		}
 	}
+	parts := make([]string, len(positions))
+	for i, p := range positions {
+		parts[i] = strconv.Itoa(p)
+	}
+	return slots, strings.Join(parts, ",")
+}
 
-	posStr := fmt.Sprintf("%d,%d,%d", positions[0], positions[1], positions[2])
+func getInitial(name string) string {
+	if len(name) == 0 {
+		return "?"
+	}
+	r, _ := utf8.DecodeRuneInString(name)
+	return string(r)
+}
 
-	data := h.pageData("", "Verify Seed Phrase")
-	data["ConfirmSeed"] = true
-	data["HiddenSeed"] = seed
-	data["WordSlots"] = slots
-	data["BlankPositions"] = posStr
-	h.renderPage(w, "onboarding.html", data)
+func shortenHex(hex string) string {
+	if len(hex) > 16 {
+		return hex[:8] + "..." + hex[len(hex)-4:]
+	}
+	return hex
+}
+
+// handleVerifyStep shows the seed confirmation page (words hidden, blanks for 3 positions).
+func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	seed := r.FormValue("seed")
+	words := strings.Fields(seed)
+	if len(words) != seedPhraseLength {
+		h.renderOnboardingError(w, "Invalid seed phrase", true)
+		return
+	}
+
+	h.renderSeedConfirmPage(w, seed, words, "")
 }
 
 // handleConfirmSeed verifies the user filled in the correct words.
@@ -394,26 +414,7 @@ func (h *Handler) handleConfirmSeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !allCorrect {
-		// Re-show confirm page with error — generate new blank positions
-		positions := pickRandomPositions(24, 3)
-		blankSet := map[int]bool{positions[0]: true, positions[1]: true, positions[2]: true}
-		slots := make([]WordSlot, 24)
-		for i, word := range words {
-			if blankSet[i] {
-				slots[i] = WordSlot{Blank: true}
-			} else {
-				slots[i] = WordSlot{Word: word}
-			}
-		}
-		posNewStr := fmt.Sprintf("%d,%d,%d", positions[0], positions[1], positions[2])
-
-		data := h.pageData("", "Verify Seed Phrase")
-		data["ConfirmSeed"] = true
-		data["HiddenSeed"] = seed
-		data["WordSlots"] = slots
-		data["BlankPositions"] = posNewStr
-		data["Error"] = "Some words don't match. Try again."
-		h.renderPage(w, "onboarding.html", data)
+		h.renderSeedConfirmPage(w, seed, words, "Some words don't match. Try again.")
 		return
 	}
 
@@ -473,7 +474,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	shortPubkey := ""
 	if user != nil {
 		authorName = user.DisplayName
-		authorInitial = string([]rune(user.DisplayName)[0])
+		authorInitial = getInitial(user.DisplayName)
 		shortPubkey = user.ShortPubkey
 	}
 
@@ -621,12 +622,12 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 
 	short := pubkeyHex
 	if len(short) > 16 {
-		short = short[:8] + "..." + short[len(short)-4:]
+		short = shortenHex(short)
 	}
 
 	initial := "?"
 	if len(displayName) > 0 {
-		initial = string([]rune(displayName)[:1])
+		initial = getInitial(displayName)
 	}
 
 	isOwn := false
@@ -674,7 +675,7 @@ func (h *Handler) notificationsPage(w http.ResponseWriter, r *http.Request) {
 
 		initial := "?"
 		if len(actorName) > 0 {
-			initial = string([]rune(actorName)[:1])
+			initial = getInitial(actorName)
 		}
 
 		views = append(views, NotificationView{
@@ -723,7 +724,7 @@ func (h *Handler) messagesPage(w http.ResponseWriter, r *http.Request) {
 
 		initial := "?"
 		if len(peerName) > 0 {
-			initial = string([]rune(peerName)[:1])
+			initial = getInitial(peerName)
 		}
 
 		views = append(views, ConversationView{
@@ -805,13 +806,13 @@ func (h *Handler) entryToView(e *feed.TimelineEntry) PostView {
 
 	short := authorHex
 	if len(short) > 16 {
-		short = short[:8] + "..." + short[len(short)-4:]
+		short = shortenHex(short)
 	}
 
 	authorName := e.AuthorName
 	initial := "?"
 	if len(authorName) > 0 {
-		initial = string([]rune(authorName)[:1])
+		initial = getInitial(authorName)
 	}
 
 	return PostView{
@@ -834,7 +835,7 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 
 	short := authorHex
 	if len(short) > 16 {
-		short = short[:8] + "..." + short[len(short)-4:]
+		short = shortenHex(short)
 	}
 
 	authorName := authorHex[:16] + "..."
@@ -845,7 +846,7 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 
 	initial := "?"
 	if len(authorName) > 0 {
-		initial = string([]rune(authorName)[:1])
+		initial = getInitial(authorName)
 	}
 
 	likeCount, _ := h.db.GetReactionCount(p.CID)
