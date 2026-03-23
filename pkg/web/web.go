@@ -3,8 +3,10 @@ package web
 import (
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -15,6 +17,10 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
+
+func decodeJSON(r io.Reader, v interface{}) error {
+	return json.NewDecoder(r).Decode(v)
+}
 
 //go:embed templates/*.html
 var templateFS embed.FS
@@ -162,6 +168,7 @@ func (h *Handler) Routes() chi.Router {
 	// htmx partials
 	r.Get("/web/feed", h.feedPartial)
 	r.Get("/web/search-results", h.searchResultsPartial)
+	r.Get("/web/node-status", h.nodeStatusPartial)
 
 	return r
 }
@@ -691,4 +698,106 @@ func formatRelativeTime(timestampMs int64) string {
 	default:
 		return t.Format("Jan 2, 2006")
 	}
+}
+
+// StatusData holds formatted node status for the template.
+type StatusData struct {
+	Peers         int
+	Uptime        string
+	StorageUsed   string
+	StorageMax    string
+	Subscriptions int
+}
+
+func formatBytes(b int64) string {
+	switch {
+	case b < 1024:
+		return fmt.Sprintf("%d B", b)
+	case b < 1024*1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	case b < 1024*1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+	default:
+		return fmt.Sprintf("%.1f GB", float64(b)/(1024*1024*1024))
+	}
+}
+
+func formatDuration(secs float64) string {
+	d := time.Duration(secs) * time.Second
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h < 24 {
+		if m > 0 {
+			return fmt.Sprintf("%dh %dm", h, m)
+		}
+		return fmt.Sprintf("%dh", h)
+	}
+	days := h / 24
+	rh := h % 24
+	if rh > 0 {
+		return fmt.Sprintf("%dd %dh", days, rh)
+	}
+	return fmt.Sprintf("%dd", days)
+}
+
+func (h *Handler) nodeStatusPartial(w http.ResponseWriter, r *http.Request) {
+	// Get node status from the P2P host via the API internally
+	// For simplicity, we query our own API endpoint
+	peers := 0
+	var uptimeSecs float64
+	var storageUsed, storageLimit int64
+	subscriptions := 0
+
+	// Read from database directly
+	if h.db != nil {
+		if count, err := h.db.CountSubscriptions(); err == nil {
+			subscriptions = count
+		}
+	}
+
+	// Get P2P stats if available — call internal API
+	resp, err := http.Get("http://127.0.0.1:7470/api/node/status")
+	if err == nil {
+		defer resp.Body.Close()
+		var result struct {
+			Peers    int     `json:"peers"`
+			Uptime   float64 `json:"uptime"`
+			Storage  struct {
+				Used  int64 `json:"used"`
+				Limit int64 `json:"limit"`
+			} `json:"storage"`
+			Subscriptions int `json:"subscriptions"`
+		}
+		if err := decodeJSON(resp.Body, &result); err == nil {
+			peers = result.Peers
+			uptimeSecs = result.Uptime
+			storageUsed = result.Storage.Used
+			storageLimit = result.Storage.Limit
+			if result.Subscriptions > 0 {
+				subscriptions = result.Subscriptions
+			}
+		}
+	}
+
+	data := StatusData{
+		Peers:         peers,
+		Uptime:        formatDuration(uptimeSecs),
+		StorageUsed:   formatBytes(storageUsed),
+		StorageMax:    formatBytes(storageLimit),
+		Subscriptions: subscriptions,
+	}
+
+	tmpl := h.partials.Lookup("status_partial")
+	if tmpl == nil {
+		http.Error(w, "status template not found", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	tmpl.Execute(w, data)
 }
