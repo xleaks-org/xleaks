@@ -22,6 +22,11 @@ func (h *Handler) entryToView(e *feed.TimelineEntry) PostView {
 		LikeCount:     e.LikeCount,
 		ReplyCount:    e.ReplyCount,
 		RepostCount:   e.RepostCount,
+		IsLiked:       e.IsLiked,
+	}
+	// Check if current user has reposted
+	if kp := h.identity.Get(); kp != nil {
+		pv.IsReposted = h.db.HasReacted(kp.PublicKeyBytes(), e.Post.CID, "repost")
 	}
 
 	// Populate reply-to metadata if this post is a reply.
@@ -64,6 +69,12 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 
 	likeCount, _ := h.db.GetReactionCount(p.CID)
 
+	var isLiked, isReposted bool
+	if kp := h.identity.Get(); kp != nil {
+		isLiked = h.db.HasReacted(kp.PublicKeyBytes(), p.CID, "like")
+		isReposted = h.db.HasReacted(kp.PublicKeyBytes(), p.CID, "repost")
+	}
+
 	pv := PostView{
 		ID:            cidHex,
 		AuthorName:    authorName,
@@ -72,6 +83,8 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 		Content:       p.Content,
 		RelativeTime:  formatRelativeTime(p.Timestamp),
 		LikeCount:     likeCount,
+		IsLiked:       isLiked,
+		IsReposted:    isReposted,
 	}
 
 	// Populate reply-to metadata if this post is a reply.

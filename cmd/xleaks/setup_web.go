@@ -61,6 +61,18 @@ func setupWebHandler(
 		return hex.EncodeToString(post.Id), nil
 	})
 
+	webHandler.SetRepost(func(ctx context.Context, targetCIDHex string) (string, error) {
+		targetCID, err := hex.DecodeString(targetCIDHex)
+		if err != nil {
+			return "", fmt.Errorf("invalid target CID: %w", err)
+		}
+		post, err := svc.Posts.CreateRepost(ctx, targetCID)
+		if err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(post.Id), nil
+	})
+
 	nodeStartTime := time.Now()
 	webHandler.SetNodeStatus(func() (int, float64, int64, int64, int) {
 		uptimeSecs := time.Since(nodeStartTime).Seconds()
