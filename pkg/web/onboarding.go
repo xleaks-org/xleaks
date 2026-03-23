@@ -133,7 +133,18 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	}
 	h.notifyIdentityChange()
 	h.ensureProfile()
-	// Show profile setup page so user can set their name
+
+	// Only ask for name if profile has default "Anonymous" name
+	kp := h.identity.Get()
+	if kp != nil {
+		profile, _ := h.db.GetProfile(kp.PublicKeyBytes())
+		if profile != nil && profile.DisplayName != "" && profile.DisplayName != "Anonymous" {
+			// Profile already has a real name — go straight to home
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+	}
+	// First time on this server — ask for name
 	data := h.pageData("", "Set Your Name")
 	data["SetProfile"] = true
 	h.renderPage(w, "onboarding.html", data)
