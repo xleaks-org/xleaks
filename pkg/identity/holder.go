@@ -11,6 +11,9 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
+// DefaultDisplayName is the fallback name for users who haven't set a profile.
+const DefaultDisplayName = "Anonymous"
+
 // IdentityInfo contains display information for an identity.
 type IdentityInfo struct {
 	PubkeyHex   string `json:"pubkey"`
@@ -198,19 +201,19 @@ func (h *Holder) writeActivePubkeyHex(pubkeyHex string) error {
 func (h *Holder) saveKeyAndRegister(kp *KeyPair, passphrase string) error {
 	enc, err := EncryptPrivateKey(kp.PrivateKey, passphrase)
 	if err != nil {
-		return fmt.Errorf("failed to encrypt key: %w", err)
+		return fmt.Errorf("encrypt key: %w", err)
 	}
 
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 
 	// Ensure keys directory exists.
 	if err := os.MkdirAll(h.keysDir(), 0o755); err != nil {
-		return fmt.Errorf("failed to create keys directory: %w", err)
+		return fmt.Errorf("create keys directory: %w", err)
 	}
 
 	keyPath := h.keyFilePath(pubkeyHex)
 	if err := SaveEncryptedKey(enc, keyPath); err != nil {
-		return fmt.Errorf("failed to save key: %w", err)
+		return fmt.Errorf("save key: %w", err)
 	}
 
 	// Determine if this should be the active identity.
@@ -225,7 +228,7 @@ func (h *Holder) saveKeyAndRegister(kp *KeyPair, passphrase string) error {
 	// Register in DB.
 	if h.db != nil {
 		now := time.Now().UnixMilli()
-		if err := h.db.InsertIdentity(kp.PublicKeyBytes(), "Anonymous", isFirst, now); err != nil {
+		if err := h.db.InsertIdentity(kp.PublicKeyBytes(), DefaultDisplayName, isFirst, now); err != nil {
 			// Non-fatal: key is saved on disk.
 			_ = err
 		}
@@ -237,7 +240,7 @@ func (h *Holder) saveKeyAndRegister(kp *KeyPair, passphrase string) error {
 	// Set as active identity (always for first, or if explicitly the active one).
 	if isFirst {
 		if err := h.writeActivePubkeyHex(pubkeyHex); err != nil {
-			return fmt.Errorf("failed to write active file: %w", err)
+			return fmt.Errorf("write active file: %w", err)
 		}
 	}
 
@@ -251,17 +254,17 @@ func (h *Holder) CreateAndSave(passphrase string) (*KeyPair, string, error) {
 
 	mnemonic, err := GenerateMnemonic()
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to generate mnemonic: %w", err)
+		return nil, "", fmt.Errorf("generate mnemonic: %w", err)
 	}
 
 	seed, err := MnemonicToSeed(mnemonic, "")
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to derive seed: %w", err)
+		return nil, "", fmt.Errorf("derive seed: %w", err)
 	}
 
 	kp, err := KeyPairFromSeed(seed)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to generate key pair: %w", err)
+		return nil, "", fmt.Errorf("generate key pair: %w", err)
 	}
 
 	if err := h.saveKeyAndRegister(kp, passphrase); err != nil {
@@ -292,12 +295,12 @@ func (h *Holder) ImportAndSave(mnemonic, passphrase string) (*KeyPair, error) {
 
 	seed, err := MnemonicToSeed(mnemonic, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to derive seed: %w", err)
+		return nil, fmt.Errorf("derive seed: %w", err)
 	}
 
 	kp, err := KeyPairFromSeed(seed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate key pair: %w", err)
+		return nil, fmt.Errorf("generate key pair: %w", err)
 	}
 
 	if err := h.saveKeyAndRegister(kp, passphrase); err != nil {
@@ -338,12 +341,12 @@ func (h *Holder) Unlock(passphrase string) (*KeyPair, error) {
 	keyPath := h.keyFilePath(pubkeyHex)
 	enc, err := LoadEncryptedKey(keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load key: %w", err)
+		return nil, fmt.Errorf("load key: %w", err)
 	}
 
 	privKey, err := DecryptPrivateKey(enc, passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt key: %w", err)
+		return nil, fmt.Errorf("decrypt key: %w", err)
 	}
 
 	kp := KeyPairFromPrivateKey(privKey)
@@ -362,7 +365,7 @@ func (h *Holder) Unlock(passphrase string) (*KeyPair, error) {
 		exists, checkErr := h.db.IdentityExists(kp.PublicKeyBytes())
 		if checkErr == nil && !exists {
 			now := time.Now().UnixMilli()
-			_ = h.db.InsertIdentity(kp.PublicKeyBytes(), "Anonymous", true, now)
+			_ = h.db.InsertIdentity(kp.PublicKeyBytes(), DefaultDisplayName, true, now)
 		}
 		_ = h.db.SetActiveIdentity(kp.PublicKeyBytes())
 	}
@@ -398,7 +401,7 @@ func (h *Holder) ListIdentities() ([]IdentityInfo, error) {
 			{
 				PubkeyHex:   pubkeyHex,
 				Address:     address,
-				DisplayName: "Anonymous",
+				DisplayName: DefaultDisplayName,
 				IsActive:    true,
 			},
 		}, nil
@@ -435,12 +438,12 @@ func (h *Holder) SwitchIdentity(pubkeyHex, passphrase string) error {
 
 	enc, err := LoadEncryptedKey(keyPath)
 	if err != nil {
-		return fmt.Errorf("failed to load key for %s: %w", pubkeyHex, err)
+		return fmt.Errorf("load key for %s: %w", pubkeyHex, err)
 	}
 
 	privKey, err := DecryptPrivateKey(enc, passphrase)
 	if err != nil {
-		return fmt.Errorf("failed to decrypt key: %w", err)
+		return fmt.Errorf("decrypt key: %w", err)
 	}
 
 	kp := KeyPairFromPrivateKey(privKey)

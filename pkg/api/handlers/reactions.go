@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 )
 
@@ -19,8 +18,8 @@ type createRepostRequest struct {
 // CreateReaction handles POST /api/reactions.
 func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 	var req createReactionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -55,8 +54,8 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 // CreateRepost handles POST /api/repost.
 func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
 	var req createRepostRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

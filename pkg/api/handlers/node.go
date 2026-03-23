@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -14,6 +14,13 @@ import (
 
 // nodeStartTime records when the node started for uptime calculation.
 var nodeStartTime = time.Now()
+
+// Cached storage size to avoid walking the data directory on every status request.
+var (
+	cachedStorageSize int64
+	storageSizeTime   time.Time
+	storageSizeMu     sync.Mutex
+)
 
 // GetNodeStatus handles GET /api/node/status.
 func (h *Handler) GetNodeStatus(w http.ResponseWriter, r *http.Request) {
@@ -40,24 +47,29 @@ func (h *Handler) GetNodeStatus(w http.ResponseWriter, r *http.Request) {
 		bw["rate_out"] = stats.RateOut
 	}
 
-	// Storage: count content_access rows and compute data dir size.
+	// Storage: count content_access rows and compute data dir size (cached for 60s).
 	storageUsed := int64(0)
 	storageLimit := int64(0)
 	if h.cfg != nil {
 		storageLimit = int64(h.cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
-		// Walk the data directory to compute used storage.
-		dataDir := h.cfg.DataDir()
-		if s, err := content.DirSize(filepath.Join(dataDir, "data")); err == nil {
-			storageUsed = s
+		storageSizeMu.Lock()
+		if time.Since(storageSizeTime) > 60*time.Second {
+			dataDir := h.cfg.DataDir()
+			if s, err := content.DirSize(filepath.Join(dataDir, "data")); err == nil {
+				cachedStorageSize = s
+				storageSizeTime = time.Now()
+			}
 		}
+		storageUsed = cachedStorageSize
+		storageSizeMu.Unlock()
 	}
 
 	// Subscription count.
 	subscriptionCount := 0
 	if h.db != nil {
-		subs, err := h.db.GetSubscriptions()
+		count, err := h.db.CountSubscriptions()
 		if err == nil {
-			subscriptionCount = len(subs)
+			subscriptionCount = count
 		}
 	}
 
@@ -177,8 +189,8 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var updates map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &updates); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

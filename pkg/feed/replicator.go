@@ -11,6 +11,12 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
+// evictionTarget is the percentage of maxBytes to evict down to during storage cleanup.
+const evictionTarget = 0.85
+
+// defaultEvictionInterval is the default interval between storage eviction checks.
+const defaultEvictionInterval = 5 * time.Minute
+
 // Replicator handles fetching and pinning content from followed publishers.
 // It coordinates with the P2P layer to discover and download historical content.
 type Replicator struct {
@@ -26,6 +32,27 @@ func NewReplicator(db *storage.DB, cas *content.ContentStore) *Replicator {
 		db:  db,
 		cas: cas,
 	}
+}
+
+// fetchAndStore fetches content by CID hex, validates it, stores it in the CAS,
+// and tracks the access. This is the shared logic between replicator and syncer.
+func fetchAndStore(ctx context.Context, cidHex string, fetcher func(context.Context, string) ([]byte, error), cas *content.ContentStore, db *storage.DB) error {
+	data, err := fetcher(ctx, cidHex)
+	if err != nil {
+		return fmt.Errorf("fetch %s: %w", cidHex, err)
+	}
+	cidBytes, err := content.HexToCID(cidHex)
+	if err != nil {
+		return fmt.Errorf("parse CID %s: %w", cidHex, err)
+	}
+	if !content.ValidateCID(cidBytes, data) {
+		return fmt.Errorf("CID mismatch for %s", cidHex)
+	}
+	if err := cas.Put(cidBytes, data); err != nil {
+		return fmt.Errorf("store %s: %w", cidHex, err)
+	}
+	db.TrackContentAccess(cidBytes, false)
+	return nil
 }
 
 // PinContent marks content from a followed publisher as pinned (never evict).
@@ -65,27 +92,9 @@ func (r *Replicator) FetchMissingContent(ctx context.Context, authorPubkey []byt
 		}
 
 		cidHex := hex.EncodeToString(post.CID)
-		data, err := r.OnFetchContent(ctx, cidHex)
-		if err != nil {
-			log.Printf("replicator: failed to fetch content %s: %v", cidHex, err)
+		if err := fetchAndStore(ctx, cidHex, r.OnFetchContent, r.cas, r.db); err != nil {
+			log.Printf("replicator: %v", err)
 			continue
-		}
-
-		// Validate the fetched data matches the CID.
-		if !content.ValidateCID(post.CID, data) {
-			log.Printf("replicator: CID validation failed for %s", cidHex)
-			continue
-		}
-
-		// Store the fetched content.
-		if err := r.cas.Put(post.CID, data); err != nil {
-			log.Printf("replicator: failed to store content %s: %v", cidHex, err)
-			continue
-		}
-
-		// Track access for eviction purposes.
-		if err := r.db.TrackContentAccess(post.CID, false); err != nil {
-			log.Printf("replicator: failed to track content access for %s: %v", cidHex, err)
 		}
 	}
 
@@ -158,8 +167,8 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 
 	log.Printf("replicator: checkAndEvict: starting eviction — current=%d bytes, max=%d bytes", currentSize, maxBytes)
 
-	// Evict until we're under 85% of max.
-	targetBytes := int64(float64(maxBytes) * 0.85)
+	// Evict until we're under the eviction target percentage of max.
+	targetBytes := int64(float64(maxBytes) * evictionTarget)
 	for currentSize > targetBytes {
 		items, err := r.db.GetLRUContent(100)
 		if err != nil || len(items) == 0 {

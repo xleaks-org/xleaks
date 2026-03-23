@@ -7,9 +7,14 @@ import (
 	"log"
 	"time"
 
-	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
+
+// defaultSyncInterval is the base interval between background sync attempts.
+const defaultSyncInterval = 30 * time.Second
+
+// maxSyncBackoff is the maximum backoff duration for sync retries.
+const maxSyncBackoff = 10 * time.Minute
 
 // Syncer handles historical content sync when a user follows a new publisher.
 type Syncer struct {
@@ -53,38 +58,14 @@ func (s *Syncer) SyncPublisher(ctx context.Context, pubkey []byte) error {
 		default:
 		}
 
-		cidBytes, err := content.HexToCID(cidHex)
-		if err != nil {
-			log.Printf("sync: invalid CID hex %s: %v", cidHex, err)
+		// Skip content we already have (quick hex-to-CID check).
+		if cidBytes, err := hexToCIDSafe(cidHex); err == nil && s.replicator.cas.Has(cidBytes) {
 			continue
 		}
 
-		// Skip content we already have.
-		if s.replicator.cas.Has(cidBytes) {
+		if err := fetchAndStore(ctx, cidHex, s.replicator.OnFetchContent, s.replicator.cas, s.db); err != nil {
+			log.Printf("sync: %v", err)
 			continue
-		}
-
-		data, err := s.replicator.OnFetchContent(ctx, cidHex)
-		if err != nil {
-			log.Printf("sync: failed to fetch content %s: %v", cidHex, err)
-			continue
-		}
-
-		// Validate the fetched data matches the CID.
-		if !content.ValidateCID(cidBytes, data) {
-			log.Printf("sync: CID validation failed for %s", cidHex)
-			continue
-		}
-
-		// Store the fetched content.
-		if err := s.replicator.cas.Put(cidBytes, data); err != nil {
-			log.Printf("sync: failed to store content %s: %v", cidHex, err)
-			continue
-		}
-
-		// Track access.
-		if err := s.db.TrackContentAccess(cidBytes, false); err != nil {
-			log.Printf("sync: failed to track content access for %s: %v", cidHex, err)
 		}
 	}
 
@@ -122,13 +103,8 @@ func (s *Syncer) GetPendingSyncs() ([][]byte, error) {
 // It uses exponential backoff: starts at 30s, doubles on error (max 10min),
 // resets to 30s on success.
 func (s *Syncer) StartBackgroundSync(ctx context.Context) {
-	const (
-		baseInterval = 30 * time.Second
-		maxInterval  = 10 * time.Minute
-	)
-
 	go func() {
-		backoff := baseInterval
+		backoff := defaultSyncInterval
 
 		for {
 			select {
@@ -140,7 +116,7 @@ func (s *Syncer) StartBackgroundSync(ctx context.Context) {
 			pubkeys, err := s.GetPendingSyncs()
 			if err != nil {
 				log.Printf("background sync: failed to get pending syncs: %v", err)
-				backoff = nextBackoff(backoff, maxInterval)
+				backoff = nextBackoff(backoff, maxSyncBackoff)
 				continue
 			}
 
@@ -160,12 +136,17 @@ func (s *Syncer) StartBackgroundSync(ctx context.Context) {
 			}
 
 			if hadError {
-				backoff = nextBackoff(backoff, maxInterval)
+				backoff = nextBackoff(backoff, maxSyncBackoff)
 			} else {
-				backoff = baseInterval
+				backoff = defaultSyncInterval
 			}
 		}
 	}()
+}
+
+// hexToCIDSafe is a thin wrapper around content.HexToCID used for pre-checks.
+func hexToCIDSafe(h string) ([]byte, error) {
+	return hex.DecodeString(h)
 }
 
 // nextBackoff doubles the current backoff interval, capping at maxInterval.

@@ -2,9 +2,7 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
-	"strconv"
 )
 
 // sendDMRequest is the JSON body for POST /api/dm/{pubkey}.
@@ -41,22 +39,7 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var before int64
-	if b := r.URL.Query().Get("before"); b != "" {
-		before, err = strconv.ParseInt(b, 10, 64)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid before timestamp")
-			return
-		}
-	}
-
-	limit := 50
-	if l := r.URL.Query().Get("limit"); l != "" {
-		limit, err = strconv.Atoi(l)
-		if err != nil || limit <= 0 {
-			limit = 50
-		}
-	}
+	before, limit := parsePagination(r, 50)
 
 	messages, err := h.db.GetConversation(h.kp.PublicKeyBytes(), peerPubkey, before, limit)
 	if err != nil {
@@ -87,8 +70,8 @@ func (h *Handler) SendDM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req sendDMRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

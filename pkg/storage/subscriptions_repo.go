@@ -55,6 +55,16 @@ func (db *DB) GetSubscriptions() ([]SubscriptionRow, error) {
 	return subs, rows.Err()
 }
 
+// CountSubscriptions returns the total number of subscriptions without fetching all rows.
+func (db *DB) CountSubscriptions() (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM subscriptions").Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count subscriptions: %w", err)
+	}
+	return count, nil
+}
+
 // IsSubscribed returns true if the user is currently subscribed to the given
 // public key.
 func (db *DB) IsSubscribed(pubkey []byte) bool {

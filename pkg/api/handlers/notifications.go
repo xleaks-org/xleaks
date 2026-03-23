@@ -6,33 +6,21 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // GetNotifications handles GET /api/notifications?before=TIMESTAMP.
 func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
-	var before int64
-	var err error
-	if b := r.URL.Query().Get("before"); b != "" {
-		before, err = strconv.ParseInt(b, 10, 64)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid before timestamp")
-			return
-		}
-	}
-
-	limit := 20
-	if l := r.URL.Query().Get("limit"); l != "" {
-		limit, err = strconv.Atoi(l)
-		if err != nil || limit <= 0 {
-			limit = 20
-		}
-	}
+	before, limit := parsePagination(r, 20)
 
 	notifs, err := h.notifs.GetNotifications(before, limit)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// Build a local profile cache to avoid N+1 queries for the same actor.
+	profileCache := make(map[string]*storage.ProfileRow)
 
 	result := make([]map[string]interface{}, 0, len(notifs))
 	for _, n := range notifs {
@@ -47,11 +35,15 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 			"read":               n.Read,
 		}
 
-		// Enrich: resolve actor profile for pubkey display.
+		// Enrich: resolve actor profile for pubkey display (with cache).
 		if h.db != nil && len(n.ActorPubkey) > 0 {
-			profile, profileErr := h.db.GetProfile(n.ActorPubkey)
-			if profileErr == nil && profile != nil {
-				// Override with freshest profile data from DB.
+			key := hex.EncodeToString(n.ActorPubkey)
+			if _, ok := profileCache[key]; !ok {
+				p, _ := h.db.GetProfile(n.ActorPubkey)
+				profileCache[key] = p
+			}
+			profile := profileCache[key]
+			if profile != nil {
 				if profile.DisplayName != "" {
 					entry["actor_display_name"] = profile.DisplayName
 				}
