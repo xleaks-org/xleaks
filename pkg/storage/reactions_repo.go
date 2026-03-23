@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"fmt"
 )
 
@@ -107,6 +108,49 @@ func (db *DB) UpdateReactionCount(postCID []byte) error {
 	)
 	if err != nil {
 		return fmt.Errorf("upsert reaction counts: %w", err)
+	}
+	return nil
+}
+
+// UpdateReactionCountTx recalculates reaction counts within an existing transaction.
+func (db *DB) UpdateReactionCountTx(tx *sql.Tx, postCID []byte) error {
+	var likeCount, replyCount, repostCount int
+
+	err := tx.QueryRow(
+		`SELECT COUNT(*) FROM reactions WHERE target = ? AND reaction_type = 'like'`,
+		postCID,
+	).Scan(&likeCount)
+	if err != nil {
+		return fmt.Errorf("count likes tx: %w", err)
+	}
+
+	err = tx.QueryRow(
+		`SELECT COUNT(*) FROM posts WHERE reply_to = ?`,
+		postCID,
+	).Scan(&replyCount)
+	if err != nil {
+		return fmt.Errorf("count replies tx: %w", err)
+	}
+
+	err = tx.QueryRow(
+		`SELECT COUNT(*) FROM posts WHERE repost_of = ?`,
+		postCID,
+	).Scan(&repostCount)
+	if err != nil {
+		return fmt.Errorf("count reposts tx: %w", err)
+	}
+
+	_, err = tx.Exec(
+		`INSERT INTO reaction_counts (post_cid, like_count, reply_count, repost_count)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(post_cid) DO UPDATE SET
+		     like_count = excluded.like_count,
+		     reply_count = excluded.reply_count,
+		     repost_count = excluded.repost_count`,
+		postCID, likeCount, replyCount, repostCount,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert reaction counts tx: %w", err)
 	}
 	return nil
 }

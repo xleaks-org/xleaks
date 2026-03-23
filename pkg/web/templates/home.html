@@ -20,6 +20,11 @@
     </div>
 </form>
 
+<!-- New Posts Banner (hidden by default, shown by WebSocket) -->
+<div id="new-posts-badge" style="display:none" onclick="location.reload()" class="cursor-pointer text-center py-2 bg-blue-500/20 text-blue-400 text-sm border-b border-gray-800">
+    New posts available
+</div>
+
 <!-- Feed -->
 <div id="feed" hx-get="/web/feed" hx-trigger="load" hx-swap="innerHTML">
     <div class="flex justify-center py-12">

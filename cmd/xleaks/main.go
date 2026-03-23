@@ -278,6 +278,28 @@ func run() error {
 			}
 			return hex.EncodeToString(post.Id), nil
 		})
+
+		// Wire node status callback so the web UI can read status directly
+		// instead of making an HTTP round-trip to the API.
+		nodeStartTime := time.Now()
+		webHandler.SetNodeStatus(func() (peers int, uptimeSecs float64, storageUsed, storageLimit int64, subscriptions int) {
+			uptimeSecs = time.Since(nodeStartTime).Seconds()
+			storageLimit = int64(cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
+
+			if p2pHost != nil {
+				peers = p2pHost.PeerCount()
+			}
+
+			if s, err := content.DirSize(filepath.Join(dataDir, "data")); err == nil {
+				storageUsed = s
+			}
+
+			if count, err := db.CountSubscriptions(); err == nil {
+				subscriptions = count
+			}
+
+			return
+		})
 	}
 
 	// Create API server.

@@ -73,3 +73,15 @@ func (db *DB) InsertPostMedia(postCID, mediaCID []byte, position int) error {
 	}
 	return nil
 }
+
+// InsertPostMediaTx links a media object to a post within an existing transaction.
+func (db *DB) InsertPostMediaTx(tx *sql.Tx, postCID, mediaCID []byte, position int) error {
+	_, err := tx.Exec(
+		`INSERT OR IGNORE INTO post_media (post_cid, media_cid, position) VALUES (?, ?, ?)`,
+		postCID, mediaCID, position,
+	)
+	if err != nil {
+		return fmt.Errorf("insert post media tx: %w", err)
+	}
+	return nil
+}

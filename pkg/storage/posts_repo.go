@@ -194,6 +194,102 @@ func (db *DB) GetPostsByTag(tag string, before int64, limit int) ([]PostRow, err
 	return scanPostRows(rows)
 }
 
+// InsertPostTx inserts a new post within an existing transaction.
+func (db *DB) InsertPostTx(tx *sql.Tx, cid, author []byte, content string, replyTo, repostOf []byte, timestamp int64, signature []byte) error {
+	receivedAt := time.Now().UnixMilli()
+	_, err := tx.Exec(
+		`INSERT INTO posts (cid, author, content, reply_to, repost_of, timestamp, signature, received_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		cid, author, content, nilIfEmpty(replyTo), nilIfEmpty(repostOf), timestamp, signature, receivedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert post tx: %w", err)
+	}
+	return nil
+}
+
+// InsertPostTagsTx bulk-inserts post tag rows within an existing transaction.
+func (db *DB) InsertPostTagsTx(tx *sql.Tx, postCID []byte, tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, len(tags))
+	args := make([]interface{}, 0, len(tags)*2)
+	for i, tag := range tags {
+		placeholders[i] = "(?, ?)"
+		args = append(args, postCID, tag)
+	}
+
+	query := fmt.Sprintf(
+		`INSERT OR IGNORE INTO post_tags (post_cid, tag) VALUES %s`,
+		strings.Join(placeholders, ", "),
+	)
+
+	if _, err := tx.Exec(query, args...); err != nil {
+		return fmt.Errorf("insert post tags tx: %w", err)
+	}
+	return nil
+}
+
+// CountPostsByAuthor returns the number of posts by the given author.
+func (db *DB) CountPostsByAuthor(author []byte) (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM posts WHERE author = ?", author).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count posts by author: %w", err)
+	}
+	return count, nil
+}
+
+// TagCount represents a hashtag and its usage count.
+type TagCount struct {
+	Tag   string
+	Count int
+}
+
+// GetTrendingTags returns the most frequently used hashtags, ordered by
+// occurrence count descending.
+func (db *DB) GetTrendingTags(limit int) ([]TagCount, error) {
+	rows, err := db.Query(
+		`SELECT tag, COUNT(*) AS cnt FROM post_tags GROUP BY tag ORDER BY cnt DESC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get trending tags: %w", err)
+	}
+	defer rows.Close()
+
+	var tags []TagCount
+	for rows.Next() {
+		var tc TagCount
+		if err := rows.Scan(&tc.Tag, &tc.Count); err != nil {
+			return nil, fmt.Errorf("scan trending tag: %w", err)
+		}
+		tags = append(tags, tc)
+	}
+	return tags, rows.Err()
+}
+
+// SearchPostsByContent returns posts whose content matches the given query
+// using a SQL LIKE search, paginated by timestamp descending.
+func (db *DB) SearchPostsByContent(query string, limit int) ([]PostRow, error) {
+	pattern := "%" + query + "%"
+	rows, err := db.Query(
+		`SELECT cid, author, content, reply_to, repost_of, timestamp, signature, received_at
+		 FROM posts
+		 WHERE content LIKE ?
+		 ORDER BY timestamp DESC
+		 LIMIT ?`,
+		pattern, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("search posts by content: %w", err)
+	}
+	defer rows.Close()
+	return scanPostRows(rows)
+}
+
 // nilIfEmpty returns nil if the byte slice is empty, otherwise returns the
 // slice as-is. This ensures that empty byte slices are stored as NULL in
 // SQLite rather than as empty blobs.
