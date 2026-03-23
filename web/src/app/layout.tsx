@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import Sidebar from '@/components/Sidebar';
 import NodeStatus from '@/components/NodeStatus';
@@ -8,13 +8,8 @@ import SearchBar from '@/components/SearchBar';
 import AuthGuard from '@/components/AuthGuard';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+const inter = Inter({
+  variable: '--font-inter',
   subsets: ['latin'],
 });
 
@@ -31,21 +26,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${inter.variable} h-full antialiased dark`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: `
-          // Fix for SES lockdown (MetaMask etc.) which patches Object.entries
-          // to throw on null/undefined, breaking React 19 internals.
-          try {
-            var _origEntries = Object.entries;
-            Object.entries = function(obj) {
-              if (obj == null) return [];
-              return _origEntries.call(Object, obj);
-            };
-          } catch(e) {}
-        `}} />
-      </head>
       <body className="min-h-full bg-gray-950 text-white">
         <ErrorBoundary>
         <AuthGuard>
