@@ -4,10 +4,8 @@ import (
 	"context"
 	"embed"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -22,10 +20,6 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
-
-func decodeJSON(r io.Reader, v interface{}) error {
-	return json.NewDecoder(r).Decode(v)
-}
 
 //go:embed templates/*.html
 var templateFS embed.FS
@@ -82,6 +76,11 @@ type ProfileView struct {
 // CreatePostFunc is a callback to create a post, avoiding direct dependency on social package.
 type CreatePostFunc func(ctx context.Context, content string) (id string, err error)
 
+// NodeStatusFunc is a callback that returns live node status without making
+// an HTTP round-trip to the API server. Returns peer count, uptime in seconds,
+// storage used bytes, storage limit bytes, and subscription count.
+type NodeStatusFunc func() (peers int, uptimeSecs float64, storageUsed, storageLimit int64, subscriptions int)
+
 // Handler serves the web UI HTML pages.
 type Handler struct {
 	pages      map[string]*template.Template
@@ -90,11 +89,17 @@ type Handler struct {
 	identity   *identity.Holder
 	timeline   *feed.Timeline
 	createPost CreatePostFunc
+	nodeStatus NodeStatusFunc
 }
 
 // SetCreatePost sets the post creation callback.
 func (h *Handler) SetCreatePost(fn CreatePostFunc) {
 	h.createPost = fn
+}
+
+// SetNodeStatus sets the node status callback.
+func (h *Handler) SetNodeStatus(fn NodeStatusFunc) {
+	h.nodeStatus = fn
 }
 
 // templateFuncMap returns the shared template function map.
@@ -137,6 +142,8 @@ func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline) (*
 		"notifications.html",
 		"messages.html",
 		"search.html",
+		"trending.html",
+		"conversation.html",
 	}
 
 	pages := make(map[string]*template.Template, len(pageFiles))
@@ -180,13 +187,19 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/user/{pubkey}", h.profilePage)
 	r.Get("/notifications", h.notificationsPage)
 	r.Get("/messages", h.messagesPage)
+	r.Get("/messages/{pubkey}", h.conversationPage)
 	r.Get("/search", h.searchPage)
+	r.Get("/trending", h.trendingPage)
+	r.Post("/settings/profile", h.handleUpdateProfile)
+	r.Get("/settings/toggle-theme", h.handleToggleTheme)
 
 	// htmx partials
 	r.Get("/web/feed", h.feedPartial)
 	r.Post("/web/post", h.handlePost)
 	r.Get("/web/search-results", h.searchResultsPartial)
 	r.Get("/web/node-status", h.nodeStatusPartial)
+	r.Get("/web/trending-tags", h.trendingTagsPartial)
+	r.Post("/web/send-dm", h.handleSendDM)
 
 	return r
 }
@@ -245,6 +258,7 @@ func (h *Handler) renderPage(w http.ResponseWriter, tmplName string, data map[st
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
+
 
 // homePage serves the main feed page, or redirects to onboarding if needed.
 func (h *Handler) homePage(w http.ResponseWriter, r *http.Request) {
@@ -562,6 +576,22 @@ func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := h.pageData("settings", "Settings")
+
+	// Load bio for profile edit form
+	bio := ""
+	kp := h.identity.Get()
+	if kp != nil {
+		profile, err := h.db.GetProfile(kp.PublicKeyBytes())
+		if err == nil && profile != nil {
+			bio = profile.Bio
+		}
+	}
+	data["Bio"] = bio
+
+	// Theme toggle
+	cookie, err := r.Cookie("theme")
+	data["DarkMode"] = err != nil || cookie.Value != "light"
+
 	h.renderPage(w, "settings.html", data)
 }
 
@@ -646,7 +676,8 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 		Bio:         bio,
 	}
 	data["IsOwnProfile"] = isOwn
-	data["PostCount"] = 0 // Could count posts, but keeping it simple.
+	postCount, _ := h.db.CountPostsByAuthor(pubkeyBytes)
+	data["PostCount"] = postCount
 	h.renderPage(w, "profile.html", data)
 }
 
@@ -764,9 +795,36 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Search is handled via the API/indexer; for now, show a placeholder.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<div class="text-center py-12 text-gray-400"><p class="text-lg mb-2">No results for "%s"</p><p class="text-sm">Try a different search term.</p></div>`, template.HTMLEscapeString(q))
+
+	var postRows []storage.PostRow
+
+	// Search by hashtag first
+	if strings.HasPrefix(q, "#") {
+		tag := strings.TrimPrefix(q, "#")
+		postRows, _ = h.db.GetPostsByTag(tag, 0, 20)
+	} else {
+		// Full-text content search
+		postRows, _ = h.db.SearchPostsByContent(q, 20)
+	}
+
+	if len(postRows) == 0 {
+		fmt.Fprintf(w, `<div class="text-center py-12 text-gray-400"><p class="text-lg mb-2">No results for "%s"</p><p class="text-sm">Try a different search term.</p></div>`, template.HTMLEscapeString(q))
+		return
+	}
+
+	posts := make([]PostView, 0, len(postRows))
+	for i := range postRows {
+		posts = append(posts, h.postRowToView(&postRows[i]))
+	}
+
+	data := map[string]interface{}{
+		"Posts": posts,
+	}
+
+	if err := h.partials.ExecuteTemplate(w, "feed_items.html", data); err != nil {
+		log.Printf("web: template error rendering search results: %v", err)
+	}
 }
 
 // feedPartial returns feed items as an htmx partial.
@@ -778,11 +836,23 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := h.timeline.GetFeed(0, 50)
+	const pageSize = 20
+
+	var before int64
+	if b := r.URL.Query().Get("before"); b != "" {
+		before, _ = strconv.ParseInt(b, 10, 64)
+	}
+
+	entries, err := h.timeline.GetFeed(before, pageSize+1)
 	if err != nil {
 		log.Printf("web: failed to get feed: %v", err)
 		fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load feed.</p></div>`)
 		return
+	}
+
+	hasMore := len(entries) > pageSize
+	if hasMore {
+		entries = entries[:pageSize]
 	}
 
 	posts := make([]PostView, 0, len(entries))
@@ -796,6 +866,12 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.partials.ExecuteTemplate(w, "feed_items.html", data); err != nil {
 		log.Printf("web: template error rendering feed_items: %v", err)
+	}
+
+	// Render "Load more" button if there are more items
+	if hasMore && len(entries) > 0 {
+		lastTs := entries[len(entries)-1].Post.Timestamp
+		fmt.Fprintf(w, `<div class="text-center py-4"><button hx-get="/web/feed?before=%d" hx-target="closest div" hx-swap="outerHTML" class="text-blue-500 hover:text-blue-400 text-sm">Load more</button></div>`, lastTs)
 	}
 }
 
@@ -945,40 +1021,18 @@ func formatDuration(secs float64) string {
 }
 
 func (h *Handler) nodeStatusPartial(w http.ResponseWriter, r *http.Request) {
-	// Get node status from the P2P host via the API internally
-	// For simplicity, we query our own API endpoint
 	peers := 0
 	var uptimeSecs float64
 	var storageUsed, storageLimit int64
 	subscriptions := 0
 
-	// Read from database directly
-	if h.db != nil {
-		if count, err := h.db.CountSubscriptions(); err == nil {
-			subscriptions = count
-		}
-	}
-
-	// Get P2P stats if available — call internal API
-	resp, err := http.Get("http://127.0.0.1:7470/api/node/status")
-	if err == nil {
-		defer resp.Body.Close()
-		var result struct {
-			Peers    int     `json:"peers"`
-			Uptime   float64 `json:"uptime"`
-			Storage  struct {
-				Used  int64 `json:"used"`
-				Limit int64 `json:"limit"`
-			} `json:"storage"`
-			Subscriptions int `json:"subscriptions"`
-		}
-		if err := decodeJSON(resp.Body, &result); err == nil {
-			peers = result.Peers
-			uptimeSecs = result.Uptime
-			storageUsed = result.Storage.Used
-			storageLimit = result.Storage.Limit
-			if result.Subscriptions > 0 {
-				subscriptions = result.Subscriptions
+	if h.nodeStatus != nil {
+		peers, uptimeSecs, storageUsed, storageLimit, subscriptions = h.nodeStatus()
+	} else {
+		// Fallback: read subscription count from database directly.
+		if h.db != nil {
+			if count, err := h.db.CountSubscriptions(); err == nil {
+				subscriptions = count
 			}
 		}
 	}
@@ -998,4 +1052,180 @@ func (h *Handler) nodeStatusPartial(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.Execute(w, data)
+}
+
+// MessageView is a template-friendly representation of a single DM message.
+type MessageView struct {
+	Content      string
+	IsSent       bool
+	RelativeTime string
+}
+
+// trendingPage serves the trending page.
+func (h *Handler) trendingPage(w http.ResponseWriter, r *http.Request) {
+	if !h.identity.IsUnlocked() {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	data := h.pageData("trending", "Trending")
+	h.renderPage(w, "trending.html", data)
+}
+
+// trendingTagsPartial returns trending hashtags as an htmx partial.
+func (h *Handler) trendingTagsPartial(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	tags, err := h.db.GetTrendingTags(10)
+	if err != nil {
+		log.Printf("web: failed to get trending tags: %v", err)
+		fmt.Fprint(w, `<p class="text-gray-400 text-sm">Could not load trending topics.</p>`)
+		return
+	}
+
+	if len(tags) == 0 {
+		fmt.Fprint(w, `<p class="text-gray-400 text-sm">No trending topics yet.</p>`)
+		return
+	}
+
+	for _, tag := range tags {
+		fmt.Fprintf(w, `<a href="/search?q=%%23%s" class="block py-2 border-b border-gray-800 last:border-0 hover:bg-gray-800/50 -mx-4 px-4 transition-colors"><span class="font-semibold text-sm">#%s</span><span class="text-xs text-gray-500 ml-2">%d posts</span></a>`,
+			template.HTMLEscapeString(tag.Tag), template.HTMLEscapeString(tag.Tag), tag.Count)
+	}
+}
+
+// conversationPage serves a DM conversation detail page.
+func (h *Handler) conversationPage(w http.ResponseWriter, r *http.Request) {
+	if !h.identity.IsUnlocked() {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	kp := h.identity.Get()
+	if kp == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	peerHex := chi.URLParam(r, "pubkey")
+	peerBytes, err := hex.DecodeString(peerHex)
+	if err != nil {
+		http.Error(w, "Invalid public key", http.StatusBadRequest)
+		return
+	}
+
+	ownPubkey := kp.PublicKeyBytes()
+
+	msgs, err := h.db.GetConversation(ownPubkey, peerBytes, 0, 50)
+	if err != nil {
+		log.Printf("web: failed to get conversation: %v", err)
+	}
+
+	// Build message views (reverse so oldest is first)
+	views := make([]MessageView, 0, len(msgs))
+	for i := len(msgs) - 1; i >= 0; i-- {
+		m := msgs[i]
+		isSent := hex.EncodeToString(m.Author) == hex.EncodeToString(ownPubkey)
+		views = append(views, MessageView{
+			Content:      "(encrypted)",
+			IsSent:       isSent,
+			RelativeTime: formatRelativeTime(m.Timestamp),
+		})
+	}
+
+	// Peer display name
+	peerName := peerHex
+	if len(peerName) > 16 {
+		peerName = peerName[:16] + "..."
+	}
+	peerProfile, err := h.db.GetProfile(peerBytes)
+	if err == nil && peerProfile != nil && peerProfile.DisplayName != "" {
+		peerName = peerProfile.DisplayName
+	}
+
+	peerShort := peerHex
+	if len(peerShort) > 16 {
+		peerShort = shortenHex(peerShort)
+	}
+
+	data := h.pageData("messages", peerName)
+	data["PeerPubkey"] = peerHex
+	data["PeerName"] = peerName
+	data["PeerShortPubkey"] = peerShort
+	data["Messages"] = views
+	h.renderPage(w, "conversation.html", data)
+}
+
+// handleSendDM handles the POST /web/send-dm form submission.
+func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
+	if !h.identity.IsUnlocked() {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	r.ParseForm()
+	recipient := r.FormValue("recipient")
+	content := strings.TrimSpace(r.FormValue("content"))
+
+	if recipient == "" || content == "" {
+		http.Error(w, "Recipient and content are required", http.StatusBadRequest)
+		return
+	}
+
+	// For now, render an optimistic response showing the sent message bubble
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<div class="flex justify-end"><div class="max-w-[75%] rounded-2xl px-4 py-2 bg-blue-600 text-white"><p class="text-sm">(encrypted)</p><p class="text-xs text-blue-200 mt-1">just now</p></div></div>`)
+}
+
+// handleUpdateProfile handles the POST /settings/profile form submission.
+func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	if !h.identity.IsUnlocked() {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	r.ParseForm()
+	displayName := strings.TrimSpace(r.FormValue("display_name"))
+	bio := strings.TrimSpace(r.FormValue("bio"))
+
+	if displayName == "" {
+		displayName = "Anonymous"
+	}
+
+	kp := h.identity.Get()
+	if kp != nil {
+		// Get current profile version
+		var version uint64 = 1
+		profile, err := h.db.GetProfile(kp.PublicKeyBytes())
+		if err == nil && profile != nil {
+			version = profile.Version + 1
+		}
+		h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, bio, nil, nil, "", version, time.Now().UnixMilli())
+	}
+
+	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+}
+
+// handleToggleTheme toggles the theme cookie between dark and light.
+func (h *Handler) handleToggleTheme(w http.ResponseWriter, r *http.Request) {
+	theme := "light"
+	cookie, err := r.Cookie("theme")
+	if err == nil && cookie.Value == "light" {
+		theme = "dark"
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "theme",
+		Value:    theme,
+		Path:     "/",
+		MaxAge:   365 * 24 * 60 * 60,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	referer := r.Header.Get("Referer")
+	if referer == "" {
+		referer = "/settings"
+	}
+	http.Redirect(w, r, referer, http.StatusSeeOther)
 }

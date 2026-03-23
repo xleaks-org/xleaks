@@ -6,6 +6,15 @@
     <title>XLeaks{{if .Title}} — {{.Title}}{{end}}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+        (function() {
+            var theme = document.cookie.split(';').find(function(c) { return c.trim().startsWith('theme='); });
+            if (theme && theme.trim().split('=')[1] === 'light') {
+                document.documentElement.classList.remove('dark');
+                document.documentElement.classList.add('light');
+            }
+        })();
+    </script>
+    <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -32,6 +41,19 @@
         ::-webkit-scrollbar-track { background: #0a0a0a; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #555; }
+        /* Light mode overrides */
+        html.light body { background: #ffffff; color: #1a1a1a; }
+        html.light .bg-\[\#0a0a0a\] { background: #ffffff; }
+        html.light .bg-\[\#0a0a0a\]\/80 { background: rgba(255,255,255,0.8); }
+        html.light .bg-\[\#0a0a0a\]\/90 { background: rgba(255,255,255,0.9); }
+        html.light .bg-gray-900 { background: #f3f4f6; }
+        html.light .bg-gray-800 { background: #e5e7eb; }
+        html.light .border-gray-800 { border-color: #e5e7eb; }
+        html.light .border-gray-700 { border-color: #d1d5db; }
+        html.light .text-white { color: #1a1a1a; }
+        html.light .text-gray-400 { color: #6b7280; }
+        html.light .text-gray-500 { color: #6b7280; }
+        html.light input, html.light textarea, html.light select { background: #f9fafb; border-color: #d1d5db; color: #1a1a1a; }
     </style>
 </head>
 <body class="min-h-screen bg-[#0a0a0a] text-white font-sans">
@@ -47,6 +69,10 @@
                 <a href="/search" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "search"}}bg-gray-800 font-semibold{{end}}">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                     Search
+                </a>
+                <a href="/trending" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "trending"}}bg-gray-800 font-semibold{{end}}">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                    Trending
                 </a>
                 <a href="/notifications" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "notifications"}}bg-gray-800 font-semibold{{end}}">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
@@ -119,5 +145,20 @@
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
         </a>
     </nav>
+
+    <!-- WebSocket for live updates -->
+    <script>
+    (function() {
+        var ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws');
+        ws.onmessage = function(e) {
+            var data = JSON.parse(e.data);
+            if (data.type === 'new_post') {
+                var badge = document.getElementById('new-posts-badge');
+                if (badge) { badge.style.display = 'block'; badge.textContent = 'New posts available \u2014 click to refresh'; }
+            }
+        };
+        ws.onclose = function() { setTimeout(function() { location.reload(); }, 30000); };
+    })();
+    </script>
 </body>
 </html>

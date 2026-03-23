@@ -2,6 +2,7 @@ package social
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -89,30 +90,30 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 		return nil, fmt.Errorf("store in CAS: %w", err)
 	}
 
-	// Store in database.
-	if err := s.storage.InsertPost(cid, post.Author, post.Content, post.ReplyTo, post.RepostOf, int64(post.Timestamp), post.Signature); err != nil {
-		return nil, fmt.Errorf("store post in DB: %w", err)
-	}
-
-	// Store hashtags.
-	if len(post.Tags) > 0 {
-		if err := s.storage.InsertPostTags(post.Id, post.Tags); err != nil {
-			return nil, fmt.Errorf("store post tags: %w", err)
+	// Store post, tags, media, and reaction counts in a single transaction.
+	err = s.storage.WithTransaction(func(tx *sql.Tx) error {
+		if err := s.storage.InsertPostTx(tx, cid, post.Author, post.Content, post.ReplyTo, post.RepostOf, int64(post.Timestamp), post.Signature); err != nil {
+			return fmt.Errorf("store post in DB: %w", err)
 		}
-	}
-
-	// Store media references.
-	for i, mediaCID := range mediaCIDs {
-		if err := s.storage.InsertPostMedia(cid, mediaCID, i); err != nil {
-			return nil, fmt.Errorf("store post media link: %w", err)
+		if len(post.Tags) > 0 {
+			if err := s.storage.InsertPostTagsTx(tx, post.Id, post.Tags); err != nil {
+				return fmt.Errorf("store post tags: %w", err)
+			}
 		}
-	}
-
-	// Update reply count on the parent if this is a reply.
-	if len(replyTo) > 0 {
-		if err := s.storage.UpdateReactionCount(replyTo); err != nil {
-			return nil, fmt.Errorf("update parent reply count: %w", err)
+		for i, mediaCID := range mediaCIDs {
+			if err := s.storage.InsertPostMediaTx(tx, cid, mediaCID, i); err != nil {
+				return fmt.Errorf("store post media link: %w", err)
+			}
 		}
+		if len(replyTo) > 0 {
+			if err := s.storage.UpdateReactionCountTx(tx, replyTo); err != nil {
+				return fmt.Errorf("update parent reply count: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return post, nil
