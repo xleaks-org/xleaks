@@ -162,7 +162,6 @@ func bech32Decode(bech string) (string, []byte, error) {
 	for i, v := range intData[:len(intData)-6] {
 		data[i] = byte(v)
 	}
-
 	return hrp, data, nil
 }
 
