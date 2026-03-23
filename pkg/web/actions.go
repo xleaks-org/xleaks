@@ -9,19 +9,29 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/xleaks-org/xleaks/pkg/identity"
 )
+
+// getKeyPair returns the key pair from the session or falls back to the global identity.
+func (h *Handler) getKeyPair(r *http.Request) *identity.KeyPair {
+	sess := h.sessions.GetFromRequest(r)
+	if sess != nil {
+		return sess.KeyPair
+	}
+	return h.identity.Get()
+}
 
 // settingsPage serves the settings page.
 func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
+	if h.currentUser(r) == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	data := h.pageData("settings", "Settings")
+	data := h.pageData(r, "settings", "Settings")
 
 	bio := ""
-	kp := h.identity.Get()
+	kp := h.getKeyPair(r)
 	if kp != nil {
 		profile, err := h.db.GetProfile(kp.PublicKeyBytes())
 		if err == nil && profile != nil {
@@ -38,12 +48,7 @@ func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
 
 // messagesPage serves the messages/DM page.
 func (h *Handler) messagesPage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	kp := h.identity.Get()
+	kp := h.getKeyPair(r)
 	if kp == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -75,19 +80,14 @@ func (h *Handler) messagesPage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	data := h.pageData("messages", "Messages")
+	data := h.pageData(r, "messages", "Messages")
 	data["Conversations"] = views
 	h.renderPage(w, "messages.html", data)
 }
 
 // conversationPage serves a DM conversation detail page.
 func (h *Handler) conversationPage(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	kp := h.identity.Get()
+	kp := h.getKeyPair(r)
 	if kp == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -115,7 +115,7 @@ func (h *Handler) conversationPage(w http.ResponseWriter, r *http.Request) {
 		peerName = peerProfile.DisplayName
 	}
 
-	data := h.pageData("messages", peerName)
+	data := h.pageData(r, "messages", peerName)
 	data["PeerPubkey"] = peerHex
 	data["PeerName"] = peerName
 	data["PeerShortPubkey"] = shortenHex(peerHex)
@@ -125,7 +125,7 @@ func (h *Handler) conversationPage(w http.ResponseWriter, r *http.Request) {
 
 // handleSendDM handles the POST /web/send-dm form submission.
 func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
+	if h.currentUser(r) == nil {
 		http.Error(w, "Not authenticated", http.StatusUnauthorized)
 		return
 	}
@@ -143,7 +143,8 @@ func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
 
 // handleUpdateProfile handles the POST /settings/profile form submission.
 func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
-	if !h.identity.IsUnlocked() {
+	kp := h.getKeyPair(r)
+	if kp == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -153,15 +154,12 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if displayName == "" {
 		displayName = "Anonymous"
 	}
-	kp := h.identity.Get()
-	if kp != nil {
-		var version uint64 = 1
-		profile, err := h.db.GetProfile(kp.PublicKeyBytes())
-		if err == nil && profile != nil {
-			version = profile.Version + 1
-		}
-		h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, bio, nil, nil, "", version, time.Now().UnixMilli())
+	var version uint64 = 1
+	profile, err := h.db.GetProfile(kp.PublicKeyBytes())
+	if err == nil && profile != nil {
+		version = profile.Version + 1
 	}
+	h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, bio, nil, nil, "", version, time.Now().UnixMilli())
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }
 

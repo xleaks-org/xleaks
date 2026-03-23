@@ -19,7 +19,7 @@ import (
 func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	if !h.identity.IsUnlocked() {
+	if h.currentUser(r) == nil {
 		fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Not logged in.</p></div>`)
 		return
 	}
@@ -89,7 +89,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Post content is required", http.StatusBadRequest)
 		return
 	}
-	if !h.identity.IsUnlocked() {
+	if h.currentUser(r) == nil {
 		http.Error(w, "Identity not unlocked", http.StatusUnauthorized)
 		return
 	}
@@ -105,7 +105,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post := h.buildNewPostView(postID, content)
+	post := h.buildNewPostView(r, postID, content)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	h.partials.ExecuteTemplate(w, "feed_items.html", struct{ Posts []PostView }{Posts: []PostView{post}})
 }
@@ -210,7 +210,7 @@ func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kp := h.identity.Get()
+	kp := h.getKeyPair(r)
 	if kp == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
@@ -236,7 +236,7 @@ func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRepost creates a repost (a new post with repost_of set) and returns updated button HTML.
-// Per XLeaks protocol, reposts are immutable — once reposted, it cannot be undone.
+// Per XLeaks protocol, reposts are immutable -- once reposted, it cannot be undone.
 func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	target := r.FormValue("target")
@@ -245,20 +245,20 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.identity.IsUnlocked() || h.createPost == nil {
+	kp := h.getKeyPair(r)
+	if kp == nil || h.createPost == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
 
-	// Check if already reposted (immutable — can't undo)
-	kp := h.identity.Get()
-	if kp != nil && h.db.HasReacted(kp.PublicKeyBytes(), mustDecodeHex(target), "repost") {
-		// Already reposted — just return the current state
+	// Check if already reposted (immutable -- can't undo)
+	if h.db.HasReacted(kp.PublicKeyBytes(), mustDecodeHex(target), "repost") {
+		// Already reposted -- just return the current state
 		_, _, reposts, _ := h.db.GetFullReactionCounts(mustDecodeHex(target))
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `<span class="text-green-400 flex items-center gap-1">`+
-		`<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>`+
-		` %d</span>`, reposts)
+			`<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>`+
+			` %d</span>`, reposts)
 		return
 	}
 
@@ -271,11 +271,9 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 
 	// Also track as a "repost" reaction for HasReacted checks
 	targetBytes := mustDecodeHex(target)
-	if kp != nil {
-		repostData := append([]byte("repost:"), append(kp.PublicKeyBytes(), targetBytes...)...)
-		cid, _ := content.ComputeCID(repostData)
-		h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "repost", time.Now().UnixMilli())
-	}
+	repostData := append([]byte("repost:"), append(kp.PublicKeyBytes(), targetBytes...)...)
+	cid, _ := content.ComputeCID(repostData)
+	h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "repost", time.Now().UnixMilli())
 
 	_, _, reposts, _ := h.db.GetFullReactionCounts(targetBytes)
 
@@ -294,7 +292,7 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kp := h.identity.Get()
+	kp := h.getKeyPair(r)
 	if kp == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
@@ -316,7 +314,7 @@ func (h *Handler) handleUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kp := h.identity.Get()
+	kp := h.getKeyPair(r)
 	if kp == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return

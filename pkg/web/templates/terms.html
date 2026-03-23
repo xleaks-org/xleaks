@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold mb-2">Before You Continue</h1>
+            <p class="text-gray-400 text-sm">Please review and accept the following to use XLeaks.</p>
+        </div>
+        {{if .Error}}
+        <div class="bg-red-900/30 border border-red-700 text-red-300 rounded-xl p-3 mb-4 text-sm">{{.Error}}</div>
+        {{end}}
+        <form method="POST" action="/terms/accept" class="space-y-4">
+            <div class="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-4">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="node" required class="mt-1 accent-blue-500">
+                    <span class="text-sm text-gray-300">I understand my device contributes to the XLeaks network as a node, providing storage and bandwidth.</span>
+                </label>
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="permanent" required class="mt-1 accent-blue-500">
+                    <span class="text-sm text-gray-300">I understand all content posted on XLeaks is permanent and cannot be deleted by anyone, including me.</span>
+                </label>
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="tos" required class="mt-1 accent-blue-500">
+                    <span class="text-sm text-gray-300">I accept the <a href="#" class="text-blue-500 hover:underline">XLeaks Terms of Service</a>.</span>
+                </label>
+            </div>
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Accept & Continue</button>
+        </form>
+    </div>
+</div>
+{{end}}

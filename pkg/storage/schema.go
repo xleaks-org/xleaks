@@ -166,4 +166,12 @@ CREATE TABLE IF NOT EXISTS content_access (
     access_count INTEGER DEFAULT 1,
     is_pinned INTEGER DEFAULT 0
 );
+
+-- Terms acceptance tracking
+CREATE TABLE IF NOT EXISTS terms_acceptance (
+    pubkey BLOB PRIMARY KEY,
+    terms_version TEXT NOT NULL DEFAULT '1.0',
+    accepted_at INTEGER NOT NULL,
+    device_node_agreed INTEGER NOT NULL DEFAULT 0
+);
 `

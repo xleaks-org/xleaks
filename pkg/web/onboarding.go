@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,11 +11,15 @@ import (
 
 // onboardingPage serves the create/import identity page.
 func (h *Handler) onboardingPage(w http.ResponseWriter, r *http.Request) {
+	if h.sessions.GetFromRequest(r) != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
 	if h.identity.IsUnlocked() {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	data := h.pageData("", "Get Started")
+	data := h.pageData(r, "", "Get Started")
 	if h.identity.HasIdentity() {
 		data["Locked"] = true
 	} else {
@@ -26,27 +31,36 @@ func (h *Handler) onboardingPage(w http.ResponseWriter, r *http.Request) {
 // handleCreate processes the identity creation form.
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.renderOnboardingError(w, "Invalid form data", true)
+		h.renderOnboardingError(w, r, "Invalid form data", true)
 		return
 	}
 	passphrase := r.FormValue("passphrase")
 	confirm := r.FormValue("confirm")
 	if len(passphrase) < 8 {
-		h.renderOnboardingError(w, "Passphrase must be at least 8 characters", true)
+		h.renderOnboardingError(w, r, "Passphrase must be at least 8 characters", true)
 		return
 	}
 	if passphrase != confirm {
-		h.renderOnboardingError(w, "Passphrases do not match", true)
+		h.renderOnboardingError(w, r, "Passphrases do not match", true)
 		return
 	}
-	_, mnemonic, err := h.identity.CreateAndSave(passphrase)
+	kp, mnemonic, err := h.identity.CreateAndSave(passphrase)
 	if err != nil {
-		h.renderOnboardingError(w, fmt.Sprintf("Failed to create identity: %v", err), true)
+		h.renderOnboardingError(w, r, fmt.Sprintf("Failed to create identity: %v", err), true)
 		return
 	}
 	h.notifyIdentityChange()
 	h.ensureProfile()
-	data := h.pageData("", "Save Seed Phrase")
+
+	// Create a session for the new identity.
+	token, err := h.sessions.Create(kp)
+	if err != nil {
+		log.Printf("web: failed to create session after identity create: %v", err)
+	} else {
+		h.sessions.SetCookie(w, token)
+	}
+
+	data := h.pageData(r, "", "Save Seed Phrase")
 	data["SeedPhrase"] = mnemonic
 	data["SeedWords"] = strings.Fields(mnemonic)
 	h.renderPage(w, "onboarding.html", data)
@@ -58,10 +72,10 @@ func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
 	seed := r.FormValue("seed")
 	words := strings.Fields(seed)
 	if len(words) != seedPhraseLength {
-		h.renderOnboardingError(w, "Invalid seed phrase", true)
+		h.renderOnboardingError(w, r, "Invalid seed phrase", true)
 		return
 	}
-	h.renderSeedConfirmPage(w, seed, words, "")
+	h.renderSeedConfirmPage(w, r, seed, words, "")
 }
 
 // handleConfirmSeed verifies the user filled in the correct words.
@@ -86,10 +100,10 @@ func (h *Handler) handleConfirmSeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !allCorrect {
-		h.renderSeedConfirmPage(w, seed, words, "Some words don't match. Try again.")
+		h.renderSeedConfirmPage(w, r, seed, words, "Some words don't match. Try again.")
 		return
 	}
-	data := h.pageData("", "Set Your Name")
+	data := h.pageData(r, "", "Set Your Name")
 	data["SetProfile"] = true
 	h.renderPage(w, "onboarding.html", data)
 }
@@ -101,7 +115,12 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 	if displayName == "" {
 		displayName = "Anonymous"
 	}
-	if h.identity.IsUnlocked() {
+
+	// Try session key pair first, then fall back to global identity.
+	sess := h.sessions.GetFromRequest(r)
+	if sess != nil {
+		h.db.UpsertProfile(sess.KeyPair.PublicKeyBytes(), displayName, "", nil, nil, "", 2, time.Now().UnixMilli())
+	} else if h.identity.IsUnlocked() {
 		kp := h.identity.Get()
 		if kp != nil {
 			// Use version 2 to ensure it overwrites the default "Anonymous" profile (version 1)
@@ -114,39 +133,44 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 // handleImport processes the identity import form.
 func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.renderOnboardingError(w, "Invalid form data", true)
+		h.renderOnboardingError(w, r, "Invalid form data", true)
 		return
 	}
 	mnemonic := strings.TrimSpace(r.FormValue("mnemonic"))
 	passphrase := r.FormValue("passphrase")
 	if mnemonic == "" {
-		h.renderOnboardingError(w, "Seed phrase is required", true)
+		h.renderOnboardingError(w, r, "Seed phrase is required", true)
 		return
 	}
 	if len(passphrase) < 8 {
-		h.renderOnboardingError(w, "Passphrase must be at least 8 characters", true)
+		h.renderOnboardingError(w, r, "Passphrase must be at least 8 characters", true)
 		return
 	}
-	_, err := h.identity.ImportAndSave(mnemonic, passphrase)
+	kp, err := h.identity.ImportAndSave(mnemonic, passphrase)
 	if err != nil {
-		h.renderOnboardingError(w, fmt.Sprintf("Failed to import identity: %v", err), true)
+		h.renderOnboardingError(w, r, fmt.Sprintf("Failed to import identity: %v", err), true)
 		return
 	}
 	h.notifyIdentityChange()
 	h.ensureProfile()
 
-	// Only ask for name if profile has default "Anonymous" name
-	kp := h.identity.Get()
-	if kp != nil {
-		profile, _ := h.db.GetProfile(kp.PublicKeyBytes())
-		if profile != nil && profile.DisplayName != "" && profile.DisplayName != "Anonymous" {
-			// Profile already has a real name — go straight to home
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
+	// Create a session for the imported identity.
+	token, err := h.sessions.Create(kp)
+	if err != nil {
+		log.Printf("web: failed to create session after identity import: %v", err)
+	} else {
+		h.sessions.SetCookie(w, token)
 	}
-	// First time on this server — ask for name
-	data := h.pageData("", "Set Your Name")
+
+	// Only ask for name if profile has default "Anonymous" name
+	profile, _ := h.db.GetProfile(kp.PublicKeyBytes())
+	if profile != nil && profile.DisplayName != "" && profile.DisplayName != "Anonymous" {
+		// Profile already has a real name -- go straight to home
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	// First time on this server -- ask for name
+	data := h.pageData(r, "", "Set Your Name")
 	data["SetProfile"] = true
 	h.renderPage(w, "onboarding.html", data)
 }
@@ -154,17 +178,17 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 // handleUnlock processes the unlock form.
 func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.renderOnboardingError(w, "Invalid form data", false)
+		h.renderOnboardingError(w, r, "Invalid form data", false)
 		return
 	}
 	passphrase := r.FormValue("passphrase")
 	if passphrase == "" {
-		h.renderOnboardingError(w, "Passphrase is required", false)
+		h.renderOnboardingError(w, r, "Passphrase is required", false)
 		return
 	}
-	_, err := h.identity.Unlock(passphrase)
+	kp, err := h.identity.Unlock(passphrase)
 	if err != nil {
-		data := h.pageData("", "Unlock")
+		data := h.pageData(r, "", "Unlock")
 		data["Locked"] = true
 		data["Error"] = "Incorrect passphrase"
 		h.renderPage(w, "onboarding.html", data)
@@ -172,18 +196,30 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	}
 	h.notifyIdentityChange()
 	h.ensureProfile()
+
+	// Create a session for the unlocked identity.
+	token, err := h.sessions.Create(kp)
+	if err != nil {
+		log.Printf("web: failed to create session after unlock: %v", err)
+	} else {
+		h.sessions.SetCookie(w, token)
+	}
+
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// handleLogout locks the identity and redirects to onboarding.
+// handleLogout destroys the session and redirects to the landing page.
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
-	h.identity.Lock()
-	http.Redirect(w, r, "/onboarding", http.StatusSeeOther)
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		h.sessions.Destroy(cookie.Value)
+	}
+	h.sessions.ClearCookie(w)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // renderOnboardingError renders the onboarding page with an error message.
-func (h *Handler) renderOnboardingError(w http.ResponseWriter, errMsg string, needsOnboarding bool) {
-	data := h.pageData("", "Get Started")
+func (h *Handler) renderOnboardingError(w http.ResponseWriter, r *http.Request, errMsg string, needsOnboarding bool) {
+	data := h.pageData(r, "", "Get Started")
 	if needsOnboarding {
 		data["NeedsOnboarding"] = true
 	} else {
@@ -194,10 +230,10 @@ func (h *Handler) renderOnboardingError(w http.ResponseWriter, errMsg string, ne
 }
 
 // renderSeedConfirmPage renders the seed phrase confirmation page.
-func (h *Handler) renderSeedConfirmPage(w http.ResponseWriter, seed string, words []string, errMsg string) {
+func (h *Handler) renderSeedConfirmPage(w http.ResponseWriter, r *http.Request, seed string, words []string, errMsg string) {
 	positions := pickRandomPositions(seedPhraseLength, 3)
 	slots, posStr := buildWordSlots(words, positions)
-	data := h.pageData("", "Verify Seed Phrase")
+	data := h.pageData(r, "", "Verify Seed Phrase")
 	data["ConfirmSeed"] = true
 	data["HiddenSeed"] = seed
 	data["WordSlots"] = slots
