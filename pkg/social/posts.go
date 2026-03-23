@@ -1,9 +1,11 @@
 package social
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -19,9 +21,10 @@ var hashtagRe = regexp.MustCompile(`#(\w+)`)
 
 // PostService handles post creation, signing, and publishing.
 type PostService struct {
-	storage  *storage.DB
-	cas      *content.ContentStore
-	identity *identity.KeyPair
+	storage       *storage.DB
+	cas           *content.ContentStore
+	identity      *identity.KeyPair
+	notifications *NotificationService
 }
 
 // NewPostService creates a new PostService with the given dependencies.
@@ -31,6 +34,11 @@ func NewPostService(db *storage.DB, cas *content.ContentStore, kp *identity.KeyP
 		cas:      cas,
 		identity: kp,
 	}
+}
+
+// SetNotifications sets the notification service for reply notifications.
+func (s *PostService) SetNotifications(ns *NotificationService) {
+	s.notifications = ns
 }
 
 // SetIdentity updates the active key pair used for signing.
@@ -116,6 +124,19 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 		return nil, err
 	}
 
+	// Send reply notification to the parent post's author (if replying).
+	if len(replyTo) > 0 && s.notifications != nil {
+		parentPost, err := s.storage.GetPost(replyTo)
+		if err == nil && parentPost != nil {
+			// Don't notify yourself.
+			if !bytes.Equal(parentPost.Author, post.Author) {
+				if err := s.notifications.NotifyReply(post.Author, replyTo, post.Id); err != nil {
+					log.Printf("failed to send reply notification: %v", err)
+				}
+			}
+		}
+	}
+
 	return post, nil
 }
 
@@ -169,14 +190,18 @@ func (s *PostService) CreateRepost(ctx context.Context, originalCID []byte) (*pb
 		return nil, fmt.Errorf("store repost in CAS: %w", err)
 	}
 
-	// Store in database.
-	if err := s.storage.InsertPost(cid, post.Author, post.Content, post.ReplyTo, post.RepostOf, int64(post.Timestamp), post.Signature); err != nil {
-		return nil, fmt.Errorf("store repost in DB: %w", err)
-	}
-
-	// Update repost count on the original post.
-	if err := s.storage.UpdateReactionCount(originalCID); err != nil {
-		return nil, fmt.Errorf("update repost count: %w", err)
+	// Store in database within a transaction.
+	err = s.storage.WithTransaction(func(tx *sql.Tx) error {
+		if err := s.storage.InsertPostTx(tx, cid, post.Author, post.Content, post.ReplyTo, post.RepostOf, int64(post.Timestamp), post.Signature); err != nil {
+			return fmt.Errorf("store repost in DB: %w", err)
+		}
+		if err := s.storage.UpdateReactionCountTx(tx, originalCID); err != nil {
+			return fmt.Errorf("update repost count: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return post, nil

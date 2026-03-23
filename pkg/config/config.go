@@ -29,6 +29,7 @@ type NodeConfig struct {
 type NetworkConfig struct {
 	ListenAddresses    []string `toml:"listen_addresses"`
 	BootstrapPeers     []string `toml:"bootstrap_peers"`
+	RelayAddresses     []string `toml:"relay_addresses"`
 	EnableRelay        bool     `toml:"enable_relay"`
 	EnableMDNS         bool     `toml:"enable_mdns"`
 	EnableHolePunching bool     `toml:"enable_hole_punching"`

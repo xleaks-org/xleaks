@@ -91,10 +91,12 @@ func (t *Timeline) enrichPosts(posts []storage.PostRow) ([]TimelineEntry, error)
 			entry.AuthorName = hex.EncodeToString(post.Author)[:16] + "..."
 		}
 
-		// Get reaction counts.
-		likes, err := t.db.GetReactionCount(post.CID)
+		// Get reaction counts (likes, replies, reposts).
+		likes, replies, reposts, err := t.db.GetFullReactionCounts(post.CID)
 		if err == nil {
 			entry.LikeCount = likes
+			entry.ReplyCount = replies
+			entry.RepostCount = reposts
 		}
 
 		// Check if current user has liked/reposted.

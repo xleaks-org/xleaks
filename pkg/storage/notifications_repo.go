@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 )
@@ -25,6 +26,19 @@ func (db *DB) InsertNotification(notifType string, actor, targetCID, relatedCID 
 	)
 	if err != nil {
 		return fmt.Errorf("insert notification: %w", err)
+	}
+	return nil
+}
+
+// InsertNotificationTx inserts a new notification within an existing transaction.
+func (db *DB) InsertNotificationTx(tx *sql.Tx, notifType string, actor, targetCID, relatedCID []byte, timestamp int64) error {
+	_, err := tx.Exec(
+		`INSERT INTO notifications (type, actor, target_cid, related_cid, timestamp)
+		 VALUES (?, ?, ?, ?, ?)`,
+		notifType, actor, nilIfEmpty(targetCID), nilIfEmpty(relatedCID), timestamp,
+	)
+	if err != nil {
+		return fmt.Errorf("insert notification tx: %w", err)
 	}
 	return nil
 }

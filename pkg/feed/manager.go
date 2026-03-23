@@ -56,15 +56,15 @@ func (m *Manager) Follow(ctx context.Context, pubkey []byte, timestamp int64) er
 		m.mu.Unlock()
 		return nil // Already following
 	}
-	m.subscribers[hexKey] = true
-	m.mu.Unlock()
 
+	// Write to DB first while holding the lock to avoid a race window
+	// where another goroutine could observe an inconsistent state.
 	if err := m.db.AddSubscription(pubkey, timestamp); err != nil {
-		m.mu.Lock()
-		delete(m.subscribers, hexKey)
 		m.mu.Unlock()
 		return fmt.Errorf("add subscription: %w", err)
 	}
+	m.subscribers[hexKey] = true
+	m.mu.Unlock()
 
 	if m.OnSubscribe != nil {
 		if err := m.OnSubscribe(ctx, hexKey); err != nil {
@@ -84,15 +84,14 @@ func (m *Manager) Unfollow(pubkey []byte) error {
 		m.mu.Unlock()
 		return nil // Not following
 	}
-	delete(m.subscribers, hexKey)
-	m.mu.Unlock()
 
+	// Write to DB first while holding the lock to avoid a race window.
 	if err := m.db.RemoveSubscription(pubkey); err != nil {
-		m.mu.Lock()
-		m.subscribers[hexKey] = true
 		m.mu.Unlock()
 		return fmt.Errorf("remove subscription: %w", err)
 	}
+	delete(m.subscribers, hexKey)
+	m.mu.Unlock()
 
 	if m.OnUnsubscribe != nil {
 		if err := m.OnUnsubscribe(hexKey); err != nil {

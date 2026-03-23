@@ -32,10 +32,19 @@ type authorCounts struct {
 }
 
 // newPubsubRateLimiter creates a new rate limiter for pubsub messages.
+// It starts a background goroutine that periodically cleans up expired entries.
 func newPubsubRateLimiter() *pubsubRateLimiter {
-	return &pubsubRateLimiter{
+	rl := &pubsubRateLimiter{
 		counts: make(map[string]*authorCounts),
 	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			rl.Cleanup()
+		}
+	}()
+	return rl
 }
 
 // Allow checks whether a message of the given type from the given author

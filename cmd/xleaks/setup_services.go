@@ -30,12 +30,16 @@ func setupServices(
 	kp *identity.KeyPair,
 	idHolder *identity.Holder,
 ) *ServiceBundle {
+	notifs := social.NewNotificationService(db)
+	posts := social.NewPostService(db, cas, kp)
+	posts.SetNotifications(notifs)
+
 	return &ServiceBundle{
-		Posts:     social.NewPostService(db, cas, kp),
+		Posts:     posts,
 		Reactions: social.NewReactionService(db, kp),
 		Profiles:  social.NewProfileService(db, kp),
 		DMs:       social.NewDMService(db, kp),
-		Notifs:    social.NewNotificationService(db),
+		Notifs:    notifs,
 		Feed:      feed.NewManager(db),
 		Timeline:  feed.NewTimeline(db, kp.PublicKeyBytes()),
 		Indexer:   indexer.NewIndexerClient(),

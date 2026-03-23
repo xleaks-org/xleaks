@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
 	"time"
 )
@@ -37,6 +38,19 @@ func (db *DB) InsertDM(cid, author, recipient, encryptedContent, nonce []byte, t
 	)
 	if err != nil {
 		return fmt.Errorf("insert dm: %w", err)
+	}
+	return nil
+}
+
+// InsertDMTx inserts a new direct message within an existing transaction.
+func (db *DB) InsertDMTx(tx *sql.Tx, cid, author, recipient, encryptedContent, nonce []byte, timestamp int64) error {
+	_, err := tx.Exec(
+		`INSERT OR IGNORE INTO direct_messages (cid, author, recipient, encrypted_content, nonce, timestamp)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		cid, author, recipient, encryptedContent, nonce, timestamp,
+	)
+	if err != nil {
+		return fmt.Errorf("insert dm tx: %w", err)
 	}
 	return nil
 }

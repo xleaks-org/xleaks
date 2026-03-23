@@ -35,15 +35,16 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	wsHub := NewWSHub()
 	router := NewRouter(deps, wsHub)
 
-	// Build the middleware chain: LocalOnly -> optional TokenAuth -> CORS -> router.
+	// Build the middleware chain (outermost first, innermost last):
+	//   CORS (outermost) -> TokenAuth (optional) -> LocalOnly (innermost) -> router
 	var handler http.Handler = router
-	handler = middleware.CORS("*")(handler)
+	handler = middleware.LocalOnly(handler)
 
 	if cfg.APIToken != "" {
 		handler = middleware.TokenAuth(cfg.APIToken)(handler)
 	}
 
-	handler = middleware.LocalOnly(handler)
+	handler = middleware.CORS("*")(handler)
 
 	s := &Server{
 		httpServer: &http.Server{

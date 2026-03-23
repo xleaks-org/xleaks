@@ -2,6 +2,7 @@ package social
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -57,14 +58,18 @@ func (s *ReactionService) CreateReaction(ctx context.Context, targetCID []byte) 
 	}
 	reaction.Id = cid
 
-	// Store in DB (dedup handled by DB via INSERT OR IGNORE + UNIQUE constraint).
-	if err := s.storage.InsertReaction(cid, reaction.Author, reaction.Target, reaction.ReactionType, int64(reaction.Timestamp)); err != nil {
-		return nil, fmt.Errorf("store reaction: %w", err)
-	}
-
-	// Update reaction count on the target post.
-	if err := s.storage.UpdateReactionCount(targetCID); err != nil {
-		return nil, fmt.Errorf("update reaction count: %w", err)
+	// Store in DB and update reaction count in a single transaction.
+	err = s.storage.WithTransaction(func(tx *sql.Tx) error {
+		if err := s.storage.InsertReactionTx(tx, cid, reaction.Author, reaction.Target, reaction.ReactionType, int64(reaction.Timestamp)); err != nil {
+			return fmt.Errorf("store reaction: %w", err)
+		}
+		if err := s.storage.UpdateReactionCountTx(tx, targetCID); err != nil {
+			return fmt.Errorf("update reaction count: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return reaction, nil
