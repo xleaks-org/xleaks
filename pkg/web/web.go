@@ -107,7 +107,7 @@ func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline) (*
 	funcMap := templateFuncMap()
 
 	// Parse partials (templates that don't use layout).
-	partials, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/feed_items.html")
+	partials, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/feed_items.html", "templates/status_partial.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse partials: %w", err)
 	}
