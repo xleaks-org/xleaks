@@ -60,7 +60,7 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		"timestamp": post.Timestamp,
 		"tags":      post.Tags,
 	}
-	h.emit("new_post", postData)
+	h.emit(EventNewPost, postData)
 	respondJSON(w, http.StatusCreated, postData)
 }
 

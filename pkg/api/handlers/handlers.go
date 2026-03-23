@@ -17,6 +17,15 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
+// WebSocket event type constants.
+const (
+	EventNewPost         = "new_post"
+	EventNewReaction     = "new_reaction"
+	EventNewRepost       = "new_repost"
+	EventNewNotification = "new_notification"
+	EventNewDM           = "new_dm"
+)
+
 // EventBroadcaster is a callback that broadcasts real-time events to WebSocket clients.
 type EventBroadcaster func(eventType string, data interface{})
 
