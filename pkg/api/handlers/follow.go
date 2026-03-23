@@ -66,10 +66,7 @@ func (h *Handler) GetFollowing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := make([]string, 0, len(following))
-	for _, pk := range following {
-		result = append(result, hex.EncodeToString(pk))
-	}
+	result := hexSlice(following)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"following": result,
@@ -91,10 +88,7 @@ func (h *Handler) GetFollowers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := make([]string, 0, len(followers))
-	for _, pk := range followers {
-		result = append(result, hex.EncodeToString(pk))
-	}
+	result := hexSlice(followers)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"followers": result,

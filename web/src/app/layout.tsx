@@ -33,6 +33,19 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          // Fix for SES lockdown (MetaMask etc.) which patches Object.entries
+          // to throw on null/undefined, breaking React 19 internals.
+          try {
+            var _origEntries = Object.entries;
+            Object.entries = function(obj) {
+              if (obj == null) return [];
+              return _origEntries.call(Object, obj);
+            };
+          } catch(e) {}
+        `}} />
+      </head>
       <body className="min-h-full bg-gray-950 text-white">
         <ErrorBoundary>
         <AuthGuard>

@@ -2,9 +2,7 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/social"
@@ -20,8 +18,8 @@ type createPostRequest struct {
 // CreatePost handles POST /api/posts.
 func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	var req createPostRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -148,22 +146,7 @@ func (h *Handler) GetUserPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var before int64
-	if b := r.URL.Query().Get("before"); b != "" {
-		before, err = strconv.ParseInt(b, 10, 64)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid before timestamp")
-			return
-		}
-	}
-
-	limit := 20
-	if l := r.URL.Query().Get("limit"); l != "" {
-		limit, err = strconv.Atoi(l)
-		if err != nil || limit <= 0 {
-			limit = 20
-		}
-	}
+	before, limit := parsePagination(r, 20)
 
 	entries, err := h.timeline.GetUserPosts(pubkey, before, limit)
 	if err != nil {

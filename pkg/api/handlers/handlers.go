@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/config"
@@ -16,6 +17,9 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/social"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
+
+// DefaultDisplayName is the fallback name for users who haven't set a profile.
+const DefaultDisplayName = "Anonymous"
 
 // WebSocket event type constants.
 const (
@@ -139,4 +143,37 @@ func parseHexParam(r *http.Request, name string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid hex for %s: %w", name, err)
 	}
 	return b, nil
+}
+
+// parsePagination extracts "before" and "limit" query parameters for cursor-based pagination.
+func parsePagination(r *http.Request, defaultLimit int) (before int64, limit int) {
+	limit = defaultLimit
+	if b := r.URL.Query().Get("before"); b != "" {
+		if v, err := strconv.ParseInt(b, 10, 64); err == nil {
+			before = v
+		}
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+	return
+}
+
+// parseJSON decodes the request body as JSON into v.
+func parseJSON(r *http.Request, v interface{}) error {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		return fmt.Errorf("invalid JSON body")
+	}
+	return nil
+}
+
+// hexSlice encodes a slice of byte slices to a slice of hex strings.
+func hexSlice(items [][]byte) []string {
+	result := make([]string, len(items))
+	for i, item := range items {
+		result[i] = hex.EncodeToString(item)
+	}
+	return result
 }

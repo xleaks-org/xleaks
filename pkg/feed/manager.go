@@ -33,7 +33,7 @@ func NewManager(db *storage.DB) *Manager {
 func (m *Manager) LoadSubscriptions() error {
 	subs, err := m.db.GetSubscriptions()
 	if err != nil {
-		return fmt.Errorf("failed to load subscriptions: %w", err)
+		return fmt.Errorf("load subscriptions: %w", err)
 	}
 
 	m.mu.Lock()
@@ -63,12 +63,12 @@ func (m *Manager) Follow(ctx context.Context, pubkey []byte, timestamp int64) er
 		m.mu.Lock()
 		delete(m.subscribers, hexKey)
 		m.mu.Unlock()
-		return fmt.Errorf("failed to add subscription: %w", err)
+		return fmt.Errorf("add subscription: %w", err)
 	}
 
 	if m.OnSubscribe != nil {
 		if err := m.OnSubscribe(ctx, hexKey); err != nil {
-			return fmt.Errorf("failed to subscribe to topic: %w", err)
+			return fmt.Errorf("subscribe to topic: %w", err)
 		}
 	}
 
@@ -91,12 +91,12 @@ func (m *Manager) Unfollow(pubkey []byte) error {
 		m.mu.Lock()
 		m.subscribers[hexKey] = true
 		m.mu.Unlock()
-		return fmt.Errorf("failed to remove subscription: %w", err)
+		return fmt.Errorf("remove subscription: %w", err)
 	}
 
 	if m.OnUnsubscribe != nil {
 		if err := m.OnUnsubscribe(hexKey); err != nil {
-			return fmt.Errorf("failed to unsubscribe from topic: %w", err)
+			return fmt.Errorf("unsubscribe from topic: %w", err)
 		}
 	}
 

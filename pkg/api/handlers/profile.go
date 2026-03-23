@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -51,8 +50,8 @@ func (h *Handler) GetOwnProfile(w http.ResponseWriter, r *http.Request) {
 // UpdateProfile handles PUT /api/profile.
 func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	var req updateProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

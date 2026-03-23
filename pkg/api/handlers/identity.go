@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -30,8 +29,8 @@ type switchIdentityRequest struct {
 // CreateIdentity handles POST /api/identity/create.
 func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	var req createIdentityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -63,7 +62,7 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
 	// Create a default profile in the database.
-	h.db.UpsertProfile(kp.PublicKeyBytes(), "Anonymous", "", nil, nil, "", 1, nowMillis())
+	h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis())
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"pubkey":     pubkeyHex,
@@ -76,8 +75,8 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 // ImportIdentity handles POST /api/identity/import.
 func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 	var req importIdentityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -113,7 +112,7 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
-	h.db.UpsertProfile(kp.PublicKeyBytes(), "Anonymous", "", nil, nil, "", 1, nowMillis())
+	h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis())
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"pubkey":  pubkeyHex,
@@ -125,8 +124,8 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 // UnlockIdentity handles POST /api/identity/unlock.
 func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 	var req unlockIdentityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -191,7 +190,7 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 
 	// Get profile from DB.
 	profile, _ := h.db.GetProfile(kp.PublicKeyBytes())
-	displayName := "Anonymous"
+	displayName := DefaultDisplayName
 	if profile != nil {
 		displayName = profile.DisplayName
 	}
@@ -247,8 +246,8 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 
 	// Read passphrase from request body.
 	var req switchIdentityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

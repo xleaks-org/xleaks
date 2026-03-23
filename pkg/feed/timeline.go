@@ -43,7 +43,7 @@ func (t *Timeline) GetFeed(before int64, limit int) ([]TimelineEntry, error) {
 
 	subs, err := t.db.GetSubscriptions()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subscriptions: %w", err)
+		return nil, fmt.Errorf("get subscriptions: %w", err)
 	}
 
 	authors := make([][]byte, len(subs))
@@ -56,7 +56,7 @@ func (t *Timeline) GetFeed(before int64, limit int) ([]TimelineEntry, error) {
 
 	posts, err := t.db.GetFeed(authors, before, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get feed: %w", err)
+		return nil, fmt.Errorf("get feed: %w", err)
 	}
 
 	return t.enrichPosts(posts)
@@ -70,7 +70,7 @@ func (t *Timeline) GetUserPosts(pubkey []byte, before int64, limit int) ([]Timel
 
 	posts, err := t.db.GetPostsByAuthor(pubkey, before, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user posts: %w", err)
+		return nil, fmt.Errorf("get user posts: %w", err)
 	}
 
 	return t.enrichPosts(posts)
