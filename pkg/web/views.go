@@ -67,7 +67,7 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 		authorName = profile.DisplayName
 	}
 
-	likeCount, _ := h.db.GetReactionCount(p.CID)
+	likeCount, replyCount, repostCount, _ := h.db.GetFullReactionCounts(p.CID)
 
 	var isLiked, isReposted bool
 	if kp := h.identity.Get(); kp != nil {
@@ -83,6 +83,8 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 		Content:       p.Content,
 		RelativeTime:  formatRelativeTime(p.Timestamp),
 		LikeCount:     likeCount,
+		ReplyCount:    replyCount,
+		RepostCount:   repostCount,
 		IsLiked:       isLiked,
 		IsReposted:    isReposted,
 	}
