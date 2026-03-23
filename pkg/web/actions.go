@@ -137,8 +137,8 @@ func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, `<div class="flex justify-end"><div class="max-w-[75%] rounded-2xl px-4 py-2 bg-blue-600 text-white">`+
-		`<p class="text-sm">(encrypted)</p><p class="text-xs text-blue-200 mt-1">just now</p></div></div>`)
+	fmt.Fprint(w, `<div class="flex justify-end"><div class="max-w-[75%] rounded-2xl px-4 py-2 bg-emerald-600 text-white">`+
+		`<p class="text-sm">(encrypted)</p><p class="text-xs text-emerald-200 mt-1">just now</p></div></div>`)
 }
 
 // handleUpdateProfile handles the POST /settings/profile form submission.

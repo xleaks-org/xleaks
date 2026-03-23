@@ -5,15 +5,15 @@
     <span class="font-semibold">{{.RepostAuthor}}</span> reposted
 </div>
 {{end}}
-<article class="border-b border-gray-800 px-4 py-3 hover:bg-gray-900/50 transition-colors cursor-pointer" onclick="if(!event.target.closest('button,a,form,textarea')){window.location='/post/{{.ID}}'}">
+<article class="border-b border-gray-800 px-4 py-3 hover:bg-gray-900/50 transition-all duration-200 cursor-pointer" onclick="if(!event.target.closest('button,a,form,textarea')){window.location='/post/{{.ID}}'}">
     <div class="flex gap-3">
-        <div class="w-10 h-10 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center text-sm font-bold">
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-800 to-emerald-900 flex-shrink-0 flex items-center justify-center text-sm font-bold">
             {{.AuthorInitial}}
         </div>
         <div class="flex-1 min-w-0">
             {{if .ReplyTo}}
             <div class="text-xs text-gray-500 mb-1">
-                Replying to <a href="/post/{{.ReplyTo}}" class="text-blue-500 hover:underline">@{{.ReplyToAuthor}}</a>
+                Replying to <a href="/post/{{.ReplyTo}}" class="text-emerald-500 hover:underline">@{{.ReplyToAuthor}}</a>
             </div>
             {{end}}
             <div class="flex items-center gap-2 text-sm">
@@ -22,10 +22,10 @@
                 <span class="text-gray-500">·</span>
                 <span class="text-gray-500">{{.RelativeTime}}</span>
             </div>
-            <p class="mt-1 whitespace-pre-wrap break-words">{{renderContent .Content}}</p>
+            <p class="mt-1 whitespace-pre-wrap break-words leading-relaxed">{{renderContent .Content}}</p>
             <div class="flex gap-6 mt-3 text-gray-500 text-sm">
                 <!-- Reply: toggles inline reply area -->
-                <button onclick="event.stopPropagation();var r=this.closest('article').querySelector('.reply-area');r.classList.toggle('hidden');if(!r.classList.contains('hidden'))r.querySelector('textarea').focus()" class="hover:text-blue-400 flex items-center gap-1 transition-colors">
+                <button onclick="event.stopPropagation();var r=this.closest('article').querySelector('.reply-area');r.classList.toggle('hidden');if(!r.classList.contains('hidden'))r.querySelector('textarea').focus()" class="hover:text-emerald-400 flex items-center gap-1 transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
                     {{.ReplyCount}}
                 </button>
@@ -53,14 +53,18 @@
                     {{.LikeCount}}
                 </button>
                 {{end}}
+                <!-- Share/Copy link -->
+                <button onclick="event.stopPropagation();navigator.clipboard.writeText(window.location.origin+'/post/{{.ID}}');this.textContent='Copied!';setTimeout(()=>this.innerHTML='<svg class=\'w-4 h-4\' fill=\'none\' stroke=\'currentColor\' viewBox=\'0 0 24 24\'><path stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z\'/></svg>',1500)" class="hover:text-emerald-400 flex items-center gap-1 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                </button>
             </div>
             <!-- Inline reply area (hidden by default) -->
             <div class="reply-area hidden mt-3 border-t border-gray-800 pt-3">
                 <form hx-post="/web/post" hx-target="this" hx-swap="outerHTML" onclick="event.stopPropagation()">
                     <input type="hidden" name="reply_to" value="{{.ID}}">
-                    <textarea name="content" rows="2" placeholder="Write a reply..." class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 resize-none focus:border-blue-500 focus:outline-none"></textarea>
+                    <textarea name="content" rows="2" placeholder="Write a reply..." class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 resize-none focus:border-emerald-500 focus:outline-none"></textarea>
                     <div class="flex justify-end mt-2">
-                        <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors">Reply</button>
+                        <button type="submit" class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors">Reply</button>
                     </div>
                 </form>
             </div>

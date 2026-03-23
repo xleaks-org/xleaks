@@ -76,7 +76,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 		lastTs := entries[len(entries)-1].Post.Timestamp
 		fmt.Fprintf(w, `<div class="text-center py-4">`+
 			`<button hx-get="/web/feed?before=%d" hx-target="closest div" hx-swap="outerHTML" `+
-			`class="text-blue-500 hover:text-blue-400 text-sm">Load more</button></div>`, lastTs)
+			`class="text-emerald-500 hover:text-emerald-400 text-sm">Load more</button></div>`, lastTs)
 	}
 }
 

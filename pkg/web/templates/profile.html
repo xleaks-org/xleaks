@@ -12,11 +12,11 @@
 <!-- Profile Header -->
 <div class="border-b border-gray-800">
     <!-- Banner -->
-    <div class="h-32 bg-gradient-to-r from-blue-900 to-purple-900"></div>
+    <div class="h-32 bg-gradient-to-r from-emerald-900 via-gray-900 to-gray-950"></div>
     <!-- Avatar & Info -->
     <div class="px-4 pb-4">
         <div class="flex justify-between items-end -mt-10 mb-3">
-            <div class="w-20 h-20 rounded-full bg-gray-700 border-4 border-[#0a0a0a] flex items-center justify-center text-2xl font-bold">
+            <div class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-700 to-emerald-900 border-4 border-[#0a0a0a] flex items-center justify-center text-2xl font-bold">
                 {{.ProfileUser.Initial}}
             </div>
             {{if .IsOwnProfile}}
@@ -28,13 +28,18 @@
                 </form>
                 {{else}}
                 <form method="POST" action="/web/follow/{{.ProfileUser.Pubkey}}" style="display:inline">
-                    <button class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-1.5 rounded-full transition-colors">Follow</button>
+                    <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-1.5 rounded-full transition-colors">Follow</button>
                 </form>
                 {{end}}
             {{end}}
         </div>
-        <h2 class="text-xl font-bold">{{.ProfileUser.DisplayName}}</h2>
-        <p class="text-gray-500 font-mono text-xs mb-2">{{.ProfileUser.ShortPubkey}}</p>
+        <h2 class="text-xl font-bold inline-flex items-center">{{.ProfileUser.DisplayName}}<span class="inline-flex items-center gap-1 text-emerald-500 text-xs ml-2" title="Identity verified by ed25519 cryptographic signature">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+        </span></h2>
+        <div class="flex items-center gap-2 mb-2">
+            <p class="text-gray-500 font-mono text-xs">{{.ProfileUser.ShortPubkey}}</p>
+            <button onclick="navigator.clipboard.writeText('{{.ProfileUser.ShortPubkey}}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)" class="text-xs text-emerald-500 hover:text-emerald-400 transition-colors">Copy</button>
+        </div>
         {{if .ProfileUser.Bio}}
         <p class="text-sm mb-2">{{.ProfileUser.Bio}}</p>
         {{end}}
@@ -49,7 +54,7 @@
 <!-- User Posts -->
 <div id="user-posts" hx-get="/web/feed?author={{.ProfileUser.Pubkey}}" hx-trigger="load" hx-swap="innerHTML">
     <div class="flex justify-center py-12">
-        <div class="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <div class="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
     </div>
 </div>
 {{end}}
