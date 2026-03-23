@@ -177,8 +177,27 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kp := h.kp
+	// Read from identity holder for current key (not h.kp which may be stale)
+	var kp *identity.KeyPair
+	if h.identity != nil {
+		kp = h.identity.Get()
+	}
 	if kp == nil {
+		kp = h.kp // fallback to handler's key
+	}
+	if kp == nil || len(kp.PublicKeyBytes()) == 0 {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"active":           false,
+			"needs_onboarding": true,
+		})
+		return
+	}
+	// Check for zeroed placeholder key
+	allZero := true
+	for _, b := range kp.PublicKeyBytes() {
+		if b != 0 { allZero = false; break }
+	}
+	if allZero && h.identity != nil && !h.identity.IsUnlocked() {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"active":           false,
 			"needs_onboarding": true,
