@@ -36,6 +36,15 @@ func setupWebHandler(
 		return nil
 	}
 
+	// When identity changes (create/unlock/import), update all social services.
+	webHandler.SetOnIdentityChange(func(kp *identity.KeyPair) {
+		svc.Posts.SetIdentity(kp)
+		svc.Reactions.SetIdentity(kp)
+		svc.Profiles.SetIdentity(kp)
+		svc.DMs.SetIdentity(kp)
+		log.Printf("Identity updated for all services: %x", kp.PublicKeyBytes()[:8])
+	})
+
 	webHandler.SetCreatePost(func(ctx context.Context, text string) (string, error) {
 		post, err := svc.Posts.CreatePost(ctx, text, nil, nil)
 		if err != nil {

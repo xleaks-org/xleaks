@@ -13,15 +13,19 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
+// IdentityChangeFunc is called when the active identity changes (create, unlock, import).
+type IdentityChangeFunc func(kp *identity.KeyPair)
+
 // Handler serves the web UI HTML pages.
 type Handler struct {
-	pages      map[string]*template.Template
-	partials   *template.Template
-	db         *storage.DB
-	identity   *identity.Holder
-	timeline   *feed.Timeline
-	createPost CreatePostFunc
-	nodeStatus NodeStatusFunc
+	pages            map[string]*template.Template
+	partials         *template.Template
+	db               *storage.DB
+	identity         *identity.Holder
+	timeline         *feed.Timeline
+	createPost       CreatePostFunc
+	nodeStatus       NodeStatusFunc
+	onIdentityChange IdentityChangeFunc
 }
 
 // SetCreatePost sets the post creation callback.
@@ -32,6 +36,20 @@ func (h *Handler) SetCreatePost(fn CreatePostFunc) {
 // SetNodeStatus sets the node status callback.
 func (h *Handler) SetNodeStatus(fn NodeStatusFunc) {
 	h.nodeStatus = fn
+}
+
+// SetOnIdentityChange sets the callback invoked when the user creates, imports, or unlocks an identity.
+func (h *Handler) SetOnIdentityChange(fn IdentityChangeFunc) {
+	h.onIdentityChange = fn
+}
+
+func (h *Handler) notifyIdentityChange() {
+	if h.onIdentityChange != nil {
+		kp := h.identity.Get()
+		if kp != nil {
+			h.onIdentityChange(kp)
+		}
+	}
 }
 
 // templateFuncMap returns the shared template function map.

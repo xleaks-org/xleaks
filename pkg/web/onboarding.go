@@ -44,6 +44,7 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		h.renderOnboardingError(w, fmt.Sprintf("Failed to create identity: %v", err), true)
 		return
 	}
+	h.notifyIdentityChange()
 	data := h.pageData("", "Save Seed Phrase")
 	data["SeedPhrase"] = mnemonic
 	data["SeedWords"] = strings.Fields(mnemonic)
@@ -129,6 +130,7 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 		h.renderOnboardingError(w, fmt.Sprintf("Failed to import identity: %v", err), true)
 		return
 	}
+	h.notifyIdentityChange()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -151,6 +153,7 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 		h.renderPage(w, "onboarding.html", data)
 		return
 	}
+	h.notifyIdentityChange()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
