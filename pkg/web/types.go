@@ -27,6 +27,11 @@ type PostView struct {
 	LikeCount     int
 	ReplyCount    int
 	RepostCount   int
+
+	ReplyTo       string // hex CID of parent post (empty if top-level)
+	ReplyToAuthor string // display name of parent post author
+	RepostOf      string // hex CID of original post (empty if original)
+	RepostAuthor  string // display name of original post author
 }
 
 // NotificationView is a template-friendly representation of a notification.
