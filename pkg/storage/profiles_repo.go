@@ -40,6 +40,19 @@ func (db *DB) UpsertProfile(pubkey []byte, displayName, bio string, avatarCID, b
 	return nil
 }
 
+// GetProfileVersion returns the version number of a stored profile.
+// If no profile exists for the given pubkey, found is false.
+func (db *DB) GetProfileVersion(pubkey []byte) (version uint64, found bool, err error) {
+	err = db.QueryRow(`SELECT version FROM profiles WHERE pubkey = ?`, pubkey).Scan(&version)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("get profile version: %w", err)
+	}
+	return version, true, nil
+}
+
 // GetProfile retrieves a profile by public key. Returns nil if not found.
 func (db *DB) GetProfile(pubkey []byte) (*ProfileRow, error) {
 	var p ProfileRow

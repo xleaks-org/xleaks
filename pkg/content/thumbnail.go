@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	ThumbnailMaxWidth   = 320
-	ThumbnailMaxSize    = 100 * 1024 // 100KB
+	ThumbnailMaxWidth    = 320
+	ThumbnailMaxSize     = 100 * 1024 // 100KB
 	ThumbnailJPEGQuality = 80
 )
 
