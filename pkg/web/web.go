@@ -8,7 +8,9 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -155,6 +157,8 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/", h.homePage)
 	r.Get("/onboarding", h.onboardingPage)
 	r.Post("/onboarding/create", h.handleCreate)
+	r.Post("/onboarding/confirm-seed", h.handleConfirmSeed)
+	r.Post("/onboarding/set-profile", h.handleSetProfile)
 	r.Post("/onboarding/import", h.handleImport)
 	r.Post("/unlock", h.handleUnlock)
 	r.Get("/logout", h.handleLogout)
@@ -167,6 +171,7 @@ func (h *Handler) Routes() chi.Router {
 
 	// htmx partials
 	r.Get("/web/feed", h.feedPartial)
+	r.Post("/web/post", h.handlePost)
 	r.Get("/web/search-results", h.searchResultsPartial)
 	r.Get("/web/node-status", h.nodeStatusPartial)
 
@@ -289,11 +294,158 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Show seed phrase page
+	// Pick 3 random positions for confirmation
+	positions := pickRandomPositions(24, 3)
+
 	data := h.pageData("", "Save Seed Phrase")
 	data["SeedPhrase"] = mnemonic
 	data["SeedWords"] = strings.Fields(mnemonic)
+	data["ConfirmPos1"] = positions[0]
+	data["ConfirmPos2"] = positions[1]
+	data["ConfirmPos3"] = positions[2]
 	h.renderPage(w, "onboarding.html", data)
+}
+
+// pickRandomPositions returns n unique random positions from 0 to total-1.
+func pickRandomPositions(total, n int) []int {
+	perm := rand.Perm(total)
+	result := perm[:n]
+	// Sort for display
+	for i := 0; i < len(result); i++ {
+		for j := i + 1; j < len(result); j++ {
+			if result[i] > result[j] {
+				result[i], result[j] = result[j], result[i]
+			}
+		}
+	}
+	return result
+}
+
+// handleConfirmSeed verifies the user saved their seed phrase.
+func (h *Handler) handleConfirmSeed(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	seed := r.FormValue("seed")
+	words := strings.Fields(seed)
+
+	pos1, _ := strconv.Atoi(r.FormValue("pos1"))
+	pos2, _ := strconv.Atoi(r.FormValue("pos2"))
+	pos3, _ := strconv.Atoi(r.FormValue("pos3"))
+
+	w1 := strings.TrimSpace(strings.ToLower(r.FormValue("word1")))
+	w2 := strings.TrimSpace(strings.ToLower(r.FormValue("word2")))
+	w3 := strings.TrimSpace(strings.ToLower(r.FormValue("word3")))
+
+	// Verify words match
+	if pos1 >= len(words) || pos2 >= len(words) || pos3 >= len(words) ||
+		w1 != words[pos1] || w2 != words[pos2] || w3 != words[pos3] {
+		// Wrong — show seed phrase again with error
+		positions := []int{pos1, pos2, pos3}
+		data := h.pageData("", "Save Seed Phrase")
+		data["SeedPhrase"] = seed
+		data["SeedWords"] = words
+		data["ConfirmPos1"] = positions[0]
+		data["ConfirmPos2"] = positions[1]
+		data["ConfirmPos3"] = positions[2]
+		data["Error"] = "Words don't match. Please check your seed phrase and try again."
+		h.renderPage(w, "onboarding.html", data)
+		return
+	}
+
+	// Success — show profile setup
+	data := h.pageData("", "Set Your Name")
+	data["SetProfile"] = true
+	h.renderPage(w, "onboarding.html", data)
+}
+
+// handleSetProfile sets the user's display name.
+func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	displayName := strings.TrimSpace(r.FormValue("display_name"))
+	if displayName == "" {
+		displayName = "Anonymous"
+	}
+
+	// Update profile in DB
+	if h.identity.IsUnlocked() {
+		kp := h.identity.Get()
+		if kp != nil {
+			h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, "", nil, nil, "", 1, time.Now().UnixMilli())
+		}
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handlePost creates a new post from form data.
+func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	content := strings.TrimSpace(r.FormValue("content"))
+	if content == "" {
+		http.Error(w, "Post content is required", http.StatusBadRequest)
+		return
+	}
+
+	if !h.identity.IsUnlocked() {
+		http.Error(w, "Identity not unlocked", http.StatusUnauthorized)
+		return
+	}
+
+	kp := h.identity.Get()
+	if kp == nil {
+		http.Error(w, "No active identity", http.StatusUnauthorized)
+		return
+	}
+
+	// Create post via the social service — but we don't have direct access.
+	// Instead, call our own API endpoint with JSON.
+	postBody := fmt.Sprintf(`{"content":%q}`, content)
+	resp, err := http.Post("http://127.0.0.1:7470/api/posts", "application/json", strings.NewReader(postBody))
+	if err != nil {
+		http.Error(w, "Failed to create post", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Post creation failed: %s", string(body))
+		http.Error(w, "Failed to create post: "+string(body), resp.StatusCode)
+		return
+	}
+
+	// Return the new post as HTML partial so htmx can insert it
+	var result struct {
+		ID      string `json:"id"`
+		Author  string `json:"author"`
+		Content string `json:"content"`
+		Timestamp uint64 `json:"timestamp"`
+	}
+	decodeJSON(resp.Body, &result)
+
+	user := h.currentUser()
+	authorName := "Anonymous"
+	authorInitial := "A"
+	shortPubkey := ""
+	if user != nil {
+		authorName = user.DisplayName
+		authorInitial = string([]rune(user.DisplayName)[0])
+		shortPubkey = user.ShortPubkey
+	}
+
+	post := PostView{
+		ID:            result.ID,
+		AuthorName:    authorName,
+		AuthorInitial: authorInitial,
+		ShortPubkey:   shortPubkey,
+		Content:       content,
+		RelativeTime:  "just now",
+		LikeCount:     0,
+		ReplyCount:    0,
+		RepostCount:   0,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	h.partials.ExecuteTemplate(w, "feed_items.html", struct{ Posts []PostView }{Posts: []PostView{post}})
 }
 
 // handleImport processes the identity import form.
