@@ -48,7 +48,7 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 		"reaction_type": reaction.ReactionType,
 		"timestamp":     reaction.Timestamp,
 	}
-	h.emit("new_reaction", reactionData)
+	h.emit(EventNewReaction, reactionData)
 	respondJSON(w, http.StatusCreated, reactionData)
 }
 
@@ -83,6 +83,6 @@ func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
 		"repost_of": hex.EncodeToString(post.RepostOf),
 		"timestamp": post.Timestamp,
 	}
-	h.emit("new_repost", repostData)
+	h.emit(EventNewRepost, repostData)
 	respondJSON(w, http.StatusCreated, repostData)
 }

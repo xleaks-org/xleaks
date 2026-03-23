@@ -183,6 +183,8 @@ func (h *Host) LibP2PHost() libp2phost.Host {
 // configuring the content fetcher, server, and calling ServeContent to
 // register the stream handler.
 func (h *Host) ContentExchange() *ContentExchange {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.contentExchange == nil {
 		h.contentExchange = NewContentExchange(h)
 	}

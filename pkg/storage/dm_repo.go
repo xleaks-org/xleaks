@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 )
@@ -103,7 +104,7 @@ func (db *DB) GetConversations(ownPubkey []byte) ([]ConversationSummary, error) 
 		}
 
 		// The "other peer" is whichever of peer_a/peer_b doesn't match ownPubkey.
-		if bytesEqual(peerA, ownPubkey) {
+		if bytes.Equal(peerA, ownPubkey) {
 			cs.PeerPubkey = peerB
 		} else {
 			cs.PeerPubkey = peerA
@@ -114,18 +115,6 @@ func (db *DB) GetConversations(ownPubkey []byte) ([]ConversationSummary, error) 
 	return summaries, rows.Err()
 }
 
-// bytesEqual returns true if two byte slices are equal.
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
 
 // MarkDMRead marks a direct message as read by its CID.
 func (db *DB) MarkDMRead(cid []byte) error {
