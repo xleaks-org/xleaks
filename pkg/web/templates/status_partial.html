@@ -1,0 +1,34 @@
+{{define "status_partial"}}
+<div class="space-y-2 text-sm">
+    <div class="flex items-center justify-between">
+        <span class="text-gray-400">Connection</span>
+        <span class="flex items-center gap-1.5">
+            {{if gt .Peers 0}}
+            <span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+            <span class="text-green-400">Online</span>
+            {{else}}
+            <span class="inline-block w-2 h-2 rounded-full bg-yellow-500"></span>
+            <span class="text-yellow-400">No peers</span>
+            {{end}}
+        </span>
+    </div>
+    <div class="flex items-center justify-between">
+        <span class="text-gray-400">Peers</span>
+        <span class="text-white font-medium">{{.Peers}}</span>
+    </div>
+    <div class="flex items-center justify-between">
+        <span class="text-gray-400">Uptime</span>
+        <span class="text-white">{{.Uptime}}</span>
+    </div>
+    <div class="flex items-center justify-between">
+        <span class="text-gray-400">Storage</span>
+        <span class="text-white">{{.StorageUsed}} / {{.StorageMax}}</span>
+    </div>
+    {{if gt .Subscriptions 0}}
+    <div class="flex items-center justify-between">
+        <span class="text-gray-400">Following</span>
+        <span class="text-white">{{.Subscriptions}}</span>
+    </div>
+    {{end}}
+</div>
+{{end}}

@@ -92,9 +92,9 @@
         <!-- Right Sidebar -->
         <aside class="hidden lg:block w-80 p-4 space-y-4">
             <div class="rounded-xl bg-gray-900 border border-gray-800 p-4">
-                <h3 class="text-sm font-semibold mb-2">Node Status</h3>
-                <div hx-get="/api/node/status" hx-trigger="load, every 30s" hx-target="#node-status" hx-swap="innerHTML">
-                    <div id="node-status"><span class="text-gray-400 text-sm">Loading...</span></div>
+                <h3 class="text-sm font-semibold mb-3">Node Status</h3>
+                <div id="node-status" hx-get="/web/node-status" hx-trigger="load, every 30s" hx-swap="innerHTML">
+                    <span class="text-gray-400 text-sm">Loading...</span>
                 </div>
             </div>
             <div class="rounded-xl bg-gray-900 border border-gray-800 p-4">
