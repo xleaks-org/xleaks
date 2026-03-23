@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  reactCompiler: false,
 };
 
 export default nextConfig;
