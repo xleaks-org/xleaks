@@ -35,6 +35,7 @@ type HandlerDeps struct {
 	Config         *config.Config
 	ConfigPath     string
 	IndexerClient  *indexer.IndexerClient
+	WebHandler     chi.Router // optional: Go-based web UI routes
 }
 
 // NewRouter creates the chi router with all API routes.
@@ -139,6 +140,11 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 
 	// WebSocket
 	r.Get("/ws", wsHub.HandleWebSocket)
+
+	// Web UI (Go templates + htmx)
+	if deps.WebHandler != nil {
+		r.Mount("/", deps.WebHandler)
+	}
 
 	return r
 }

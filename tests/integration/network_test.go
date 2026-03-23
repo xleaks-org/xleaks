@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/identity"
-	"github.com/xleaks/xleaks/pkg/social"
-	"github.com/xleaks/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/social"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // testEnv bundles all the infrastructure needed for integration tests.

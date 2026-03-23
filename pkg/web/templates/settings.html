@@ -1,0 +1,51 @@
+{{define "content"}}
+<header class="sticky top-0 z-10 bg-[#0a0a0a]/80 backdrop-blur border-b border-gray-800 px-4 py-3">
+    <h1 class="text-xl font-bold">Settings</h1>
+</header>
+<div class="p-4 space-y-6">
+    {{if .User}}
+    <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
+        <h2 class="font-semibold mb-3">Identity</h2>
+        <div class="space-y-3 text-sm">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">Display Name</span>
+                <span class="font-medium">{{.User.DisplayName}}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">Address</span>
+                <span class="font-mono text-xs bg-gray-800 px-2 py-1 rounded">{{.User.Address}}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">Public Key</span>
+                <span class="font-mono text-xs bg-gray-800 px-2 py-1 rounded">{{.User.ShortPubkey}}</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
+        <h2 class="font-semibold mb-3">Actions</h2>
+        <div class="space-y-3">
+            <a href="/logout" class="block text-center bg-red-500/20 hover:bg-red-500/30 text-red-400 font-medium py-2 rounded-lg transition-colors border border-red-500/30">Lock Identity</a>
+        </div>
+    </section>
+    {{end}}
+
+    <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
+        <h2 class="font-semibold mb-3">About</h2>
+        <div class="space-y-3 text-sm">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">Version</span>
+                <span>1.0.0</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">License</span>
+                <span>AGPL-3.0</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">GitHub</span>
+                <a href="https://github.com/xleaks-org/xleaks" class="text-blue-500 hover:underline" target="_blank">xleaks-org/xleaks</a>
+            </div>
+        </div>
+    </section>
+</div>
+{{end}}

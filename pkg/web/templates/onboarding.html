@@ -1,0 +1,55 @@
+{{define "content"}}
+<div class="flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-md">
+        {{if .NeedsOnboarding}}
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">XLeaks</h1>
+            <p class="text-gray-400">Decentralized. Censorship-resistant.</p>
+        </div>
+        <form method="POST" action="/onboarding/create" class="space-y-4">
+            <input type="password" name="passphrase" placeholder="Choose a passphrase (8+ chars)" required minlength="8"
+                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
+            <input type="password" name="confirm" placeholder="Confirm passphrase" required
+                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Create Identity</button>
+        </form>
+        <div class="relative my-8">
+            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-700"></div></div>
+            <div class="relative flex justify-center"><span class="bg-[#0a0a0a] px-4 text-gray-500 text-sm">or</span></div>
+        </div>
+        <form method="POST" action="/onboarding/import" class="space-y-4">
+            <p class="text-center text-gray-400 text-sm">Import existing identity</p>
+            <textarea name="mnemonic" rows="3" placeholder="Enter your 24-word seed phrase"
+                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none resize-none"></textarea>
+            <input type="password" name="passphrase" placeholder="Set passphrase" required
+                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
+            <button type="submit" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-full transition-colors">Import Identity</button>
+        </form>
+        {{else if .Locked}}
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">XLeaks</h1>
+            <p class="text-gray-400">Enter your passphrase to unlock</p>
+        </div>
+        <form method="POST" action="/unlock" class="space-y-4">
+            <input type="password" name="passphrase" placeholder="Passphrase" required autofocus
+                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Unlock</button>
+        </form>
+        {{else if .SeedPhrase}}
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold mb-2">Save Your Seed Phrase</h1>
+            <p class="text-red-400 text-sm">Write these words down. If you lose them, you lose your identity forever.</p>
+        </div>
+        <div class="grid grid-cols-3 gap-2 p-4 bg-gray-900 rounded-xl border border-gray-700 mb-6">
+            {{range $i, $word := .SeedWords}}
+            <div class="text-sm py-1"><span class="text-gray-500 mr-1">{{add $i 1}}.</span>{{$word}}</div>
+            {{end}}
+        </div>
+        <a href="/" class="block text-center bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">I've Saved It — Continue</a>
+        {{end}}
+        {{if .Error}}
+        <div class="mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm text-center">{{.Error}}</div>
+        {{end}}
+    </div>
+</div>
+{{end}}
