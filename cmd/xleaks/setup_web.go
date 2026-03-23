@@ -16,12 +16,14 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/indexer"
 	"github.com/xleaks-org/xleaks/pkg/p2p"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 	"github.com/xleaks-org/xleaks/pkg/web"
 )
 
 // setupWebHandler initialises the Go-template web UI and wires its callbacks.
+// The idx parameter may be nil when the node is not running in indexer mode.
 func setupWebHandler(
 	db *storage.DB,
 	idHolder *identity.Holder,
@@ -29,6 +31,7 @@ func setupWebHandler(
 	cfg *config.Config,
 	p2pHost *p2p.Host,
 	dataDir string,
+	idx *indexer.Indexer,
 ) chi.Router {
 	sessionMgr := web.NewSessionManager()
 	webHandler, err := web.NewHandler(db, idHolder, svc.Timeline, sessionMgr)
@@ -59,6 +62,14 @@ func setupWebHandler(
 		if err != nil {
 			return "", err
 		}
+
+		// WU-3: Index locally created posts.
+		if idx != nil {
+			if err := idx.IndexPost(post); err != nil {
+				log.Printf("Warning: failed to index local post: %v", err)
+			}
+		}
+
 		return hex.EncodeToString(post.Id), nil
 	})
 
@@ -96,6 +107,9 @@ func setupWebHandler(
 
 		return peers, uptimeSecs, storageUsed, storageLimit, subscriptions
 	})
+
+	// WU-6: Wire the indexer client to the web handler for broader search.
+	webHandler.SetIndexerClient(svc.Indexer)
 
 	return webHandler.Routes()
 }

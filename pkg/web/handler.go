@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/indexer"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -29,6 +30,7 @@ type Handler struct {
 	repostPost       RepostFunc
 	nodeStatus       NodeStatusFunc
 	onIdentityChange IdentityChangeFunc
+	indexerClient    *indexer.IndexerClient
 }
 
 // SetRepost sets the repost callback.
@@ -42,6 +44,11 @@ func (h *Handler) SetCreatePost(fn CreatePostFunc) {
 // SetNodeStatus sets the node status callback.
 func (h *Handler) SetNodeStatus(fn NodeStatusFunc) {
 	h.nodeStatus = fn
+}
+
+// SetIndexerClient sets the indexer client for broader search capabilities.
+func (h *Handler) SetIndexerClient(ic *indexer.IndexerClient) {
+	h.indexerClient = ic
 }
 
 // SetOnIdentityChange sets the callback invoked when the user creates, imports, or unlocks an identity.
@@ -112,6 +119,7 @@ func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline, sm
 		"home.html", "onboarding.html", "settings.html", "post.html",
 		"profile.html", "notifications.html", "messages.html",
 		"search.html", "trending.html", "conversation.html", "terms.html",
+		"explore.html",
 	}
 
 	pages := make(map[string]*template.Template, len(pageFiles))
@@ -168,6 +176,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/messages", h.messagesPage)
 	r.Get("/messages/{pubkey}", h.conversationPage)
 	r.Get("/search", h.searchPage)
+	r.Get("/explore", h.explorePage)
 	r.Get("/trending", h.trendingPage)
 	r.Post("/settings/profile", h.handleUpdateProfile)
 	r.Get("/settings/toggle-theme", h.handleToggleTheme)

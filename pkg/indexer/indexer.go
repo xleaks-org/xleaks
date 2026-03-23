@@ -79,6 +79,15 @@ func (idx *Indexer) IndexPost(post *pb.Post) error {
 	return nil
 }
 
+// Search returns the search index subsystem.
+func (idx *Indexer) Search() *SearchIndex { return idx.search }
+
+// Trending returns the trending engine subsystem.
+func (idx *Indexer) Trending() *TrendingEngine { return idx.trending }
+
+// Stats returns the stats collector subsystem.
+func (idx *Indexer) Stats() *StatsCollector { return idx.stats }
+
 // IndexProfile indexes a protobuf Profile into the full-text search index.
 func (idx *Indexer) IndexProfile(profile *pb.Profile) error {
 	pubkeyHex := hex.EncodeToString(profile.GetAuthor())

@@ -53,6 +53,29 @@ func (db *DB) GetProfileVersion(pubkey []byte) (version uint64, found bool, err 
 	return version, true, nil
 }
 
+// GetAllProfiles returns all stored profiles, ordered by display name.
+func (db *DB) GetAllProfiles() ([]ProfileRow, error) {
+	rows, err := db.Query(
+		`SELECT pubkey, display_name, bio, avatar_cid, banner_cid, website, version, updated_at
+		 FROM profiles
+		 ORDER BY display_name`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get all profiles: %w", err)
+	}
+	defer rows.Close()
+
+	var profiles []ProfileRow
+	for rows.Next() {
+		var p ProfileRow
+		if err := rows.Scan(&p.Pubkey, &p.DisplayName, &p.Bio, &p.AvatarCID, &p.BannerCID, &p.Website, &p.Version, &p.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan profile row: %w", err)
+		}
+		profiles = append(profiles, p)
+	}
+	return profiles, rows.Err()
+}
+
 // GetProfile retrieves a profile by public key. Returns nil if not found.
 func (db *DB) GetProfile(pubkey []byte) (*ProfileRow, error) {
 	var p ProfileRow

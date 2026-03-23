@@ -1,0 +1,28 @@
+{{define "content"}}
+<header class="sticky top-0 z-10 bg-[#0a0a0a]/80 backdrop-blur border-b border-gray-800 px-4 py-3">
+    <h1 class="text-xl font-bold">Explore</h1>
+</header>
+<div class="p-4">
+    <p class="text-gray-400 text-sm mb-4">Discover users on the network</p>
+    {{range .Users}}
+    <div class="flex items-center gap-3 p-3 border-b border-gray-800 hover:bg-gray-900/50 transition-colors">
+        <a href="/user/{{.Pubkey}}" class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-800 to-blue-900 flex-shrink-0 flex items-center justify-center font-bold">
+            {{.Initial}}
+        </a>
+        <div class="flex-1 min-w-0">
+            <a href="/user/{{.Pubkey}}" class="font-semibold hover:underline">{{.DisplayName}}</a>
+            <p class="text-gray-500 text-xs font-mono">{{.ShortPubkey}}</p>
+            {{if .Bio}}<p class="text-gray-400 text-sm mt-1 truncate">{{.Bio}}</p>{{end}}
+        </div>
+        <form method="POST" action="/web/follow/{{.Pubkey}}">
+            <button class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-full">Follow</button>
+        </form>
+    </div>
+    {{else}}
+    <div class="text-center py-12 text-gray-400">
+        <p class="text-lg mb-2">No users yet</p>
+        <p class="text-sm">Be the first to join!</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

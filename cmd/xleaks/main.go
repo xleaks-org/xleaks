@@ -53,16 +53,24 @@ func run() error {
 
 	svc := setupServices(db, cas, kp, idHolder)
 
-	wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc)
+	msgProcessor := wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc)
 	wireContentExchange(p2pHost, cas)
 	wireIndexerDiscovery(ctx, cfg, p2pHost, svc)
+
+	// WU-1/WU-2: Start indexer mode if configured.
+	idx := setupIndexer(ctx, db, dataDir, cfg, p2pHost)
+
+	// WU-3: Feed incoming P2P posts/profiles into the indexer.
+	if idx != nil && msgProcessor != nil {
+		msgProcessor.SetIndexer(idx)
+	}
 
 	replicator := feed.NewReplicator(db, cas)
 	maxStorage := int64(cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
 	replicator.StartStorageManager(ctx, maxStorage, 5*time.Minute)
 
 	cfgPath := filepath.Join(dataDir, "config.toml")
-	webRoutes := setupWebHandler(db, idHolder, svc, cfg, p2pHost, dataDir)
+	webRoutes := setupWebHandler(db, idHolder, svc, cfg, p2pHost, dataDir, idx)
 	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes)
 
 	server := api.NewServer(cfg.API.ListenAddress, deps)
@@ -70,7 +78,8 @@ func run() error {
 }
 
 // wireP2PSubscriptions sets up GossipSub topic subscriptions and feed hooks.
-// It creates a MessageProcessor that handles incoming messages.
+// It creates a MessageProcessor that handles incoming messages and returns it
+// so callers can set optional fields (e.g. an indexer).
 func wireP2PSubscriptions(
 	ctx context.Context,
 	host *p2p.Host,
@@ -78,9 +87,9 @@ func wireP2PSubscriptions(
 	db *storage.DB,
 	cas *content.ContentStore,
 	svc *ServiceBundle,
-) {
+) *p2p.MessageProcessor {
 	if host == nil {
-		return
+		return nil
 	}
 
 	mp := p2p.NewMessageProcessor(db, cas, svc.Notifs)
@@ -109,6 +118,8 @@ func wireP2PSubscriptions(
 	for _, pk := range svc.Feed.FollowedPubkeys() {
 		host.Subscribe(p2p.PostsTopic(pk), handler)
 	}
+
+	return mp
 }
 
 // wireContentExchange configures the content exchange fetcher on the P2P host.
