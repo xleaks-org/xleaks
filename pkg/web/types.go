@@ -28,6 +28,9 @@ type PostView struct {
 	ReplyCount    int
 	RepostCount   int
 
+	IsLiked       bool   // whether the current user has liked this post
+	IsReposted    bool   // whether the current user has reposted this post
+
 	ReplyTo       string // hex CID of parent post (empty if top-level)
 	ReplyToAuthor string // display name of parent post author
 	RepostOf      string // hex CID of original post (empty if original)
@@ -87,6 +90,9 @@ type WordSlot struct {
 // CreatePostFunc is a callback to create a post, avoiding direct dependency on social package.
 // The replyTo parameter is the hex-encoded CID of the parent post (empty for top-level posts).
 type CreatePostFunc func(ctx context.Context, content string, replyTo string) (id string, err error)
+
+// RepostFunc is a callback to create a repost (a post with repost_of set).
+type RepostFunc func(ctx context.Context, targetCIDHex string) (id string, err error)
 
 // NodeStatusFunc is a callback that returns live node status without making
 // an HTTP round-trip to the API server. Returns peer count, uptime in seconds,

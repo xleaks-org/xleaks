@@ -235,7 +235,8 @@ func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
 		`</svg> %d</span>`, likes)
 }
 
-// handleRepost creates a repost reaction and returns the updated button HTML.
+// handleRepost creates a repost (a new post with repost_of set) and returns updated button HTML.
+// Per XLeaks protocol, reposts are immutable — once reposted, it cannot be undone.
 func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	target := r.FormValue("target")
@@ -244,36 +245,40 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetBytes, err := hex.DecodeString(target)
-	if err != nil {
-		http.Error(w, "invalid target", http.StatusBadRequest)
-		return
-	}
-
-	kp := h.identity.Get()
-	if kp == nil {
+	if !h.identity.IsUnlocked() || h.createPost == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
 
-	// Insert a repost as a reaction (type "repost").
-	repostData := append([]byte("repost:"), append(kp.PublicKeyBytes(), targetBytes...)...)
-	cid, _ := content.ComputeCID(repostData)
-	if err := h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "repost", time.Now().UnixMilli()); err != nil {
-		log.Printf("web: failed to insert repost reaction: %v", err)
+	// Check if already reposted (immutable — can't undo)
+	kp := h.identity.Get()
+	if kp != nil && h.db.HasReacted(kp.PublicKeyBytes(), mustDecodeHex(target), "repost") {
+		// Already reposted — just return the current state
+		_, _, reposts, _ := h.db.GetFullReactionCounts(mustDecodeHex(target))
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(w, `<span class="text-green-400">🔄 %d</span>`, reposts)
+		return
 	}
-	if err := h.db.UpdateReactionCount(targetBytes); err != nil {
-		log.Printf("web: failed to update reaction count: %v", err)
+
+	// Create repost via the social service (creates actual post with repost_of)
+	if h.repostPost != nil {
+		if _, err := h.repostPost(r.Context(), target); err != nil {
+			log.Printf("web: repost failed: %v", err)
+		}
+	}
+
+	// Also track as a "repost" reaction for HasReacted checks
+	targetBytes := mustDecodeHex(target)
+	if kp != nil {
+		repostData := append([]byte("repost:"), append(kp.PublicKeyBytes(), targetBytes...)...)
+		cid, _ := content.ComputeCID(repostData)
+		h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "repost", time.Now().UnixMilli())
 	}
 
 	_, _, reposts, _ := h.db.GetFullReactionCounts(targetBytes)
 
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, `<span class="text-green-400">`+
-		`<svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">`+
-		`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" `+
-		`d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>`+
-		`</svg> %d</span>`, reposts)
+	fmt.Fprintf(w, `<span class="text-green-400">🔄 %d</span>`, reposts)
 }
 
 // handleFollow subscribes to a user and redirects back to their profile.

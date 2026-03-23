@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"math/rand"
@@ -133,4 +134,9 @@ func renderContent(content string) template.HTML {
 		return fmt.Sprintf(`<a href="/search?q=%%23%s" class="text-blue-500 hover:underline">#%s</a>`, tag, tag)
 	})
 	return template.HTML(result)
+}
+
+func mustDecodeHex(s string) []byte {
+	b, _ := hex.DecodeString(s)
+	return b
 }

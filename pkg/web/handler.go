@@ -25,9 +25,13 @@ type Handler struct {
 	identity         *identity.Holder
 	timeline         *feed.Timeline
 	createPost       CreatePostFunc
+	repostPost       RepostFunc
 	nodeStatus       NodeStatusFunc
 	onIdentityChange IdentityChangeFunc
 }
+
+// SetRepost sets the repost callback.
+func (h *Handler) SetRepost(fn RepostFunc) { h.repostPost = fn }
 
 // SetCreatePost sets the post creation callback.
 func (h *Handler) SetCreatePost(fn CreatePostFunc) {
