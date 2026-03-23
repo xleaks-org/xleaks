@@ -45,6 +45,7 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.notifyIdentityChange()
+	h.ensureProfile()
 	data := h.pageData("", "Save Seed Phrase")
 	data["SeedPhrase"] = mnemonic
 	data["SeedWords"] = strings.Fields(mnemonic)
@@ -131,7 +132,11 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.notifyIdentityChange()
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	h.ensureProfile()
+	// Show profile setup page so user can set their name
+	data := h.pageData("", "Set Your Name")
+	data["SetProfile"] = true
+	h.renderPage(w, "onboarding.html", data)
 }
 
 // handleUnlock processes the unlock form.
@@ -154,6 +159,7 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.notifyIdentityChange()
+	h.ensureProfile()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

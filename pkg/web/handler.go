@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/feed"
@@ -49,6 +50,19 @@ func (h *Handler) notifyIdentityChange() {
 		if kp != nil {
 			h.onIdentityChange(kp)
 		}
+	}
+}
+
+// ensureProfile creates a default profile row in the DB if one doesn't exist.
+// This is required because the posts table has a FOREIGN KEY to profiles.
+func (h *Handler) ensureProfile() {
+	kp := h.identity.Get()
+	if kp == nil {
+		return
+	}
+	profile, _ := h.db.GetProfile(kp.PublicKeyBytes())
+	if profile == nil {
+		h.db.UpsertProfile(kp.PublicKeyBytes(), "Anonymous", "", nil, nil, "", 1, time.Now().UnixMilli())
 	}
 }
 
