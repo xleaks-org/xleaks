@@ -1,6 +1,6 @@
 {{define "content"}}
 <header class="sticky top-0 z-10 bg-[#0a0a0a]/80 backdrop-blur border-b border-gray-800 px-4 py-3 flex items-center gap-4">
-    <a href="/messages" class="text-white hover:text-gray-300 transition-colors">
+    <a href="/messages" class="p-2 -ml-2 rounded-lg text-white hover:text-gray-300 transition-colors">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
     </a>
     <div>
@@ -9,7 +9,7 @@
     </div>
 </header>
 
-<div class="flex flex-col h-[calc(100vh-60px)]">
+<div class="flex flex-col h-[calc(100dvh-60px)]">
     <!-- Messages -->
     <div class="flex-1 overflow-y-auto p-4 space-y-3" id="messages-container">
         {{if .Messages}}
@@ -36,8 +36,8 @@
         <form hx-post="/web/send-dm" hx-target="#messages-container" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful) this.reset()" class="flex gap-2">
             <input type="hidden" name="recipient" value="{{.PeerPubkey}}">
             <input type="text" name="content" placeholder="Type a message..." autocomplete="off"
-                class="flex-1 bg-gray-800 border border-gray-700 rounded-full px-4 py-2 text-white text-sm focus:border-blue-500 focus:outline-none">
-            <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white rounded-full px-4 py-2 text-sm font-bold transition-colors">Send</button>
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-full px-4 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+            <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white rounded-full px-4 py-2.5 text-sm font-bold transition-colors">Send</button>
         </form>
     </div>
 </div>

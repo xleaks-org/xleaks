@@ -81,7 +81,7 @@
                     <span class="text-gray-500 mr-1">{{add $i 1}}.</span>
                     {{if $item.Blank}}
                     <input type="text" name="word_{{$i}}" required autocomplete="off" placeholder="?"
-                        class="w-16 bg-gray-800 border border-blue-500 rounded px-2 py-0.5 text-blue-400 text-sm focus:outline-none focus:border-blue-400 inline-block">
+                        class="w-full bg-gray-800 border border-blue-500 rounded px-3 py-2 text-blue-400 text-sm focus:outline-none focus:border-blue-400 inline-block">
                     {{else}}
                     <span class="text-gray-300">{{$item.Word}}</span>
                     {{end}}
