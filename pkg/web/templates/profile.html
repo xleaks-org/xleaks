@@ -22,7 +22,15 @@
             {{if .IsOwnProfile}}
             <a href="/settings" class="border border-gray-600 hover:border-gray-400 text-white font-bold px-4 py-1.5 rounded-full text-sm transition-colors">Edit Profile</a>
             {{else}}
-            <button hx-post="/api/follow/{{.ProfileUser.Pubkey}}" hx-swap="none" class="bg-white text-black hover:bg-gray-200 font-bold px-4 py-1.5 rounded-full text-sm transition-colors">Follow</button>
+                {{if .IsFollowing}}
+                <form method="POST" action="/web/unfollow/{{.ProfileUser.Pubkey}}" style="display:inline">
+                    <button class="bg-gray-700 hover:bg-red-600 text-white text-sm font-bold px-4 py-1.5 rounded-full transition-colors">Unfollow</button>
+                </form>
+                {{else}}
+                <form method="POST" action="/web/follow/{{.ProfileUser.Pubkey}}" style="display:inline">
+                    <button class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-1.5 rounded-full transition-colors">Follow</button>
+                </form>
+                {{end}}
             {{end}}
         </div>
         <h2 class="text-xl font-bold">{{.ProfileUser.DisplayName}}</h2>
@@ -30,6 +38,11 @@
         {{if .ProfileUser.Bio}}
         <p class="text-sm mb-2">{{.ProfileUser.Bio}}</p>
         {{end}}
+        <div class="flex gap-4 text-sm mt-2">
+            <span><strong>{{.FollowingCount}}</strong> <span class="text-gray-400">Following</span></span>
+            <span><strong>{{.FollowerCount}}</strong> <span class="text-gray-400">Followers</span></span>
+            <span><strong>{{.PostCount}}</strong> <span class="text-gray-400">Posts</span></span>
+        </div>
     </div>
 </div>
 

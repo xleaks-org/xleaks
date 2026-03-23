@@ -41,7 +41,7 @@ func setupServices(
 		DMs:       social.NewDMService(db, kp),
 		Notifs:    notifs,
 		Feed:      feed.NewManager(db),
-		Timeline:  feed.NewTimeline(db, kp.PublicKeyBytes()),
+		Timeline:  feed.NewTimeline(db, idHolder),
 		Indexer:   indexer.NewIndexerClient(),
 	}
 }

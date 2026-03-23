@@ -68,6 +68,7 @@ func templateFuncMap() template.FuncMap {
 			}
 			return s[start:end]
 		},
+		"renderContent": renderContent,
 	}
 }
 
@@ -138,6 +139,10 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/web/node-status", h.nodeStatusPartial)
 	r.Get("/web/trending-tags", h.trendingTagsPartial)
 	r.Post("/web/send-dm", h.handleSendDM)
+	r.Post("/web/like", h.handleLike)
+	r.Post("/web/repost", h.handleRepost)
+	r.Post("/web/follow/{pubkey}", h.handleFollow)
+	r.Post("/web/unfollow/{pubkey}", h.handleUnfollow)
 
 	return r
 }

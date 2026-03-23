@@ -1,13 +1,17 @@
 package web
 
 import (
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -168,4 +172,129 @@ func (h *Handler) trendingTagsPartial(w http.ResponseWriter, r *http.Request) {
 			`<span class="text-xs text-gray-500 ml-2">%d posts</span></a>`,
 			template.HTMLEscapeString(tag.Tag), template.HTMLEscapeString(tag.Tag), tag.Count)
 	}
+}
+
+// handleLike creates a like reaction and returns the updated button HTML.
+func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	target := r.FormValue("target")
+	if target == "" {
+		http.Error(w, "missing target", http.StatusBadRequest)
+		return
+	}
+
+	targetBytes, err := hex.DecodeString(target)
+	if err != nil {
+		http.Error(w, "invalid target", http.StatusBadRequest)
+		return
+	}
+
+	kp := h.identity.Get()
+	if kp == nil {
+		http.Error(w, "not logged in", http.StatusUnauthorized)
+		return
+	}
+
+	// Compute a deterministic CID for the reaction so duplicates are ignored.
+	cid, _ := content.ComputeCID(append(kp.PublicKeyBytes(), targetBytes...))
+	if err := h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "like", time.Now().UnixMilli()); err != nil {
+		log.Printf("web: failed to insert like reaction: %v", err)
+	}
+	if err := h.db.UpdateReactionCount(targetBytes); err != nil {
+		log.Printf("web: failed to update reaction count: %v", err)
+	}
+
+	likes, _, _, _ := h.db.GetFullReactionCounts(targetBytes)
+
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintf(w, `<span class="text-red-400">`+
+		`<svg class="w-4 h-4 inline" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">`+
+		`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" `+
+		`d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>`+
+		`</svg> %d</span>`, likes)
+}
+
+// handleRepost creates a repost reaction and returns the updated button HTML.
+func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	target := r.FormValue("target")
+	if target == "" {
+		http.Error(w, "missing target", http.StatusBadRequest)
+		return
+	}
+
+	targetBytes, err := hex.DecodeString(target)
+	if err != nil {
+		http.Error(w, "invalid target", http.StatusBadRequest)
+		return
+	}
+
+	kp := h.identity.Get()
+	if kp == nil {
+		http.Error(w, "not logged in", http.StatusUnauthorized)
+		return
+	}
+
+	// Insert a repost as a reaction (type "repost").
+	repostData := append([]byte("repost:"), append(kp.PublicKeyBytes(), targetBytes...)...)
+	cid, _ := content.ComputeCID(repostData)
+	if err := h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "repost", time.Now().UnixMilli()); err != nil {
+		log.Printf("web: failed to insert repost reaction: %v", err)
+	}
+	if err := h.db.UpdateReactionCount(targetBytes); err != nil {
+		log.Printf("web: failed to update reaction count: %v", err)
+	}
+
+	_, _, reposts, _ := h.db.GetFullReactionCounts(targetBytes)
+
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintf(w, `<span class="text-green-400">`+
+		`<svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">`+
+		`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" `+
+		`d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>`+
+		`</svg> %d</span>`, reposts)
+}
+
+// handleFollow subscribes to a user and redirects back to their profile.
+func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request) {
+	pubkeyHex := chi.URLParam(r, "pubkey")
+	pubkeyBytes, err := hex.DecodeString(pubkeyHex)
+	if err != nil {
+		http.Error(w, "invalid pubkey", http.StatusBadRequest)
+		return
+	}
+
+	kp := h.identity.Get()
+	if kp == nil {
+		http.Error(w, "not logged in", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.db.AddSubscription(pubkeyBytes, time.Now().UnixMilli()); err != nil {
+		log.Printf("web: failed to follow: %v", err)
+	}
+
+	http.Redirect(w, r, "/user/"+pubkeyHex, http.StatusSeeOther)
+}
+
+// handleUnfollow removes a subscription and redirects back to the profile.
+func (h *Handler) handleUnfollow(w http.ResponseWriter, r *http.Request) {
+	pubkeyHex := chi.URLParam(r, "pubkey")
+	pubkeyBytes, err := hex.DecodeString(pubkeyHex)
+	if err != nil {
+		http.Error(w, "invalid pubkey", http.StatusBadRequest)
+		return
+	}
+
+	kp := h.identity.Get()
+	if kp == nil {
+		http.Error(w, "not logged in", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.db.RemoveSubscription(pubkeyBytes); err != nil {
+		log.Printf("web: failed to unfollow: %v", err)
+	}
+
+	http.Redirect(w, r, "/user/"+pubkeyHex, http.StatusSeeOther)
 }

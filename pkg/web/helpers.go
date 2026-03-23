@@ -2,13 +2,17 @@ package web
 
 import (
 	"fmt"
+	"html/template"
 	"math/rand"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
+
+var hashtagLinkRe = regexp.MustCompile(`#(\w+)`)
 
 const seedPhraseLength = 24
 
@@ -118,4 +122,15 @@ func buildWordSlots(words []string, positions []int) ([]WordSlot, string) {
 		parts[i] = strconv.Itoa(p)
 	}
 	return slots, strings.Join(parts, ",")
+}
+
+// renderContent escapes HTML in post content and converts hashtags into
+// clickable links that search for the tag.
+func renderContent(content string) template.HTML {
+	escaped := template.HTMLEscapeString(content)
+	result := hashtagLinkRe.ReplaceAllStringFunc(escaped, func(match string) string {
+		tag := match[1:]
+		return fmt.Sprintf(`<a href="/search?q=%%23%s" class="text-blue-500 hover:underline">#%s</a>`, tag, tag)
+	})
+	return template.HTML(result)
 }
