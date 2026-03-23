@@ -1,0 +1,42 @@
+{{define "content"}}
+<header class="sticky top-0 z-10 bg-[#0a0a0a]/80 backdrop-blur border-b border-gray-800 px-4 py-3 flex items-center gap-4">
+    <a href="/" class="text-white hover:text-gray-300 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+    </a>
+    <div>
+        <h1 class="text-xl font-bold">{{.ProfileUser.DisplayName}}</h1>
+        <p class="text-xs text-gray-500">{{.PostCount}} posts</p>
+    </div>
+</header>
+
+<!-- Profile Header -->
+<div class="border-b border-gray-800">
+    <!-- Banner -->
+    <div class="h-32 bg-gradient-to-r from-blue-900 to-purple-900"></div>
+    <!-- Avatar & Info -->
+    <div class="px-4 pb-4">
+        <div class="flex justify-between items-end -mt-10 mb-3">
+            <div class="w-20 h-20 rounded-full bg-gray-700 border-4 border-[#0a0a0a] flex items-center justify-center text-2xl font-bold">
+                {{.ProfileUser.Initial}}
+            </div>
+            {{if .IsOwnProfile}}
+            <a href="/settings" class="border border-gray-600 hover:border-gray-400 text-white font-bold px-4 py-1.5 rounded-full text-sm transition-colors">Edit Profile</a>
+            {{else}}
+            <button hx-post="/api/follow/{{.ProfileUser.Pubkey}}" hx-swap="none" class="bg-white text-black hover:bg-gray-200 font-bold px-4 py-1.5 rounded-full text-sm transition-colors">Follow</button>
+            {{end}}
+        </div>
+        <h2 class="text-xl font-bold">{{.ProfileUser.DisplayName}}</h2>
+        <p class="text-gray-500 font-mono text-xs mb-2">{{.ProfileUser.ShortPubkey}}</p>
+        {{if .ProfileUser.Bio}}
+        <p class="text-sm mb-2">{{.ProfileUser.Bio}}</p>
+        {{end}}
+    </div>
+</div>
+
+<!-- User Posts -->
+<div id="user-posts" hx-get="/web/feed?author={{.ProfileUser.Pubkey}}" hx-trigger="load" hx-swap="innerHTML">
+    <div class="flex justify-center py-12">
+        <div class="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+</div>
+{{end}}

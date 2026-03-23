@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xleaks/xleaks/pkg/content"
-	"github.com/xleaks/xleaks/pkg/identity"
-	pb "github.com/xleaks/xleaks/proto/gen"
+	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/identity"
+	pb "github.com/xleaks-org/xleaks/proto/gen"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -22,6 +22,7 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/p2p"
 	"github.com/xleaks-org/xleaks/pkg/social"
 	"github.com/xleaks-org/xleaks/pkg/storage"
+	"github.com/xleaks-org/xleaks/pkg/web"
 )
 
 func main() {
@@ -264,6 +265,12 @@ func run() error {
 	// Determine config path.
 	cfgPath := filepath.Join(dataDir, "config.toml")
 
+	// Initialize web UI handler (Go templates + htmx).
+	webHandler, err := web.NewHandler(db, idHolder, timeline)
+	if err != nil {
+		log.Printf("Warning: web UI failed to initialize: %v", err)
+	}
+
 	// Create API server.
 	deps := &api.HandlerDeps{
 		DB:             db,
@@ -281,6 +288,9 @@ func run() error {
 		Config:         cfg,
 		ConfigPath:     cfgPath,
 		IndexerClient:  idxClient,
+	}
+	if webHandler != nil {
+		deps.WebHandler = webHandler.Routes()
 	}
 
 	server := api.NewServer(cfg.API.ListenAddress, deps)

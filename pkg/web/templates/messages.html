@@ -1,0 +1,33 @@
+{{define "content"}}
+<header class="sticky top-0 z-10 bg-[#0a0a0a]/80 backdrop-blur border-b border-gray-800 px-4 py-3">
+    <h1 class="text-xl font-bold">Messages</h1>
+</header>
+
+<div id="conversations">
+    {{if .Conversations}}
+    {{range .Conversations}}
+    <a href="/messages/{{.PeerPubkey}}" class="flex items-center gap-3 px-4 py-3 border-b border-gray-800 hover:bg-gray-900/50 transition-colors">
+        <div class="w-12 h-12 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center text-sm font-bold">
+            {{.PeerInitial}}
+        </div>
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+                <span class="font-semibold text-sm">{{.PeerName}}</span>
+                <span class="text-xs text-gray-500">{{.RelativeTime}}</span>
+            </div>
+            <p class="text-sm text-gray-400 truncate mt-0.5">{{.Preview}}</p>
+        </div>
+        {{if gt .UnreadCount 0}}
+        <div class="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold flex-shrink-0">{{.UnreadCount}}</div>
+        {{end}}
+    </a>
+    {{end}}
+    {{else}}
+    <div class="text-center py-12 text-gray-400">
+        <svg class="w-12 h-12 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        <p class="text-lg mb-2">No messages</p>
+        <p class="text-sm">Direct messages are end-to-end encrypted.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

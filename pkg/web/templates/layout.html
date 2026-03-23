@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XLeaks{{if .Title}} — {{.Title}}{{end}}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        body { background: #0a0a0a; color: #ededed; font-family: Inter, system-ui, -apple-system, sans-serif; }
+        .card { background: #111; border: 1px solid #1f1f1f; border-radius: 12px; }
+        input, textarea, select { background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px; padding: 8px 12px; }
+        input:focus, textarea:focus { outline: none; border-color: #3b82f6; }
+        a { color: inherit; text-decoration: none; }
+        .link { color: #3b82f6; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+        /* scrollbar styling */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+    </style>
+</head>
+<body class="min-h-screen bg-[#0a0a0a] text-white font-sans">
+    <div class="max-w-7xl mx-auto flex">
+        <!-- Left Sidebar -->
+        <aside class="hidden md:flex w-64 flex-col h-screen sticky top-0 border-r border-gray-800 p-4">
+            <a href="/" class="text-2xl font-bold mb-8 block">XLeaks</a>
+            <nav class="flex-1 space-y-1">
+                <a href="/" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "home"}}bg-gray-800 font-semibold{{end}}">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                    Home
+                </a>
+                <a href="/search" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "search"}}bg-gray-800 font-semibold{{end}}">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    Search
+                </a>
+                <a href="/notifications" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "notifications"}}bg-gray-800 font-semibold{{end}}">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                    Notifications
+                </a>
+                <a href="/messages" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "messages"}}bg-gray-800 font-semibold{{end}}">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    Messages
+                </a>
+                <a href="/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "settings"}}bg-gray-800 font-semibold{{end}}">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Settings
+                </a>
+            </nav>
+            <a href="/?compose=1" class="block text-center bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full mb-4 transition-colors">New Post</a>
+            {{if .User}}
+            <div class="flex items-center gap-3 p-3 border-t border-gray-800">
+                <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm">{{slice .User.DisplayName 0 1}}</div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium truncate">{{.User.DisplayName}}</p>
+                    <p class="text-xs text-gray-400 truncate font-mono">{{.User.ShortPubkey}}</p>
+                </div>
+                <a href="/logout" class="text-gray-400 hover:text-red-400 transition-colors" title="Logout">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                </a>
+            </div>
+            {{end}}
+        </aside>
+
+        <!-- Mobile Header -->
+        <div class="md:hidden fixed top-0 left-0 right-0 z-50 bg-[#0a0a0a]/90 backdrop-blur border-b border-gray-800 px-4 py-3 flex items-center justify-between">
+            <a href="/" class="text-xl font-bold">XLeaks</a>
+            {{if .User}}
+            <a href="/settings" class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-xs">{{slice .User.DisplayName 0 1}}</a>
+            {{end}}
+        </div>
+
+        <!-- Main Content -->
+        <main class="flex-1 min-w-0 border-x border-gray-800 min-h-screen md:mt-0 mt-14">
+            {{template "content" .}}
+        </main>
+
+        <!-- Right Sidebar -->
+        <aside class="hidden lg:block w-80 p-4 space-y-4">
+            <div class="rounded-xl bg-gray-900 border border-gray-800 p-4">
+                <h3 class="text-sm font-semibold mb-2">Node Status</h3>
+                <div hx-get="/api/node/status" hx-trigger="load, every 30s" hx-target="#node-status" hx-swap="innerHTML">
+                    <div id="node-status"><span class="text-gray-400 text-sm">Loading...</span></div>
+                </div>
+            </div>
+            <div class="rounded-xl bg-gray-900 border border-gray-800 p-4">
+                <h3 class="text-sm font-semibold mb-2">About XLeaks</h3>
+                <p class="text-xs text-gray-400 leading-relaxed">Decentralized P2P social platform. Your data, your rules. No central servers, no censorship.</p>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Mobile Bottom Nav -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-[#0a0a0a]/90 backdrop-blur border-t border-gray-800 flex justify-around py-2 z-50">
+        <a href="/" class="p-2 {{if eq .Active "home"}}text-blue-500{{else}}text-gray-400{{end}}">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        </a>
+        <a href="/search" class="p-2 {{if eq .Active "search"}}text-blue-500{{else}}text-gray-400{{end}}">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </a>
+        <a href="/notifications" class="p-2 {{if eq .Active "notifications"}}text-blue-500{{else}}text-gray-400{{end}}">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        </a>
+        <a href="/messages" class="p-2 {{if eq .Active "messages"}}text-blue-500{{else}}text-gray-400{{end}}">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        </a>
+    </nav>
+</body>
+</html>
