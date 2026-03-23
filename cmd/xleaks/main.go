@@ -270,6 +270,15 @@ func run() error {
 	if err != nil {
 		log.Printf("Warning: web UI failed to initialize: %v", err)
 	}
+	if webHandler != nil {
+		webHandler.SetCreatePost(func(ctx context.Context, content string) (string, error) {
+			post, err := postService.CreatePost(ctx, content, nil, nil)
+			if err != nil {
+				return "", err
+			}
+			return hex.EncodeToString(post.Id), nil
+		})
+	}
 
 	// Create API server.
 	deps := &api.HandlerDeps{
