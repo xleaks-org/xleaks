@@ -15,9 +15,9 @@
         {{if .Messages}}
         {{range .Messages}}
         <div class="flex {{if .IsSent}}justify-end{{else}}justify-start{{end}}">
-            <div class="max-w-[75%] rounded-2xl px-4 py-2 {{if .IsSent}}bg-emerald-600 text-white{{else}}bg-gray-800 text-white{{end}}">
+            <div class="max-w-[75%] rounded-2xl px-4 py-2 {{if .IsSent}}bg-blue-600 text-white{{else}}bg-gray-800 text-white{{end}}">
                 <p class="text-sm">{{.Content}}</p>
-                <p class="text-xs {{if .IsSent}}text-emerald-200{{else}}text-gray-500{{end}} mt-1">{{.RelativeTime}}</p>
+                <p class="text-xs {{if .IsSent}}text-blue-200{{else}}text-gray-500{{end}} mt-1">{{.RelativeTime}}</p>
             </div>
         </div>
         {{end}}
@@ -36,8 +36,8 @@
         <form hx-post="/web/send-dm" hx-target="#messages-container" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful) this.reset()" class="flex gap-2">
             <input type="hidden" name="recipient" value="{{.PeerPubkey}}">
             <input type="text" name="content" placeholder="Type a message..." autocomplete="off"
-                class="flex-1 bg-gray-800 border border-gray-700 rounded-full px-4 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none">
-            <button type="submit" class="bg-emerald-500 hover:bg-emerald-600 text-white rounded-full px-4 py-2 text-sm font-bold transition-colors">Send</button>
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-full px-4 py-2 text-white text-sm focus:border-blue-500 focus:outline-none">
+            <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white rounded-full px-4 py-2 text-sm font-bold transition-colors">Send</button>
         </form>
     </div>
 </div>
