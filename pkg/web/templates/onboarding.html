@@ -3,7 +3,7 @@
     <div class="w-full max-w-md">
         {{if .NeedsOnboarding}}
         <div class="text-center mb-8">
-            <h1 class="text-4xl font-bold mb-2"><span class="text-emerald-500">X</span>Leaks</h1>
+            <h1 class="text-4xl font-bold mb-2"><span class="text-blue-500">X</span>Leaks</h1>
             <p class="text-gray-400">Decentralized. Censorship-resistant.</p>
             <p class="text-xs text-gray-500 mt-2">Your identity is a cryptographic key pair. No email. No phone. No tracking.</p>
         </div>
@@ -11,14 +11,14 @@
             <div class="relative">
                 <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 <input type="password" name="passphrase" placeholder="Choose a passphrase (8+ chars)" required minlength="8"
-                    class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500 focus:outline-none">
+                    class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
             </div>
             <div class="relative">
                 <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 <input type="password" name="confirm" placeholder="Confirm passphrase" required
-                    class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500 focus:outline-none">
+                    class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
             </div>
-            <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-full transition-colors">Create Identity</button>
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Create Identity</button>
         </form>
         <div class="relative my-8">
             <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-700"></div></div>
@@ -27,27 +27,27 @@
         <form method="POST" action="/onboarding/import" class="space-y-4">
             <p class="text-center text-gray-400 text-sm">Import existing identity</p>
             <textarea name="mnemonic" rows="3" placeholder="Enter your 24-word seed phrase"
-                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500 focus:outline-none resize-none"></textarea>
+                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none resize-none"></textarea>
             <div class="relative">
                 <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 <input type="password" name="passphrase" placeholder="Set passphrase" required
-                    class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500 focus:outline-none">
+                    class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
             </div>
             <button type="submit" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-full transition-colors">Import Identity</button>
         </form>
 
         {{else if .Locked}}
         <div class="text-center mb-8">
-            <h1 class="text-4xl font-bold mb-2"><span class="text-emerald-500">X</span>Leaks</h1>
+            <h1 class="text-4xl font-bold mb-2"><span class="text-blue-500">X</span>Leaks</h1>
             <p class="text-gray-400">Enter your passphrase to unlock</p>
         </div>
         <form method="POST" action="/unlock" class="space-y-4">
             <div class="relative">
                 <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 <input type="password" name="passphrase" placeholder="Passphrase" required autofocus
-                    class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500 focus:outline-none">
+                    class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
             </div>
-            <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-full transition-colors">Unlock</button>
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Unlock</button>
         </form>
 
         {{else if .SeedPhrase}}
@@ -64,7 +64,7 @@
         </div>
         <form method="POST" action="/onboarding/verify-step">
             <input type="hidden" name="seed" value="{{.SeedPhrase}}">
-            <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-full transition-colors">I've Saved It -- Continue</button>
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">I've Saved It -- Continue</button>
         </form>
 
         {{else if .ConfirmSeed}}
@@ -81,7 +81,7 @@
                     <span class="text-gray-500 mr-1">{{add $i 1}}.</span>
                     {{if $item.Blank}}
                     <input type="text" name="word_{{$i}}" required autocomplete="off" placeholder="?"
-                        class="w-16 bg-gray-800 border border-emerald-500 rounded px-2 py-0.5 text-emerald-400 text-sm focus:outline-none focus:border-emerald-400 inline-block">
+                        class="w-16 bg-gray-800 border border-blue-500 rounded px-2 py-0.5 text-blue-400 text-sm focus:outline-none focus:border-blue-400 inline-block">
                     {{else}}
                     <span class="text-gray-300">{{$item.Word}}</span>
                     {{end}}
@@ -89,7 +89,7 @@
                 {{end}}
             </div>
             <input type="hidden" name="blank_positions" value="{{.BlankPositions}}">
-            <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-full transition-colors">Verify & Continue</button>
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Verify & Continue</button>
         </form>
 
         {{else if .SetProfile}}
@@ -104,8 +104,8 @@
         </div>
         <form method="POST" action="/onboarding/set-profile" class="space-y-4">
             <input type="text" name="display_name" placeholder="Display name" required autofocus maxlength="50"
-                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500 focus:outline-none">
-            <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-full transition-colors">Finish Setup</button>
+                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Finish Setup</button>
         </form>
 
         {{end}}
