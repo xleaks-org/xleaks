@@ -4,13 +4,14 @@
 </header>
 <div class="p-4">
     <div class="rounded-xl bg-gray-900 border border-gray-800 p-4 mb-4">
-        <h2 class="font-semibold mb-3">Trending Topics</h2>
+        <h2 class="font-semibold mb-1 border-l-2 border-emerald-500 pl-3">Trending Topics</h2>
+        <p class="text-xs text-gray-500 mb-3 pl-3 ml-0.5">Last 24 hours</p>
         <div hx-get="/web/trending-tags" hx-trigger="load" hx-swap="innerHTML">
             <span class="text-gray-400 text-sm">Loading...</span>
         </div>
     </div>
     <div>
-        <h2 class="font-semibold mb-3">Popular Posts</h2>
+        <h2 class="font-semibold mb-3 border-l-2 border-emerald-500 pl-3">Popular Posts</h2>
         <div hx-get="/web/feed" hx-trigger="load" hx-swap="innerHTML">
             <span class="text-gray-400 text-sm">Loading...</span>
         </div>

@@ -7,28 +7,28 @@
 <form hx-post="/web/post" hx-target="#feed" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful) this.reset()" class="border-b border-gray-800 p-4">
     <div class="flex gap-3">
         {{if .User}}
-        <div class="w-10 h-10 rounded-full bg-blue-600 flex-shrink-0 flex items-center justify-center font-bold text-sm">{{slice .User.DisplayName 0 1}}</div>
+        <div class="w-10 h-10 rounded-full bg-emerald-600 flex-shrink-0 flex items-center justify-center font-bold text-sm">{{slice .User.DisplayName 0 1}}</div>
         {{end}}
         <div class="flex-1">
             <textarea name="content" rows="3" placeholder="What's happening?"
                 class="w-full bg-transparent text-white resize-none outline-none text-lg placeholder-gray-500 mb-3 border-none p-0"
                 style="background: transparent; border: none; padding: 0;"></textarea>
             <div class="flex justify-end border-t border-gray-800 pt-3">
-                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-5 py-1.5 rounded-full transition-colors">Post</button>
+                <button type="submit" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-5 py-1.5 rounded-full transition-colors">Post</button>
             </div>
         </div>
     </div>
 </form>
 
 <!-- New Posts Banner (hidden by default, shown by WebSocket) -->
-<div id="new-posts-badge" style="display:none" onclick="location.reload()" class="cursor-pointer text-center py-2 bg-blue-500/20 text-blue-400 text-sm border-b border-gray-800">
+<div id="new-posts-badge" style="display:none" onclick="location.reload()" class="cursor-pointer text-center py-2 bg-emerald-500/20 text-emerald-400 text-sm border-b border-gray-800">
     New posts available
 </div>
 
 <!-- Feed -->
 <div id="feed" hx-get="/web/feed" hx-trigger="load" hx-swap="innerHTML">
     <div class="flex justify-center py-12">
-        <div class="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <div class="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
     </div>
 </div>
 {{end}}

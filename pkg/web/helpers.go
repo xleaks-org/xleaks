@@ -131,7 +131,7 @@ func renderContent(content string) template.HTML {
 	escaped := template.HTMLEscapeString(content)
 	result := hashtagLinkRe.ReplaceAllStringFunc(escaped, func(match string) string {
 		tag := match[1:]
-		return fmt.Sprintf(`<a href="/search?q=%%23%s" class="text-blue-500 hover:underline">#%s</a>`, tag, tag)
+		return fmt.Sprintf(`<a href="/search?q=%%23%s" class="text-emerald-500 hover:underline">#%s</a>`, tag, tag)
 	})
 	return template.HTML(result)
 }
