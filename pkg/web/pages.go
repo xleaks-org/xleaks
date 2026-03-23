@@ -95,6 +95,16 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 	data["IsOwnProfile"] = isOwn
 	postCount, _ := h.db.CountPostsByAuthor(pubkeyBytes)
 	data["PostCount"] = postCount
+
+	// Follower and following counts.
+	followers, _ := h.db.GetFollowers(pubkeyBytes)
+	following, _ := h.db.GetFollowing(pubkeyBytes)
+	data["FollowerCount"] = len(followers)
+	data["FollowingCount"] = len(following)
+
+	// Check if the current user is following this profile.
+	data["IsFollowing"] = h.db.IsSubscribed(pubkeyBytes)
+
 	h.renderPage(w, "profile.html", data)
 }
 

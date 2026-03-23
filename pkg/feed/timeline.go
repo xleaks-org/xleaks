@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -20,15 +21,15 @@ type TimelineEntry struct {
 
 // Timeline assembles the chronological feed from local database.
 type Timeline struct {
-	db        *storage.DB
-	ownPubkey []byte
+	db       *storage.DB
+	identity *identity.Holder
 }
 
 // NewTimeline creates a new Timeline assembler.
-func NewTimeline(db *storage.DB, ownPubkey []byte) *Timeline {
+func NewTimeline(db *storage.DB, idHolder *identity.Holder) *Timeline {
 	return &Timeline{
-		db:        db,
-		ownPubkey: ownPubkey,
+		db:       db,
+		identity: idHolder,
 	}
 }
 
@@ -51,8 +52,10 @@ func (t *Timeline) GetFeed(before int64, limit int) ([]TimelineEntry, error) {
 		authors[i] = sub.Pubkey
 	}
 
-	// Include own posts in feed
-	authors = append(authors, t.ownPubkey)
+	// Include own posts in feed (get current pubkey dynamically).
+	if kp := t.identity.Get(); kp != nil {
+		authors = append(authors, kp.PublicKeyBytes())
+	}
 
 	posts, err := t.db.GetFeed(authors, before, limit)
 	if err != nil {
@@ -80,6 +83,11 @@ func (t *Timeline) GetUserPosts(pubkey []byte, before int64, limit int) ([]Timel
 func (t *Timeline) enrichPosts(posts []storage.PostRow) ([]TimelineEntry, error) {
 	entries := make([]TimelineEntry, 0, len(posts))
 
+	var ownPubkey []byte
+	if kp := t.identity.Get(); kp != nil {
+		ownPubkey = kp.PublicKeyBytes()
+	}
+
 	for _, post := range posts {
 		entry := TimelineEntry{Post: post}
 
@@ -100,7 +108,7 @@ func (t *Timeline) enrichPosts(posts []storage.PostRow) ([]TimelineEntry, error)
 		}
 
 		// Check if current user has liked/reposted.
-		entry.IsLiked = t.db.HasReacted(t.ownPubkey, post.CID, "like")
+		entry.IsLiked = t.db.HasReacted(ownPubkey, post.CID, "like")
 
 		entries = append(entries, entry)
 	}
