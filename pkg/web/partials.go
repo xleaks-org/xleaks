@@ -21,7 +21,9 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if h.currentUser(r) == nil {
-		fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Not logged in.</p></div>`)
+		fmt.Fprint(w, `<div class="text-center py-12 text-gray-400">`+
+			`<p class="mb-4">Session expired</p>`+
+			`<a href="/" class="text-blue-500 hover:underline">Sign in again</a></div>`)
 		return
 	}
 
