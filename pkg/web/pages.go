@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -184,7 +185,29 @@ func (h *Handler) searchPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := h.pageData("search", "Search")
-	data["Query"] = ""
-	data["Results"] = []PostView(nil)
+
+	q := r.URL.Query().Get("q")
+	data["Query"] = q
+
+	var results []PostView
+	if q != "" {
+		if strings.HasPrefix(q, "#") {
+			tag := strings.TrimPrefix(q, "#")
+			posts, err := h.db.GetPostsByTag(tag, 0, 20)
+			if err == nil {
+				for _, p := range posts {
+					results = append(results, h.postRowToView(&p))
+				}
+			}
+		} else {
+			posts, err := h.db.SearchPostsByContent(q, 20)
+			if err == nil {
+				for _, p := range posts {
+					results = append(results, h.postRowToView(&p))
+				}
+			}
+		}
+	}
+	data["Results"] = results
 	h.renderPage(w, "search.html", data)
 }
