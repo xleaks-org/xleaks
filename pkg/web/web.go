@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -76,13 +77,22 @@ type ProfileView struct {
 	Bio         string
 }
 
+// CreatePostFunc is a callback to create a post, avoiding direct dependency on social package.
+type CreatePostFunc func(ctx context.Context, content string) (id string, err error)
+
 // Handler serves the web UI HTML pages.
 type Handler struct {
-	pages    map[string]*template.Template // page name -> layout+page template
-	partials *template.Template            // partials (e.g. feed_items)
-	db       *storage.DB
-	identity *identity.Holder
-	timeline *feed.Timeline
+	pages      map[string]*template.Template
+	partials   *template.Template
+	db         *storage.DB
+	identity   *identity.Holder
+	timeline   *feed.Timeline
+	createPost CreatePostFunc
+}
+
+// SetCreatePost sets the post creation callback.
+func (h *Handler) SetCreatePost(fn CreatePostFunc) {
+	h.createPost = fn
 }
 
 // templateFuncMap returns the shared template function map.
@@ -157,6 +167,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/", h.homePage)
 	r.Get("/onboarding", h.onboardingPage)
 	r.Post("/onboarding/create", h.handleCreate)
+	r.Post("/onboarding/verify-step", h.handleVerifyStep)
 	r.Post("/onboarding/confirm-seed", h.handleConfirmSeed)
 	r.Post("/onboarding/set-profile", h.handleSetProfile)
 	r.Post("/onboarding/import", h.handleImport)
@@ -321,32 +332,87 @@ func pickRandomPositions(total, n int) []int {
 	return result
 }
 
-// handleConfirmSeed verifies the user saved their seed phrase.
+// WordSlot represents a word in the seed confirmation grid.
+type WordSlot struct {
+	Word  string
+	Blank bool
+}
+
+// handleVerifyStep shows the seed confirmation page (words hidden, blanks for 3 positions).
+func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	seed := r.FormValue("seed")
+	words := strings.Fields(seed)
+	if len(words) != 24 {
+		h.renderOnboardingError(w, "Invalid seed phrase", true)
+		return
+	}
+
+	positions := pickRandomPositions(24, 3)
+	blankSet := map[int]bool{positions[0]: true, positions[1]: true, positions[2]: true}
+
+	slots := make([]WordSlot, 24)
+	for i, word := range words {
+		if blankSet[i] {
+			slots[i] = WordSlot{Blank: true}
+		} else {
+			slots[i] = WordSlot{Word: word}
+		}
+	}
+
+	posStr := fmt.Sprintf("%d,%d,%d", positions[0], positions[1], positions[2])
+
+	data := h.pageData("", "Verify Seed Phrase")
+	data["ConfirmSeed"] = true
+	data["HiddenSeed"] = seed
+	data["WordSlots"] = slots
+	data["BlankPositions"] = posStr
+	h.renderPage(w, "onboarding.html", data)
+}
+
+// handleConfirmSeed verifies the user filled in the correct words.
 func (h *Handler) handleConfirmSeed(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	seed := r.FormValue("seed")
 	words := strings.Fields(seed)
 
-	pos1, _ := strconv.Atoi(r.FormValue("pos1"))
-	pos2, _ := strconv.Atoi(r.FormValue("pos2"))
-	pos3, _ := strconv.Atoi(r.FormValue("pos3"))
+	posStr := r.FormValue("blank_positions")
+	posParts := strings.Split(posStr, ",")
 
-	w1 := strings.TrimSpace(strings.ToLower(r.FormValue("word1")))
-	w2 := strings.TrimSpace(strings.ToLower(r.FormValue("word2")))
-	w3 := strings.TrimSpace(strings.ToLower(r.FormValue("word3")))
+	allCorrect := true
+	for _, ps := range posParts {
+		pos, err := strconv.Atoi(strings.TrimSpace(ps))
+		if err != nil || pos >= len(words) {
+			allCorrect = false
+			break
+		}
+		entered := strings.TrimSpace(strings.ToLower(r.FormValue(fmt.Sprintf("word_%d", pos))))
+		if entered != words[pos] {
+			allCorrect = false
+			break
+		}
+	}
 
-	// Verify words match
-	if pos1 >= len(words) || pos2 >= len(words) || pos3 >= len(words) ||
-		w1 != words[pos1] || w2 != words[pos2] || w3 != words[pos3] {
-		// Wrong — show seed phrase again with error
-		positions := []int{pos1, pos2, pos3}
-		data := h.pageData("", "Save Seed Phrase")
-		data["SeedPhrase"] = seed
-		data["SeedWords"] = words
-		data["ConfirmPos1"] = positions[0]
-		data["ConfirmPos2"] = positions[1]
-		data["ConfirmPos3"] = positions[2]
-		data["Error"] = "Words don't match. Please check your seed phrase and try again."
+	if !allCorrect {
+		// Re-show confirm page with error — generate new blank positions
+		positions := pickRandomPositions(24, 3)
+		blankSet := map[int]bool{positions[0]: true, positions[1]: true, positions[2]: true}
+		slots := make([]WordSlot, 24)
+		for i, word := range words {
+			if blankSet[i] {
+				slots[i] = WordSlot{Blank: true}
+			} else {
+				slots[i] = WordSlot{Word: word}
+			}
+		}
+		posNewStr := fmt.Sprintf("%d,%d,%d", positions[0], positions[1], positions[2])
+
+		data := h.pageData("", "Verify Seed Phrase")
+		data["ConfirmSeed"] = true
+		data["HiddenSeed"] = seed
+		data["WordSlots"] = slots
+		data["BlankPositions"] = posNewStr
+		data["Error"] = "Some words don't match. Try again."
 		h.renderPage(w, "onboarding.html", data)
 		return
 	}
@@ -365,7 +431,6 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 		displayName = "Anonymous"
 	}
 
-	// Update profile in DB
 	if h.identity.IsUnlocked() {
 		kp := h.identity.Get()
 		if kp != nil {
@@ -376,7 +441,7 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// handlePost creates a new post from form data.
+// handlePost creates a new post from form data using the callback.
 func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	content := strings.TrimSpace(r.FormValue("content"))
@@ -390,37 +455,17 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kp := h.identity.Get()
-	if kp == nil {
-		http.Error(w, "No active identity", http.StatusUnauthorized)
+	if h.createPost == nil {
+		http.Error(w, "Post creation not configured", http.StatusInternalServerError)
 		return
 	}
 
-	// Create post via the social service — but we don't have direct access.
-	// Instead, call our own API endpoint with JSON.
-	postBody := fmt.Sprintf(`{"content":%q}`, content)
-	resp, err := http.Post("http://127.0.0.1:7470/api/posts", "application/json", strings.NewReader(postBody))
+	postID, err := h.createPost(r.Context(), content)
 	if err != nil {
-		http.Error(w, "Failed to create post", http.StatusInternalServerError)
+		log.Printf("Post creation failed: %v", err)
+		http.Error(w, "Failed to create post: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("Post creation failed: %s", string(body))
-		http.Error(w, "Failed to create post: "+string(body), resp.StatusCode)
-		return
-	}
-
-	// Return the new post as HTML partial so htmx can insert it
-	var result struct {
-		ID      string `json:"id"`
-		Author  string `json:"author"`
-		Content string `json:"content"`
-		Timestamp uint64 `json:"timestamp"`
-	}
-	decodeJSON(resp.Body, &result)
 
 	user := h.currentUser()
 	authorName := "Anonymous"
@@ -433,7 +478,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	post := PostView{
-		ID:            result.ID,
+		ID:            postID,
 		AuthorName:    authorName,
 		AuthorInitial: authorInitial,
 		ShortPubkey:   shortPubkey,
