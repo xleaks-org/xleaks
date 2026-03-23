@@ -12,7 +12,7 @@ func (h *Handler) entryToView(e *feed.TimelineEntry) PostView {
 	cidHex := hex.EncodeToString(e.Post.CID)
 	authorHex := hex.EncodeToString(e.Post.Author)
 
-	return PostView{
+	pv := PostView{
 		ID:            cidHex,
 		AuthorName:    e.AuthorName,
 		AuthorInitial: getInitial(e.AuthorName),
@@ -23,6 +23,32 @@ func (h *Handler) entryToView(e *feed.TimelineEntry) PostView {
 		ReplyCount:    e.ReplyCount,
 		RepostCount:   e.RepostCount,
 	}
+
+	// Populate reply-to metadata if this post is a reply.
+	if len(e.Post.ReplyTo) > 0 {
+		pv.ReplyTo = hex.EncodeToString(e.Post.ReplyTo)
+		if parent, err := h.db.GetPost(e.Post.ReplyTo); err == nil && parent != nil {
+			parentName := hex.EncodeToString(parent.Author)
+			if profile, err := h.db.GetProfile(parent.Author); err == nil && profile != nil && profile.DisplayName != "" {
+				parentName = profile.DisplayName
+			}
+			pv.ReplyToAuthor = parentName
+		}
+	}
+
+	// Populate repost metadata if this post is a repost.
+	if len(e.Post.RepostOf) > 0 {
+		pv.RepostOf = hex.EncodeToString(e.Post.RepostOf)
+		if original, err := h.db.GetPost(e.Post.RepostOf); err == nil && original != nil {
+			repostAuthor := hex.EncodeToString(original.Author)
+			if profile, err := h.db.GetProfile(original.Author); err == nil && profile != nil && profile.DisplayName != "" {
+				repostAuthor = profile.DisplayName
+			}
+			pv.RepostAuthor = repostAuthor
+		}
+	}
+
+	return pv
 }
 
 // postRowToView converts a storage.PostRow to a PostView (fetching profile data).
@@ -38,7 +64,7 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 
 	likeCount, _ := h.db.GetReactionCount(p.CID)
 
-	return PostView{
+	pv := PostView{
 		ID:            cidHex,
 		AuthorName:    authorName,
 		AuthorInitial: getInitial(authorName),
@@ -47,6 +73,32 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 		RelativeTime:  formatRelativeTime(p.Timestamp),
 		LikeCount:     likeCount,
 	}
+
+	// Populate reply-to metadata if this post is a reply.
+	if len(p.ReplyTo) > 0 {
+		pv.ReplyTo = hex.EncodeToString(p.ReplyTo)
+		if parent, err := h.db.GetPost(p.ReplyTo); err == nil && parent != nil {
+			parentName := hex.EncodeToString(parent.Author)
+			if prof, err := h.db.GetProfile(parent.Author); err == nil && prof != nil && prof.DisplayName != "" {
+				parentName = prof.DisplayName
+			}
+			pv.ReplyToAuthor = parentName
+		}
+	}
+
+	// Populate repost metadata if this post is a repost.
+	if len(p.RepostOf) > 0 {
+		pv.RepostOf = hex.EncodeToString(p.RepostOf)
+		if original, err := h.db.GetPost(p.RepostOf); err == nil && original != nil {
+			repostAuthor := hex.EncodeToString(original.Author)
+			if prof, err := h.db.GetProfile(original.Author); err == nil && prof != nil && prof.DisplayName != "" {
+				repostAuthor = prof.DisplayName
+			}
+			pv.RepostAuthor = repostAuthor
+		}
+	}
+
+	return pv
 }
 
 // buildNewPostView creates a PostView for a freshly created post.

@@ -24,6 +24,27 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle reply_to filter: load replies to a specific post.
+	replyTo := r.URL.Query().Get("reply_to")
+	if replyTo != "" {
+		cidBytes, err := hex.DecodeString(replyTo)
+		if err == nil {
+			replies, err := h.db.GetThread(cidBytes)
+			if err == nil {
+				var posts []PostView
+				for i := range replies {
+					posts = append(posts, h.postRowToView(&replies[i]))
+				}
+				data := struct{ Posts []PostView }{Posts: posts}
+				if err := h.partials.ExecuteTemplate(w, "feed_items.html", data); err != nil {
+					log.Printf("web: template error rendering reply feed: %v", err)
+				}
+				return
+			}
+			log.Printf("web: failed to get thread for %s: %v", replyTo, err)
+		}
+	}
+
 	const pageSize = 20
 	var before int64
 	if b := r.URL.Query().Get("before"); b != "" {

@@ -49,8 +49,23 @@ func (h *Handler) postPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pv := h.postRowToView(post)
+
+	// Enrich with full reaction counts (replies + reposts).
+	_, replies, reposts, _ := h.db.GetFullReactionCounts(cidBytes)
+	pv.ReplyCount = replies
+	pv.RepostCount = reposts
+
 	data := h.pageData("", "Post")
 	data["Post"] = &pv
+
+	// If this post is a reply, load the parent post for context.
+	if len(post.ReplyTo) > 0 {
+		if parent, err := h.db.GetPost(post.ReplyTo); err == nil && parent != nil {
+			parentView := h.postRowToView(parent)
+			data["ParentPost"] = &parentView
+		}
+	}
+
 	h.renderPage(w, "post.html", data)
 }
 

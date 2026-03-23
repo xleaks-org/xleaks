@@ -1,10 +1,20 @@
 {{range .Posts}}
+{{if .RepostOf}}
+<div class="px-4 pt-2 text-xs text-gray-500 flex items-center gap-1">
+    <span>🔄</span> <span class="font-semibold">{{.RepostAuthor}}</span> reposted
+</div>
+{{end}}
 <article class="border-b border-gray-800 px-4 py-3 hover:bg-gray-900/50 transition-colors cursor-pointer" onclick="if(!event.target.closest('button,a')){window.location='/post/{{.ID}}'}">
     <div class="flex gap-3">
         <div class="w-10 h-10 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center text-sm font-bold">
             {{.AuthorInitial}}
         </div>
         <div class="flex-1 min-w-0">
+            {{if .ReplyTo}}
+            <div class="text-xs text-gray-500 mb-1 ml-13">
+                Replying to <a href="/post/{{.ReplyTo}}" class="text-blue-500 hover:underline">@{{.ReplyToAuthor}}</a>
+            </div>
+            {{end}}
             <div class="flex items-center gap-2 text-sm">
                 <span class="font-semibold hover:underline">{{.AuthorName}}</span>
                 <span class="text-gray-500 font-mono text-xs">{{.ShortPubkey}}</span>
