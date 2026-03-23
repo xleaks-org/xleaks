@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/storage"
@@ -149,9 +150,15 @@ func hexToCIDSafe(h string) ([]byte, error) {
 	return hex.DecodeString(h)
 }
 
-// nextBackoff doubles the current backoff interval, capping at maxInterval.
+// nextBackoff doubles the current backoff interval with random jitter,
+// capping at maxInterval.
 func nextBackoff(current, max time.Duration) time.Duration {
 	next := current * 2
+	// Add jitter: random duration up to half the current interval.
+	if current > 0 {
+		jitter := time.Duration(rand.Int63n(int64(current / 2)))
+		next += jitter
+	}
 	if next > max {
 		return max
 	}

@@ -4,14 +4,14 @@ VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-X $(MODULE)/pkg/version.Version=$(VERSION) -X $(MODULE)/pkg/version.BuildTime=$(BUILD_TIME)"
 
-.PHONY: build build-all test test-unit test-integration lint proto frontend dev clean release
+.PHONY: build build-all test test-unit test-integration lint proto dev clean release
 
 ## Build for current platform
-build: frontend
+build:
 	go build $(LDFLAGS) -o bin/$(BINARY_NAME) ./cmd/xleaks/
 
 ## Build for all platforms
-build-all: frontend
+build-all:
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-linux-amd64 ./cmd/xleaks/
 	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-linux-arm64 ./cmd/xleaks/
 	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-darwin-amd64 ./cmd/xleaks/
@@ -41,10 +41,6 @@ lint:
 ## Regenerate protobuf code
 proto:
 	./scripts/gen-proto.sh
-
-## Build Next.js frontend
-frontend:
-	cd web && npm run build
 
 ## Development mode
 dev:

@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // ReactionRow represents a single row from the reactions table.
@@ -151,6 +152,78 @@ func (db *DB) UpdateReactionCountTx(tx *sql.Tx, postCID []byte) error {
 	)
 	if err != nil {
 		return fmt.Errorf("upsert reaction counts tx: %w", err)
+	}
+	return nil
+}
+
+// GetFullReactionCounts returns the like, reply, and repost counts for a
+// given post CID from the reaction_counts table.
+func (db *DB) GetFullReactionCounts(target []byte) (likes, replies, reposts int, err error) {
+	err = db.QueryRow(
+		`SELECT COALESCE(like_count,0), COALESCE(reply_count,0), COALESCE(repost_count,0) FROM reaction_counts WHERE post_cid = ?`,
+		target,
+	).Scan(&likes, &replies, &reposts)
+	if err == sql.ErrNoRows {
+		return 0, 0, 0, nil
+	}
+	return
+}
+
+// ReactionCounts holds the like, reply, and repost counts for a post.
+type ReactionCounts struct {
+	Likes   int
+	Replies int
+	Reposts int
+}
+
+// GetReactionCountsBatch returns reaction counts for multiple post CIDs in a
+// single query. The returned map is keyed by the hex encoding of each CID.
+func (db *DB) GetReactionCountsBatch(cids [][]byte) (map[string]ReactionCounts, error) {
+	result := make(map[string]ReactionCounts, len(cids))
+	if len(cids) == 0 {
+		return result, nil
+	}
+
+	placeholders := make([]string, len(cids))
+	args := make([]interface{}, len(cids))
+	for i, cid := range cids {
+		placeholders[i] = "?"
+		args[i] = cid
+	}
+
+	query := fmt.Sprintf(
+		`SELECT post_cid, COALESCE(like_count,0), COALESCE(reply_count,0), COALESCE(repost_count,0)
+		 FROM reaction_counts WHERE post_cid IN (%s)`,
+		strings.Join(placeholders, ","),
+	)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get reaction counts batch: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid []byte
+		var rc ReactionCounts
+		if err := rows.Scan(&cid, &rc.Likes, &rc.Replies, &rc.Reposts); err != nil {
+			return nil, fmt.Errorf("scan reaction counts batch: %w", err)
+		}
+		result[fmt.Sprintf("%x", cid)] = rc
+	}
+	return result, rows.Err()
+}
+
+// InsertReactionTx inserts a new reaction within an existing transaction,
+// ignoring duplicates (same author, target, and reaction_type).
+func (db *DB) InsertReactionTx(tx *sql.Tx, cid, author, target []byte, reactionType string, timestamp int64) error {
+	_, err := tx.Exec(
+		`INSERT OR IGNORE INTO reactions (cid, author, target, reaction_type, timestamp)
+		 VALUES (?, ?, ?, ?, ?)`,
+		cid, author, target, reactionType, timestamp,
+	)
+	if err != nil {
+		return fmt.Errorf("insert reaction tx: %w", err)
 	}
 	return nil
 }

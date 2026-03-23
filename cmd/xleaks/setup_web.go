@@ -45,8 +45,16 @@ func setupWebHandler(
 		log.Printf("Identity updated for all services: %x", kp.PublicKeyBytes()[:8])
 	})
 
-	webHandler.SetCreatePost(func(ctx context.Context, text string) (string, error) {
-		post, err := svc.Posts.CreatePost(ctx, text, nil, nil)
+	webHandler.SetCreatePost(func(ctx context.Context, text string, replyTo string) (string, error) {
+		var replyToCID []byte
+		if replyTo != "" {
+			var err error
+			replyToCID, err = hex.DecodeString(replyTo)
+			if err != nil {
+				return "", fmt.Errorf("invalid reply_to hex: %w", err)
+			}
+		}
+		post, err := svc.Posts.CreatePost(ctx, text, nil, replyToCID)
 		if err != nil {
 			return "", err
 		}

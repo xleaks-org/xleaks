@@ -57,5 +57,9 @@ func setupP2P(ctx context.Context, cfg *config.Config) (*p2p.Host, error) {
 		}
 	}
 
+	if cfg.Network.EnableRelay && len(cfg.Network.RelayAddresses) > 0 {
+		go host.ConnectToRelays(ctx, cfg.Network.RelayAddresses)
+	}
+
 	return host, nil
 }

@@ -120,15 +120,23 @@ func (h *Handler) notificationsPage(w http.ResponseWriter, r *http.Request) {
 		log.Printf("web: failed to get notifications: %v", err)
 	}
 
+	// Local profile cache to avoid querying the same actor multiple times (N+1 fix).
+	profileNameCache := make(map[string]string, len(notifs))
+
 	views := make([]NotificationView, 0, len(notifs))
 	for _, n := range notifs {
-		actorName := hex.EncodeToString(n.Actor)
-		if len(actorName) > 16 {
-			actorName = actorName[:16] + "..."
-		}
-		actorProfile, err := h.db.GetProfile(n.Actor)
-		if err == nil && actorProfile != nil && actorProfile.DisplayName != "" {
-			actorName = actorProfile.DisplayName
+		actorHex := hex.EncodeToString(n.Actor)
+		actorName, cached := profileNameCache[actorHex]
+		if !cached {
+			actorName = actorHex
+			if len(actorName) > 16 {
+				actorName = actorName[:16] + "..."
+			}
+			actorProfile, err := h.db.GetProfile(n.Actor)
+			if err == nil && actorProfile != nil && actorProfile.DisplayName != "" {
+				actorName = actorProfile.DisplayName
+			}
+			profileNameCache[actorHex] = actorName
 		}
 		views = append(views, NotificationView{
 			Type:         n.Type,

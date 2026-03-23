@@ -18,15 +18,11 @@ func HolePunchOptions(enabled bool) []libp2p.Option {
 
 // NATTraversalOptions returns the combined set of libp2p options for full
 // NAT traversal support, including relay client and hole punching.
+// Note: NATPortMap() is already applied unconditionally in NewHost,
+// so it is not duplicated here.
 func NATTraversalOptions(enableRelay, enableHolePunch bool) []libp2p.Option {
 	var opts []libp2p.Option
 	opts = append(opts, RelayOptions(enableRelay)...)
 	opts = append(opts, HolePunchOptions(enableHolePunch)...)
-
-	// Always enable UPnP/NAT-PMP port mapping when NAT traversal is desired.
-	if enableRelay || enableHolePunch {
-		opts = append(opts, libp2p.NATPortMap())
-	}
-
 	return opts
 }

@@ -72,11 +72,15 @@ func (s *NotificationService) NotifyDM(actor []byte) error {
 }
 
 // GetNotifications returns enriched notifications with actor profile info.
+// Uses a local profile cache to avoid querying the same actor multiple times.
 func (s *NotificationService) GetNotifications(before int64, limit int) ([]NotificationView, error) {
 	rows, err := s.storage.GetNotifications(before, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get notifications: %w", err)
 	}
+
+	// Local profile cache: actor pubkey hex -> *ProfileRow (nil means not found).
+	profileCache := make(map[string]*storage.ProfileRow, len(rows))
 
 	views := make([]NotificationView, 0, len(rows))
 	for _, row := range rows {
@@ -89,9 +93,14 @@ func (s *NotificationService) GetNotifications(before int64, limit int) ([]Notif
 			Read:          row.Read,
 		}
 
-		// Enrich with actor profile info if available.
-		profile, err := s.storage.GetProfile(row.Actor)
-		if err == nil && profile != nil {
+		// Enrich with actor profile info, using cache to avoid N+1 queries.
+		actorHex := fmt.Sprintf("%x", row.Actor)
+		profile, cached := profileCache[actorHex]
+		if !cached {
+			profile, _ = s.storage.GetProfile(row.Actor)
+			profileCache[actorHex] = profile // cache nil too to avoid re-querying
+		}
+		if profile != nil {
 			view.ActorDisplayName = profile.DisplayName
 			view.ActorAvatarCID = profile.AvatarCID
 		}

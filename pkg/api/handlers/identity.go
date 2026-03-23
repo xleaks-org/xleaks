@@ -65,10 +65,9 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis())
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"pubkey":     pubkeyHex,
-		"address":    address,
-		"mnemonic":   mnemonic,
-		"seedPhrase": mnemonic,
+		"pubkey":   pubkeyHex,
+		"address":  address,
+		"mnemonic": mnemonic,
 	})
 }
 
@@ -107,7 +106,8 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.kp = kp
+	// Update the handler's key pair reference and propagate to all services.
+	h.updateIdentity(kp)
 
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
@@ -145,7 +145,8 @@ func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.kp = kp
+	// Update the handler's key pair reference and propagate to all services.
+	h.updateIdentity(kp)
 
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
@@ -170,8 +171,8 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 		}
 		// No identity at all.
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"active":         false,
-			"needsOnboarding": true,
+			"active":           false,
+			"needs_onboarding": true,
 		})
 		return
 	}
@@ -179,8 +180,8 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 	kp := h.kp
 	if kp == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"active":         false,
-			"needsOnboarding": true,
+			"active":           false,
+			"needs_onboarding": true,
 		})
 		return
 	}
@@ -196,10 +197,10 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"active":      true,
-		"pubkey":      pubkeyHex,
-		"address":     address,
-		"displayName": displayName,
+		"active":       true,
+		"pubkey":       pubkeyHex,
+		"address":      address,
+		"display_name": displayName,
 	})
 }
 
@@ -266,8 +267,8 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update the handler's key pair reference.
-	h.kp = h.identity.Get()
+	// Update the handler's key pair reference and propagate to all services.
+	h.updateIdentity(h.identity.Get())
 
 	address, _ := identity.PubKeyToAddress(pubkeyBytes)
 

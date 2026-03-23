@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -129,18 +130,37 @@ func (h *Host) AdvertiseAsIndexer(ctx context.Context) error {
 }
 
 // FindIndexers looks up indexer nodes by querying the DHT for the well-known
-// indexer key. It uses GetClosestPeers as a rendezvous point and then attempts
-// to fetch the stored value.
+// indexer key. It collects up to 10 results from the DHT query channel.
 func (h *Host) FindIndexers(ctx context.Context) ([]peer.AddrInfo, error) {
-	val, err := h.dht.GetValue(ctx, indexerDHTKey)
+	const maxResults = 10
+
+	ch, err := h.dht.SearchValue(ctx, indexerDHTKey)
 	if err != nil {
 		return nil, fmt.Errorf("querying DHT for indexers: %w", err)
 	}
 
-	var info peer.AddrInfo
-	if err := json.Unmarshal(val, &info); err != nil {
-		return nil, fmt.Errorf("unmarshaling indexer info: %w", err)
+	seen := make(map[peer.ID]bool)
+	var results []peer.AddrInfo
+
+	for val := range ch {
+		var info peer.AddrInfo
+		if err := json.Unmarshal(val, &info); err != nil {
+			log.Printf("warning: failed to unmarshal indexer info: %v", err)
+			continue
+		}
+		if seen[info.ID] {
+			continue
+		}
+		seen[info.ID] = true
+		results = append(results, info)
+		if len(results) >= maxResults {
+			break
+		}
 	}
 
-	return []peer.AddrInfo{info}, nil
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no indexers found via DHT")
+	}
+
+	return results, nil
 }

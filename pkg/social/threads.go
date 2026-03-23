@@ -3,6 +3,7 @@ package social
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/xleaks-org/xleaks/pkg/storage"
@@ -18,6 +19,7 @@ type ThreadNode struct {
 }
 
 // GetThread retrieves a post and all its replies, assembled into a tree structure.
+// It batch-fetches all descendant replies and reaction counts to avoid N+1 queries.
 func (s *PostService) GetThread(ctx context.Context, postCID []byte) (*ThreadNode, error) {
 	// Get the root post.
 	rootRow, err := s.storage.GetPost(postCID)
@@ -28,54 +30,67 @@ func (s *PostService) GetThread(ctx context.Context, postCID []byte) (*ThreadNod
 		return nil, fmt.Errorf("post not found")
 	}
 
+	// Batch-fetch all descendant replies in one query.
+	allReplies, err := s.storage.GetAllDescendantReplies(postCID)
+	if err != nil {
+		return nil, fmt.Errorf("batch fetch replies: %w", err)
+	}
+
+	// Collect all CIDs (root + replies) for batch reaction count fetch.
+	allCIDs := make([][]byte, 0, 1+len(allReplies))
+	allCIDs = append(allCIDs, postCID)
+	for i := range allReplies {
+		allCIDs = append(allCIDs, allReplies[i].CID)
+	}
+
+	// Batch-fetch all reaction counts.
+	reactionCounts, err := s.storage.GetReactionCountsBatch(allCIDs)
+	if err != nil {
+		return nil, fmt.Errorf("batch fetch reaction counts: %w", err)
+	}
+
+	// Build a map from parent CID hex -> child rows for O(1) lookup.
+	childrenMap := make(map[string][]storage.PostRow)
+	for _, reply := range allReplies {
+		parentHex := hex.EncodeToString(reply.ReplyTo)
+		childrenMap[parentHex] = append(childrenMap[parentHex], reply)
+	}
+
+	// Build the root node.
 	rootPost := postRowToProto(rootRow)
-	likeCount, _ := s.storage.GetReactionCount(postCID)
+	rootHex := hex.EncodeToString(postCID)
+	rc := reactionCounts[rootHex]
 
 	root := &ThreadNode{
 		Post:      rootPost,
-		LikeCount: likeCount,
+		LikeCount: rc.Likes,
 	}
 
-	// Recursively build the thread tree.
-	if err := s.buildChildren(ctx, root); err != nil {
-		return nil, fmt.Errorf("build thread tree: %w", err)
-	}
+	// Recursively assemble the tree using the pre-fetched data.
+	assembleChildren(root, childrenMap, reactionCounts)
 
 	return root, nil
 }
 
-// buildChildren recursively loads replies and builds the thread tree.
-func (s *PostService) buildChildren(ctx context.Context, node *ThreadNode) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	replies, err := s.storage.GetThread(node.Post.Id)
-	if err != nil {
-		return fmt.Errorf("get replies: %w", err)
-	}
-
+// assembleChildren recursively builds the thread tree from pre-fetched data.
+func assembleChildren(node *ThreadNode, childrenMap map[string][]storage.PostRow, reactionCounts map[string]storage.ReactionCounts) {
+	cidHex := hex.EncodeToString(node.Post.Id)
+	replies := childrenMap[cidHex]
 	node.ReplyCount = len(replies)
 
-	for _, replyRow := range replies {
-		replyPost := postRowToProto(&replyRow)
-		likeCount, _ := s.storage.GetReactionCount(replyRow.CID)
+	for i := range replies {
+		replyPost := postRowToProto(&replies[i])
+		replyHex := hex.EncodeToString(replies[i].CID)
+		rc := reactionCounts[replyHex]
 
 		child := &ThreadNode{
 			Post:      replyPost,
-			LikeCount: likeCount,
+			LikeCount: rc.Likes,
 		}
 
-		if err := s.buildChildren(ctx, child); err != nil {
-			return err
-		}
-
+		assembleChildren(child, childrenMap, reactionCounts)
 		node.Children = append(node.Children, child)
 	}
-
-	return nil
 }
 
 // postRowToProto converts a storage.PostRow to a pb.Post protobuf message.

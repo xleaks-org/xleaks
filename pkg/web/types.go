@@ -80,7 +80,8 @@ type WordSlot struct {
 }
 
 // CreatePostFunc is a callback to create a post, avoiding direct dependency on social package.
-type CreatePostFunc func(ctx context.Context, content string) (id string, err error)
+// The replyTo parameter is the hex-encoded CID of the parent post (empty for top-level posts).
+type CreatePostFunc func(ctx context.Context, content string, replyTo string) (id string, err error)
 
 // NodeStatusFunc is a callback that returns live node status without making
 // an HTTP round-trip to the API server. Returns peer count, uptime in seconds,

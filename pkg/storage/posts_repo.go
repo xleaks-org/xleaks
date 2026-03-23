@@ -232,6 +232,30 @@ func (db *DB) InsertPostTagsTx(tx *sql.Tx, postCID []byte, tags []string) error 
 	return nil
 }
 
+// GetAllDescendantReplies returns all posts that are replies to any of the given
+// CIDs. This is used to batch-fetch an entire thread tree in a single query
+// instead of issuing per-node queries.
+func (db *DB) GetAllDescendantReplies(rootCID []byte) ([]PostRow, error) {
+	// We use a recursive CTE to get all replies in the tree rooted at rootCID.
+	rows, err := db.Query(
+		`WITH RECURSIVE thread(cid) AS (
+		     SELECT cid FROM posts WHERE reply_to = ?
+		     UNION ALL
+		     SELECT p.cid FROM posts p INNER JOIN thread t ON p.reply_to = t.cid
+		 )
+		 SELECT p.cid, p.author, p.content, p.reply_to, p.repost_of, p.timestamp, p.signature, p.received_at
+		 FROM posts p
+		 INNER JOIN thread t ON p.cid = t.cid
+		 ORDER BY p.timestamp ASC`,
+		rootCID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get all descendant replies: %w", err)
+	}
+	defer rows.Close()
+	return scanPostRows(rows)
+}
+
 // CountPostsByAuthor returns the number of posts by the given author.
 func (db *DB) CountPostsByAuthor(author []byte) (int, error) {
 	var count int

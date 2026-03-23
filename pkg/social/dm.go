@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -124,16 +125,21 @@ func (s *DMService) HandleIncomingDM(dm *pb.DirectMessage) error {
 		return fmt.Errorf("validate DM: %w", err)
 	}
 
-	// Store in DB.
-	if err := s.storage.InsertDM(dm.Id, dm.Author, dm.Recipient, dm.EncryptedContent, dm.Nonce, int64(dm.Timestamp)); err != nil {
-		return fmt.Errorf("store incoming DM: %w", err)
-	}
-
-	// Create notification if the DM is addressed to us.
-	if bytes.Equal(dm.Recipient, s.identity.PublicKeyBytes()) {
-		if err := s.storage.InsertNotification("dm", dm.Author, nil, dm.Id, time.Now().UnixMilli()); err != nil {
-			return fmt.Errorf("create DM notification: %w", err)
+	// Store in DB and create notification in a single transaction.
+	err := s.storage.WithTransaction(func(tx *sql.Tx) error {
+		if err := s.storage.InsertDMTx(tx, dm.Id, dm.Author, dm.Recipient, dm.EncryptedContent, dm.Nonce, int64(dm.Timestamp)); err != nil {
+			return fmt.Errorf("store incoming DM: %w", err)
 		}
+		// Create notification if the DM is addressed to us.
+		if bytes.Equal(dm.Recipient, s.identity.PublicKeyBytes()) {
+			if err := s.storage.InsertNotificationTx(tx, "dm", dm.Author, nil, dm.Id, time.Now().UnixMilli()); err != nil {
+				return fmt.Errorf("create DM notification: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil

@@ -59,6 +59,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	content := strings.TrimSpace(r.FormValue("content"))
+	replyTo := strings.TrimSpace(r.FormValue("reply_to"))
 	if content == "" {
 		http.Error(w, "Post content is required", http.StatusBadRequest)
 		return
@@ -72,7 +73,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postID, err := h.createPost(r.Context(), content)
+	postID, err := h.createPost(r.Context(), content, replyTo)
 	if err != nil {
 		log.Printf("Post creation failed: %v", err)
 		http.Error(w, "Failed to create post: "+err.Error(), http.StatusInternalServerError)
