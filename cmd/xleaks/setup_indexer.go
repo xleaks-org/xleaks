@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -46,6 +47,28 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 	if p2pHost != nil {
 		go p2pHost.AdvertiseAsIndexer(ctx)
 	}
+
+	// Reindex existing posts so the Bleve index catches up with DB content.
+	go func() {
+		posts, err := db.GetAllPosts(0, 10000)
+		if err != nil {
+			log.Printf("Warning: failed to load posts for reindexing: %v", err)
+			return
+		}
+		indexed := 0
+		for _, p := range posts {
+			if err := idx.Search().IndexPost(
+				hex.EncodeToString(p.CID),
+				hex.EncodeToString(p.Author),
+				p.Content,
+				nil, // tags not stored in PostRow
+				p.Timestamp,
+			); err == nil {
+				indexed++
+			}
+		}
+		log.Printf("Indexer: reindexed %d existing posts", indexed)
+	}()
 
 	log.Println("Indexer mode enabled")
 	return idx

@@ -241,9 +241,19 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("web: failed to get all profiles: %v", err)
 	}
+	// Get current user's pubkey to exclude from explore list
+	var ownPubkey string
+	if user := h.currentUser(r); user != nil {
+		ownPubkey = user.Pubkey
+	}
+
 	var users []ExploreUser
 	for _, p := range profiles {
 		pubkeyHex := hex.EncodeToString(p.Pubkey)
+		// Don't show yourself in the explore list
+		if pubkeyHex == ownPubkey {
+			continue
+		}
 		users = append(users, ExploreUser{
 			Pubkey:      pubkeyHex,
 			DisplayName: p.DisplayName,
