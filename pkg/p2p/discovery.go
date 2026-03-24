@@ -32,18 +32,22 @@ func (h *Host) Bootstrap(ctx context.Context, bootstrapPeers []string) error {
 	// Parse and connect to each bootstrap peer concurrently.
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(bootstrapPeers))
+	validPeers := 0
 
 	for _, addrStr := range bootstrapPeers {
 		maddr, err := ma.NewMultiaddr(addrStr)
 		if err != nil {
-			return fmt.Errorf("parsing bootstrap peer address %q: %w", addrStr, err)
+			log.Printf("warning: skipping invalid bootstrap peer %q: %v", addrStr, err)
+			continue
 		}
 
 		info, err := peer.AddrInfoFromP2pAddr(maddr)
 		if err != nil {
-			return fmt.Errorf("extracting peer info from %q: %w", addrStr, err)
+			log.Printf("warning: skipping invalid bootstrap peer %q: %v", addrStr, err)
+			continue
 		}
 
+		validPeers++
 		wg.Add(1)
 		go func(pi peer.AddrInfo) {
 			defer wg.Done()
@@ -63,7 +67,7 @@ func (h *Host) Bootstrap(ctx context.Context, bootstrapPeers []string) error {
 		connectErrors = append(connectErrors, err)
 	}
 
-	if len(connectErrors) == len(bootstrapPeers) && len(bootstrapPeers) > 0 {
+	if len(connectErrors) == validPeers && validPeers > 0 {
 		return fmt.Errorf("failed to connect to any bootstrap peer; last error: %w",
 			connectErrors[len(connectErrors)-1])
 	}

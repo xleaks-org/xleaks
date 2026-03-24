@@ -17,6 +17,10 @@ type createRepostRequest struct {
 
 // CreateReaction handles POST /api/reactions.
 func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireIdentity(w); !ok {
+		return
+	}
+
 	var req createReactionRequest
 	if err := parseJSON(r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -53,6 +57,10 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 
 // CreateRepost handles POST /api/repost.
 func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireIdentity(w); !ok {
+		return
+	}
+
 	var req createRepostRequest
 	if err := parseJSON(r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())

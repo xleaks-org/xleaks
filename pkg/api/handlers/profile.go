@@ -25,7 +25,12 @@ func (r *updateProfileRequest) getDisplayName() string {
 
 // GetOwnProfile handles GET /api/profile.
 func (h *Handler) GetOwnProfile(w http.ResponseWriter, r *http.Request) {
-	profile, err := h.profiles.GetProfile(h.kp.PublicKeyBytes())
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
+	profile, err := h.profiles.GetProfile(kp.PublicKeyBytes())
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -33,7 +38,7 @@ func (h *Handler) GetOwnProfile(w http.ResponseWriter, r *http.Request) {
 
 	if profile == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"pubkey":       hex.EncodeToString(h.kp.PublicKeyBytes()),
+			"pubkey":       hex.EncodeToString(kp.PublicKeyBytes()),
 			"display_name": "",
 			"bio":          "",
 			"website":      "",
@@ -49,6 +54,11 @@ func (h *Handler) GetOwnProfile(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProfile handles PUT /api/profile.
 func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
 	var req updateProfileRequest
 	if err := parseJSON(r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -73,7 +83,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if profile exists; if not, create it; otherwise update.
-	existing, err := h.profiles.GetProfile(h.kp.PublicKeyBytes())
+	existing, err := h.profiles.GetProfile(kp.PublicKeyBytes())
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -96,15 +106,15 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		// Fallback: direct DB upsert (useful during onboarding when identity may not be fully initialized).
 		var version uint64 = 1
 		if existing != nil {
-			version = 2 // Simplified version bump
+			version = existing.GetVersion() + 1
 		}
-		dbErr := h.db.UpsertProfile(h.kp.PublicKeyBytes(), displayName, req.Bio, avatarCID, bannerCID, req.Website, version, time.Now().UnixMilli())
+		dbErr := h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, req.Bio, avatarCID, bannerCID, req.Website, version, time.Now().UnixMilli())
 		if dbErr != nil {
 			respondError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"pubkey":       hex.EncodeToString(h.kp.PublicKeyBytes()),
+			"pubkey":       hex.EncodeToString(kp.PublicKeyBytes()),
 			"display_name": displayName,
 			"bio":          req.Bio,
 			"website":      req.Website,

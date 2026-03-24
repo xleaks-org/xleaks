@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/identity"
@@ -125,8 +124,13 @@ func (h *Handler) conversationPage(w http.ResponseWriter, r *http.Request) {
 
 // handleSendDM handles the POST /web/send-dm form submission.
 func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
-	if h.currentUser(r) == nil {
+	kp := h.getKeyPair(r)
+	if kp == nil {
 		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
+	}
+	if h.sendDM == nil {
+		http.Error(w, "Direct messaging not configured", http.StatusInternalServerError)
 		return
 	}
 	r.ParseForm()
@@ -134,6 +138,16 @@ func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
 	content := strings.TrimSpace(r.FormValue("content"))
 	if recipient == "" || content == "" {
 		http.Error(w, "Recipient and content are required", http.StatusBadRequest)
+		return
+	}
+	recipientPubkey, err := hex.DecodeString(recipient)
+	if err != nil {
+		http.Error(w, "Invalid recipient public key", http.StatusBadRequest)
+		return
+	}
+	if err := h.sendDM(r.Context(), kp, recipientPubkey, content); err != nil {
+		log.Printf("web: failed to send direct message: %v", err)
+		http.Error(w, "Failed to send direct message", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -148,18 +162,22 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	if h.updateProfile == nil {
+		http.Error(w, "Profile updates not configured", http.StatusInternalServerError)
+		return
+	}
 	r.ParseForm()
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
 	bio := strings.TrimSpace(r.FormValue("bio"))
 	if displayName == "" {
 		displayName = "Anonymous"
 	}
-	var version uint64 = 1
-	profile, err := h.db.GetProfile(kp.PublicKeyBytes())
-	if err == nil && profile != nil {
-		version = profile.Version + 1
+
+	if err := h.updateProfile(r.Context(), kp, displayName, bio, "", nil, nil); err != nil {
+		log.Printf("web: failed to update profile: %v", err)
+		http.Error(w, "Failed to update profile", http.StatusInternalServerError)
+		return
 	}
-	h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, bio, nil, nil, "", version, time.Now().UnixMilli())
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }
 

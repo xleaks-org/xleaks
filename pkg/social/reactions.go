@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -15,8 +16,9 @@ import (
 
 // ReactionService handles like creation and queries.
 type ReactionService struct {
-	storage  *storage.DB
-	identity *identity.KeyPair
+	storage   *storage.DB
+	identity  *identity.KeyPair
+	publisher Publisher
 }
 
 // NewReactionService creates a new ReactionService.
@@ -29,10 +31,18 @@ func NewReactionService(db *storage.DB, kp *identity.KeyPair) *ReactionService {
 
 func (s *ReactionService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
 
+// SetPublisher configures the optional outbound P2P publisher.
+func (s *ReactionService) SetPublisher(publisher Publisher) { s.publisher = publisher }
+
 // CreateReaction creates a new "like" reaction on the given target post.
 func (s *ReactionService) CreateReaction(ctx context.Context, targetCID []byte) (*pb.Reaction, error) {
+	kp, err := activeIdentity(s.identity)
+	if err != nil {
+		return nil, err
+	}
+
 	reaction := &pb.Reaction{
-		Author:       s.identity.PublicKeyBytes(),
+		Author:       kp.PublicKeyBytes(),
 		Target:       targetCID,
 		ReactionType: "like",
 		Timestamp:    uint64(time.Now().UnixMilli()),
@@ -45,7 +55,7 @@ func (s *ReactionService) CreateReaction(ctx context.Context, targetCID []byte) 
 	}
 
 	// Sign.
-	sig, err := identity.SignProtoMessage(s.identity, sigPayload)
+	sig, err := identity.SignProtoMessage(kp, sigPayload)
 	if err != nil {
 		return nil, fmt.Errorf("sign reaction: %w", err)
 	}
@@ -70,6 +80,10 @@ func (s *ReactionService) CreateReaction(ctx context.Context, targetCID []byte) 
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if err := publishReaction(ctx, s.publisher, reaction); err != nil {
+		log.Printf("publish reaction: %v", err)
 	}
 
 	return reaction, nil

@@ -28,6 +28,11 @@ type Handler struct {
 	timeline         *feed.Timeline
 	createPost       CreatePostFunc
 	repostPost       RepostFunc
+	createReaction   ReactFunc
+	followUser       FollowFunc
+	unfollowUser     FollowFunc
+	updateProfile    UpdateProfileFunc
+	sendDM           SendDMFunc
 	nodeStatus       NodeStatusFunc
 	onIdentityChange IdentityChangeFunc
 	indexerClient    *indexer.IndexerClient
@@ -40,6 +45,21 @@ func (h *Handler) SetRepost(fn RepostFunc) { h.repostPost = fn }
 func (h *Handler) SetCreatePost(fn CreatePostFunc) {
 	h.createPost = fn
 }
+
+// SetCreateReaction sets the like/reaction callback.
+func (h *Handler) SetCreateReaction(fn ReactFunc) { h.createReaction = fn }
+
+// SetFollow sets the follow callback.
+func (h *Handler) SetFollow(fn FollowFunc) { h.followUser = fn }
+
+// SetUnfollow sets the unfollow callback.
+func (h *Handler) SetUnfollow(fn FollowFunc) { h.unfollowUser = fn }
+
+// SetUpdateProfile sets the profile update callback.
+func (h *Handler) SetUpdateProfile(fn UpdateProfileFunc) { h.updateProfile = fn }
+
+// SetSendDM sets the direct message callback.
+func (h *Handler) SetSendDM(fn SendDMFunc) { h.sendDM = fn }
 
 // SetNodeStatus sets the node status callback.
 func (h *Handler) SetNodeStatus(fn NodeStatusFunc) {

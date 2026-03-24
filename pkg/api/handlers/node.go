@@ -75,8 +75,8 @@ func (h *Handler) GetNodeStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Identity address (public key hex).
 	identityAddr := ""
-	if h.kp != nil && len(h.kp.PublicKey) > 0 {
-		identityAddr = hex.EncodeToString(h.kp.PublicKey)
+	if kp := h.currentKeyPair(); kp != nil {
+		identityAddr = hex.EncodeToString(kp.PublicKeyBytes())
 	}
 
 	// Node ID from P2P host.
@@ -86,17 +86,17 @@ func (h *Handler) GetNodeStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"peers":              peerCount,
-		"bandwidth":          bw,
+		"peers":     peerCount,
+		"bandwidth": bw,
 		"storage": map[string]interface{}{
 			"used":  storageUsed,
 			"limit": storageLimit,
 		},
-		"uptime":             uptime,
-		"subscriptions":      subscriptionCount,
-		"identity":           identityAddr,
-		"node_id":            nodeID,
-		"version":            version.Version,
+		"uptime":        uptime,
+		"subscriptions": subscriptionCount,
+		"identity":      identityAddr,
+		"node_id":       nodeID,
+		"version":       version.Version,
 	})
 }
 
@@ -160,24 +160,24 @@ func (h *Handler) GetNodeConfig(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"listen_addresses": []string{},
 			"max_connections":  50,
-			"storage_limit":   0,
+			"storage_limit":    0,
 		})
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"listen_addresses":    h.cfg.Network.ListenAddresses,
-		"bootstrap_peers":    h.cfg.Network.BootstrapPeers,
-		"max_connections":    h.cfg.Network.MaxPeers,
-		"enable_relay":       h.cfg.Network.EnableRelay,
-		"enable_mdns":        h.cfg.Network.EnableMDNS,
+		"listen_addresses":     h.cfg.Network.ListenAddresses,
+		"bootstrap_peers":      h.cfg.Network.BootstrapPeers,
+		"max_connections":      h.cfg.Network.MaxPeers,
+		"enable_relay":         h.cfg.Network.EnableRelay,
+		"enable_mdns":          h.cfg.Network.EnableMDNS,
 		"enable_hole_punching": h.cfg.Network.EnableHolePunching,
 		"bandwidth_limit_mbps": h.cfg.Network.BandwidthLimitMbps,
-		"storage_limit_gb":  h.cfg.Node.MaxStorageGB,
-		"data_dir":          h.cfg.Node.DataDir,
-		"mode":              h.cfg.Node.Mode,
-		"api_address":       h.cfg.API.ListenAddress,
-		"log_level":         h.cfg.Logging.Level,
+		"storage_limit_gb":     h.cfg.Node.MaxStorageGB,
+		"data_dir":             h.cfg.Node.DataDir,
+		"mode":                 h.cfg.Node.Mode,
+		"api_address":          h.cfg.API.ListenAddress,
+		"log_level":            h.cfg.Logging.Level,
 	})
 }
 
@@ -243,4 +243,3 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		"status": "updated",
 	})
 }
-

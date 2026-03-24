@@ -35,22 +35,24 @@ type EventBroadcaster func(eventType string, data interface{})
 
 // Handler holds all dependencies for HTTP API handlers.
 type Handler struct {
-	db             *storage.DB
-	cas            *content.ContentStore
-	kp             *identity.KeyPair
-	identity       *identity.Holder
-	posts          *social.PostService
-	reactions      *social.ReactionService
-	profiles       *social.ProfileService
-	dms            *social.DMService
-	notifs         *social.NotificationService
-	feed           *feed.Manager
-	timeline       *feed.Timeline
-	indexerClient  *indexer.IndexerClient
-	p2pHost        *p2p.Host
-	cfg            *config.Config
-	cfgPath        string
-	broadcast      EventBroadcaster
+	db               *storage.DB
+	cas              *content.ContentStore
+	kp               *identity.KeyPair
+	identity         *identity.Holder
+	posts            *social.PostService
+	reactions        *social.ReactionService
+	profiles         *social.ProfileService
+	dms              *social.DMService
+	follows          *social.FollowService
+	notifs           *social.NotificationService
+	feed             *feed.Manager
+	timeline         *feed.Timeline
+	indexerClient    *indexer.IndexerClient
+	p2pHost          *p2p.Host
+	cfg              *config.Config
+	cfgPath          string
+	broadcast        EventBroadcaster
+	onIdentityChange func(*identity.KeyPair)
 }
 
 // SetBroadcaster sets the WebSocket event broadcaster.
@@ -64,25 +66,17 @@ func (h *Handler) emit(eventType string, data interface{}) {
 	}
 }
 
-// updateIdentity propagates a new key pair to all services that need it.
+// updateIdentity updates the handler's active key pair and invokes the shared
+// identity-change hook used by the runtime.
 func (h *Handler) updateIdentity(kp *identity.KeyPair) {
 	h.kp = kp
-	if h.posts != nil {
-		h.posts.SetIdentity(kp)
-	}
-	if h.reactions != nil {
-		h.reactions.SetIdentity(kp)
-	}
-	if h.profiles != nil {
-		h.profiles.SetIdentity(kp)
-	}
-	if h.dms != nil {
-		h.dms.SetIdentity(kp)
+	if h.onIdentityChange != nil {
+		h.onIdentityChange(kp)
 	}
 }
 
 // New creates a new Handler with all dependencies.
-func New(db *storage.DB, cas *content.ContentStore, kp *identity.KeyPair, posts *social.PostService, reactions *social.ReactionService, profiles *social.ProfileService, dms *social.DMService, notifs *social.NotificationService, feed *feed.Manager, timeline *feed.Timeline) *Handler {
+func New(db *storage.DB, cas *content.ContentStore, kp *identity.KeyPair, posts *social.PostService, reactions *social.ReactionService, profiles *social.ProfileService, dms *social.DMService, follows *social.FollowService, notifs *social.NotificationService, feed *feed.Manager, timeline *feed.Timeline) *Handler {
 	return &Handler{
 		db:        db,
 		cas:       cas,
@@ -91,6 +85,7 @@ func New(db *storage.DB, cas *content.ContentStore, kp *identity.KeyPair, posts 
 		reactions: reactions,
 		profiles:  profiles,
 		dms:       dms,
+		follows:   follows,
 		notifs:    notifs,
 		feed:      feed,
 		timeline:  timeline,
@@ -116,6 +111,49 @@ func (h *Handler) SetP2PHost(host *p2p.Host) {
 func (h *Handler) SetConfig(cfg *config.Config, cfgPath string) {
 	h.cfg = cfg
 	h.cfgPath = cfgPath
+}
+
+// SetIdentityChangeFunc registers the shared runtime hook for create, unlock,
+// switch, and lock transitions.
+func (h *Handler) SetIdentityChangeFunc(fn func(*identity.KeyPair)) {
+	h.onIdentityChange = fn
+}
+
+func (h *Handler) currentKeyPair() *identity.KeyPair {
+	if h.identity != nil {
+		if kp := h.identity.Get(); isUsableKeyPair(kp) {
+			return kp
+		}
+	}
+	if isUsableKeyPair(h.kp) {
+		return h.kp
+	}
+	return nil
+}
+
+func (h *Handler) requireIdentity(w http.ResponseWriter) (*identity.KeyPair, bool) {
+	kp := h.currentKeyPair()
+	if kp == nil {
+		respondError(w, http.StatusUnauthorized, "identity is locked or not initialized")
+		return nil, false
+	}
+	return kp, true
+}
+
+func isUsableKeyPair(kp *identity.KeyPair) bool {
+	if kp == nil {
+		return false
+	}
+	pubkey := kp.PublicKeyBytes()
+	if len(pubkey) == 0 {
+		return false
+	}
+	for _, b := range pubkey {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // respondJSON writes a JSON response with the given status code.

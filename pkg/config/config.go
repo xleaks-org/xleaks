@@ -11,13 +11,13 @@ import (
 
 // Config represents the complete node configuration.
 type Config struct {
-	Node    NodeConfig    `toml:"node"`
-	Network NetworkConfig `toml:"network"`
-	API     APIConfig     `toml:"api"`
-	Indexer IndexerConfig `toml:"indexer"`
-	Media   MediaConfig   `toml:"media"`
+	Node     NodeConfig     `toml:"node"`
+	Network  NetworkConfig  `toml:"network"`
+	API      APIConfig      `toml:"api"`
+	Indexer  IndexerConfig  `toml:"indexer"`
+	Media    MediaConfig    `toml:"media"`
 	Identity IdentityConfig `toml:"identity"`
-	Logging LoggingConfig `toml:"logging"`
+	Logging  LoggingConfig  `toml:"logging"`
 }
 
 type NodeConfig struct {
@@ -75,12 +75,8 @@ func DefaultConfig() *Config {
 			MaxStorageGB: 5,
 		},
 		Network: NetworkConfig{
-			ListenAddresses: []string{"/ip4/0.0.0.0/tcp/7460", "/ip4/0.0.0.0/udp/7460/quic-v1"},
-			BootstrapPeers: []string{
-				"/dnsaddr/bootstrap1.xleaks.org/tcp/7460",
-				"/dnsaddr/bootstrap2.xleaks.org/tcp/7460",
-				"/dnsaddr/bootstrap3.xleaks.org/tcp/7460",
-			},
+			ListenAddresses:    []string{"/ip4/0.0.0.0/tcp/7460", "/ip4/0.0.0.0/udp/7460/quic-v1"},
+			BootstrapPeers:     []string{},
 			EnableRelay:        true,
 			EnableMDNS:         true,
 			EnableHolePunching: true,

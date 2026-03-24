@@ -3,6 +3,7 @@ package social
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -14,8 +15,9 @@ import (
 
 // ProfileService handles profile creation, updates, and retrieval.
 type ProfileService struct {
-	storage  *storage.DB
-	identity *identity.KeyPair
+	storage   *storage.DB
+	identity  *identity.KeyPair
+	publisher Publisher
 }
 
 // NewProfileService creates a new ProfileService.
@@ -28,10 +30,18 @@ func NewProfileService(db *storage.DB, kp *identity.KeyPair) *ProfileService {
 
 func (s *ProfileService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
 
+// SetPublisher configures the optional outbound P2P publisher.
+func (s *ProfileService) SetPublisher(publisher Publisher) { s.publisher = publisher }
+
 // CreateProfile creates a new profile (version 1).
 func (s *ProfileService) CreateProfile(ctx context.Context, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
+	kp, err := activeIdentity(s.identity)
+	if err != nil {
+		return nil, err
+	}
+
 	profile := &pb.Profile{
-		Author:      s.identity.PublicKeyBytes(),
+		Author:      kp.PublicKeyBytes(),
 		DisplayName: displayName,
 		Bio:         bio,
 		Website:     website,
@@ -47,7 +57,7 @@ func (s *ProfileService) CreateProfile(ctx context.Context, displayName, bio, we
 		return nil, fmt.Errorf("compute signing payload: %w", err)
 	}
 
-	sig, err := identity.SignProtoMessage(s.identity, sigPayload)
+	sig, err := identity.SignProtoMessage(kp, sigPayload)
 	if err != nil {
 		return nil, fmt.Errorf("sign profile: %w", err)
 	}
@@ -75,14 +85,23 @@ func (s *ProfileService) CreateProfile(ctx context.Context, displayName, bio, we
 		return nil, fmt.Errorf("store profile: %w", err)
 	}
 
+	if err := publishProfile(ctx, s.publisher, profile); err != nil {
+		log.Printf("publish profile: %v", err)
+	}
+
 	return profile, nil
 }
 
 // UpdateProfile updates the user's profile by incrementing the version number.
 func (s *ProfileService) UpdateProfile(ctx context.Context, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
+	kp, err := activeIdentity(s.identity)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get current version.
 	var currentVersion uint64
-	existing, err := s.storage.GetProfile(s.identity.PublicKeyBytes())
+	existing, err := s.storage.GetProfile(kp.PublicKeyBytes())
 	if err != nil {
 		return nil, fmt.Errorf("get current profile: %w", err)
 	}
@@ -91,7 +110,7 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, displayName, bio, we
 	}
 
 	profile := &pb.Profile{
-		Author:      s.identity.PublicKeyBytes(),
+		Author:      kp.PublicKeyBytes(),
 		DisplayName: displayName,
 		Bio:         bio,
 		Website:     website,
@@ -107,7 +126,7 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, displayName, bio, we
 		return nil, fmt.Errorf("compute signing payload: %w", err)
 	}
 
-	sig, err := identity.SignProtoMessage(s.identity, sigPayload)
+	sig, err := identity.SignProtoMessage(kp, sigPayload)
 	if err != nil {
 		return nil, fmt.Errorf("sign profile: %w", err)
 	}
@@ -133,6 +152,10 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, displayName, bio, we
 		int64(profile.Timestamp),
 	); err != nil {
 		return nil, fmt.Errorf("store profile: %w", err)
+	}
+
+	if err := publishProfile(ctx, s.publisher, profile); err != nil {
+		log.Printf("publish profile: %v", err)
 	}
 
 	return profile, nil

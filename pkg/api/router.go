@@ -28,6 +28,7 @@ type HandlerDeps struct {
 	Reactions      *social.ReactionService
 	Profiles       *social.ProfileService
 	DMs            *social.DMService
+	Follows        *social.FollowService
 	Notifs         *social.NotificationService
 	Feed           *feed.Manager
 	Timeline       *feed.Timeline
@@ -35,6 +36,7 @@ type HandlerDeps struct {
 	Config         *config.Config
 	ConfigPath     string
 	IndexerClient  *indexer.IndexerClient
+	IdentityChange func(*identity.KeyPair)
 	WebHandler     chi.Router // optional: Go-based web UI routes
 }
 
@@ -60,7 +62,7 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 	r.Use(rl.Middleware)
 
 	h := handlers.New(deps.DB, deps.CAS, deps.KeyPair, deps.Posts, deps.Reactions,
-		deps.Profiles, deps.DMs, deps.Notifs, deps.Feed, deps.Timeline)
+		deps.Profiles, deps.DMs, deps.Follows, deps.Notifs, deps.Feed, deps.Timeline)
 	// Wire WebSocket event broadcasts into API handlers.
 	h.SetBroadcaster(func(eventType string, data interface{}) {
 		wsHub.Broadcast(WSEvent{Type: eventType, Data: data})
@@ -76,6 +78,9 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 	}
 	if deps.IndexerClient != nil {
 		h.SetIndexerClient(deps.IndexerClient)
+	}
+	if deps.IdentityChange != nil {
+		h.SetIdentityChangeFunc(deps.IdentityChange)
 	}
 
 	r.Route("/api", func(r chi.Router) {

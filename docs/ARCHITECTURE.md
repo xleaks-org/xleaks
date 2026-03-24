@@ -22,15 +22,15 @@
 ## 1. High-Level Architecture
 
 XLeaks is a fully decentralized, peer-to-peer social platform. Every user runs
-a node that embeds both the backend (Go) and the frontend (Next.js). There is
-no central server.
+a node that embeds both the backend (Go) and the frontend (server-rendered Go
+templates plus embedded static assets). There is no central server.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         XLeaks Node                                 │
 │                                                                     │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                    Web UI (Next.js / Wails)                   │  │
+│  │                 Web UI (Go templates + htmx)                 │  │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────────┐  │  │
 │  │  │   Feed   │ │ Profile  │ │   DMs    │ │  Notifications │  │  │
 │  │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └───────┬────────┘  │  │
@@ -108,8 +108,8 @@ no central server.
 
 ### Key Architectural Decisions
 
-- **Single binary:** The Go backend and the Next.js frontend (built as static
-  assets) are compiled into one executable via Go's `embed` package.
+- **Single binary:** The Go backend and embedded web UI assets are compiled
+  into one executable via Go's `embed` package.
 - **No central server:** All features work in a fully peer-to-peer manner.
   Indexer nodes provide optional convenience services (search, trending) but
   the network functions without them.
@@ -821,8 +821,7 @@ Max connections: Connection pool managed by pkg/storage/db.go
 ### 8.1 Overview
 
 The API server is an HTTP + WebSocket server that runs on localhost only. It
-provides the interface between the web UI (Next.js frontend) and the Go node
-backend.
+provides the interface between the embedded web UI and the Go node backend.
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -830,10 +829,10 @@ backend.
 │                                                  │
 │  ┌──────────────────────────────────────────┐    │
 │  │              Middleware Chain              │    │
-│  │  ┌──────┐ ┌──────────┐ ┌──────────────┐ │    │
-│  │  │ Auth │→│ RateLimit│→│     CORS     │ │    │
-│  │  │      │ │          │ │  (dev only)  │ │    │
-│  │  └──────┘ └──────────┘ └──────────────┘ │    │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ │    │
+│  │  │ LocalOnly│→│ RateLimit│→│   CORS   │ │    │
+│  │  │          │ │          │ │          │ │    │
+│  │  └──────────┘ └──────────┘ └──────────┘ │    │
 │  └──────────────────┬───────────────────────┘    │
 │                     │                            │
 │  ┌──────────────────┴───────────────────────┐    │
@@ -852,7 +851,7 @@ backend.
 │  │  /api/node/*      → node status handlers │    │
 │  │  /api/notifications/* → notif handlers   │    │
 │  │  /ws              → WebSocket upgrade    │    │
-│  │  /*               → Static frontend      │    │
+│  │  /*               → Embedded web routes  │    │
 │  └──────────────────────────────────────────┘    │
 │                                                  │
 └──────────────────────────────────────────────────┘
@@ -954,12 +953,14 @@ backend.
 
 ### 8.3 Security Model
 
-- The API server binds to `127.0.0.1` only. It is not accessible from other
-  machines on the network.
-- The `auth` middleware verifies that requests originate from localhost.
-- There is no token-based authentication -- the passphrase-unlocked identity
-  in memory serves as the authentication context.
-- CORS is only enabled in development mode.
+- The API server binds to `127.0.0.1` by default and is wrapped in localhost
+  enforcement middleware.
+- The default node relies on the passphrase-unlocked identity in memory as the
+  primary authentication context for state-changing actions.
+- Optional bearer-token support exists in the API server package, but the
+  default node startup path does not configure it.
+- CORS is enabled on the local API surface because the server is constrained to
+  localhost by middleware.
 
 ### 8.4 Indexer Public API
 
@@ -979,14 +980,14 @@ When running in indexer mode, a separate API server starts on port 7471
 
 ### 9.1 Connection
 
-The frontend maintains a persistent WebSocket connection to the local node at
+The web UI maintains a persistent WebSocket connection to the local node at
 `ws://127.0.0.1:7470/ws`. This connection enables server-pushed updates without
 polling.
 
 ```
 ┌──────────────┐         WebSocket          ┌──────────────┐
-│   Frontend   │ ◄═══════════════════════► │   WS Hub     │
-│  (Next.js)   │    Persistent connection   │   (Go)       │
+│    Web UI    │ ◄═══════════════════════► │   WS Hub     │
+│  (embedded)  │    Persistent connection   │   (Go)       │
 └──────────────┘                            └──────┬───────┘
                                                    │
                               ┌─────────────────────┤

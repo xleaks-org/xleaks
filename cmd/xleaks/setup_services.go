@@ -16,6 +16,7 @@ type ServiceBundle struct {
 	Reactions *social.ReactionService
 	Profiles  *social.ProfileService
 	DMs       *social.DMService
+	Follows   *social.FollowService
 	Notifs    *social.NotificationService
 	Feed      *feed.Manager
 	Timeline  *feed.Timeline
@@ -31,6 +32,7 @@ func setupServices(
 	idHolder *identity.Holder,
 ) *ServiceBundle {
 	notifs := social.NewNotificationService(db)
+	feedMgr := feed.NewManager(db)
 	posts := social.NewPostService(db, cas, kp)
 	posts.SetNotifications(notifs)
 
@@ -39,8 +41,9 @@ func setupServices(
 		Reactions: social.NewReactionService(db, kp),
 		Profiles:  social.NewProfileService(db, kp),
 		DMs:       social.NewDMService(db, kp),
+		Follows:   social.NewFollowService(db, feedMgr, kp),
 		Notifs:    notifs,
-		Feed:      feed.NewManager(db),
+		Feed:      feedMgr,
 		Timeline:  feed.NewTimeline(db, idHolder),
 		Indexer:   indexer.NewIndexerClient(),
 	}

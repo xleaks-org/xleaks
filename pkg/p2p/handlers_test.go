@@ -93,6 +93,10 @@ func (m *mockStorage) UpdateReactionCount(_ []byte) error {
 	return nil
 }
 
+func (m *mockStorage) UpdateFollowerCount(_ []byte) error {
+	return nil
+}
+
 type mockCAS struct {
 	data map[string][]byte
 }

@@ -11,6 +11,11 @@ import (
 
 // UploadMedia handles POST /api/media (multipart file upload).
 func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
 	// Limit upload size to MaxMediaSize.
 	r.Body = http.MaxBytesReader(w, r.Body, content.MaxMediaSize)
 
@@ -86,7 +91,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	timestamp := time.Now().UnixMilli()
 	if err := h.db.InsertMediaObject(
 		fileCID,
-		h.kp.PublicKeyBytes(),
+		kp.PublicKeyBytes(),
 		mimeType,
 		uint64(len(data)),
 		uint32(len(chunks)),

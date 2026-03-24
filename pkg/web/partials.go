@@ -261,14 +261,14 @@ func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
-
-	// Compute a deterministic CID for the reaction so duplicates are ignored.
-	cid, _ := content.ComputeCID(append(kp.PublicKeyBytes(), targetBytes...))
-	if err := h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "like", time.Now().UnixMilli()); err != nil {
-		log.Printf("web: failed to insert like reaction: %v", err)
+	if h.createReaction == nil {
+		http.Error(w, "reactions not configured", http.StatusInternalServerError)
+		return
 	}
-	if err := h.db.UpdateReactionCount(targetBytes); err != nil {
-		log.Printf("web: failed to update reaction count: %v", err)
+	if err := h.createReaction(r.Context(), kp, targetBytes); err != nil {
+		log.Printf("web: failed to create like reaction: %v", err)
+		http.Error(w, "failed to create reaction", http.StatusInternalServerError)
+		return
 	}
 
 	likes, _, _, _ := h.db.GetFullReactionCounts(targetBytes)
@@ -343,9 +343,14 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
-
-	if err := h.db.AddSubscription(pubkeyBytes, time.Now().UnixMilli()); err != nil {
+	if h.followUser == nil {
+		http.Error(w, "follow actions not configured", http.StatusInternalServerError)
+		return
+	}
+	if err := h.followUser(r.Context(), kp, pubkeyBytes); err != nil {
 		log.Printf("web: failed to follow: %v", err)
+		http.Error(w, "failed to follow user", http.StatusInternalServerError)
+		return
 	}
 
 	http.Redirect(w, r, "/user/"+pubkeyHex, http.StatusSeeOther)
@@ -365,9 +370,14 @@ func (h *Handler) handleUnfollow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
-
-	if err := h.db.RemoveSubscription(pubkeyBytes); err != nil {
+	if h.unfollowUser == nil {
+		http.Error(w, "follow actions not configured", http.StatusInternalServerError)
+		return
+	}
+	if err := h.unfollowUser(r.Context(), kp, pubkeyBytes); err != nil {
 		log.Printf("web: failed to unfollow: %v", err)
+		http.Error(w, "failed to unfollow user", http.StatusInternalServerError)
+		return
 	}
 
 	http.Redirect(w, r, "/user/"+pubkeyHex, http.StatusSeeOther)

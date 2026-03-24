@@ -25,6 +25,7 @@ type PostService struct {
 	cas           *content.ContentStore
 	identity      *identity.KeyPair
 	notifications *NotificationService
+	publisher     Publisher
 }
 
 // NewPostService creates a new PostService with the given dependencies.
@@ -46,14 +47,24 @@ func (s *PostService) SetIdentity(kp *identity.KeyPair) {
 	s.identity = kp
 }
 
+// SetPublisher configures the optional outbound P2P publisher.
+func (s *PostService) SetPublisher(publisher Publisher) {
+	s.publisher = publisher
+}
+
 // CreatePost creates, signs, and stores a new post.
 func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][]byte, replyTo []byte) (*pb.Post, error) {
+	kp, err := activeIdentity(s.identity)
+	if err != nil {
+		return nil, err
+	}
+
 	// Extract hashtags from the text.
 	tags := extractHashtags(text)
 
 	// Build the Post protobuf.
 	post := &pb.Post{
-		Author:    s.identity.PublicKeyBytes(),
+		Author:    kp.PublicKeyBytes(),
 		Timestamp: uint64(time.Now().UnixMilli()),
 		Content:   text,
 		MediaCids: mediaCIDs,
@@ -68,7 +79,7 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 	}
 
 	// Sign with identity.
-	sig, err := identity.SignProtoMessage(s.identity, sigPayload)
+	sig, err := identity.SignProtoMessage(kp, sigPayload)
 	if err != nil {
 		return nil, fmt.Errorf("sign post: %w", err)
 	}
@@ -137,18 +148,27 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 		}
 	}
 
+	if err := publishPost(ctx, s.publisher, post); err != nil {
+		log.Printf("publish post: %v", err)
+	}
+
 	return post, nil
 }
 
 // CreateRepost creates a repost of an existing post.
 func (s *PostService) CreateRepost(ctx context.Context, originalCID []byte) (*pb.Post, error) {
+	kp, err := activeIdentity(s.identity)
+	if err != nil {
+		return nil, err
+	}
+
 	// Verify the original post exists.
 	if !s.storage.PostExists(originalCID) {
 		return nil, fmt.Errorf("original post not found")
 	}
 
 	post := &pb.Post{
-		Author:    s.identity.PublicKeyBytes(),
+		Author:    kp.PublicKeyBytes(),
 		Timestamp: uint64(time.Now().UnixMilli()),
 		RepostOf:  originalCID,
 	}
@@ -160,7 +180,7 @@ func (s *PostService) CreateRepost(ctx context.Context, originalCID []byte) (*pb
 	}
 
 	// Sign.
-	sig, err := identity.SignProtoMessage(s.identity, sigPayload)
+	sig, err := identity.SignProtoMessage(kp, sigPayload)
 	if err != nil {
 		return nil, fmt.Errorf("sign repost: %w", err)
 	}
@@ -202,6 +222,10 @@ func (s *PostService) CreateRepost(ctx context.Context, originalCID []byte) (*pb
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if err := publishPost(ctx, s.publisher, post); err != nil {
+		log.Printf("publish repost: %v", err)
 	}
 
 	return post, nil

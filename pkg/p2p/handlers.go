@@ -37,6 +37,7 @@ type StorageWriter interface {
 	PostExists(cid []byte) bool
 	GetProfileVersion(pubkey []byte) (version uint64, found bool, err error)
 	UpdateReactionCount(postCID []byte) error
+	UpdateFollowerCount(pubkey []byte) error
 }
 
 // ContentWriter defines content-addressed storage operations.
@@ -226,6 +227,12 @@ func (mp *MessageProcessor) handleFollow(_ context.Context, event *pb.FollowEven
 		if err := mp.notifier.NotifyFollow(event.Author); err != nil {
 			log.Printf("notify follow error: %v", err)
 		}
+	}
+	if err := mp.db.UpdateFollowerCount(event.Author); err != nil {
+		log.Printf("update author follow counts: %v", err)
+	}
+	if err := mp.db.UpdateFollowerCount(event.Target); err != nil {
+		log.Printf("update target follow counts: %v", err)
 	}
 	return nil
 }

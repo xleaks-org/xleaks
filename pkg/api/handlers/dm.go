@@ -12,7 +12,12 @@ type sendDMRequest struct {
 
 // ListConversations handles GET /api/dm.
 func (h *Handler) ListConversations(w http.ResponseWriter, r *http.Request) {
-	conversations, err := h.db.GetConversations(h.kp.PublicKeyBytes())
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
+	conversations, err := h.db.GetConversations(kp.PublicKeyBytes())
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -33,6 +38,11 @@ func (h *Handler) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 // GetConversation handles GET /api/dm/{pubkey}?before=TIMESTAMP.
 func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
 	peerPubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -41,7 +51,7 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 
 	before, limit := parsePagination(r, 50)
 
-	messages, err := h.db.GetConversation(h.kp.PublicKeyBytes(), peerPubkey, before, limit)
+	messages, err := h.db.GetConversation(kp.PublicKeyBytes(), peerPubkey, before, limit)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -63,6 +73,10 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 
 // SendDM handles POST /api/dm/{pubkey}.
 func (h *Handler) SendDM(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireIdentity(w); !ok {
+		return
+	}
+
 	recipientPubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())

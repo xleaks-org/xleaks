@@ -18,6 +18,7 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/indexer"
 	"github.com/xleaks-org/xleaks/pkg/p2p"
+	"github.com/xleaks-org/xleaks/pkg/social"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 	"github.com/xleaks-org/xleaks/pkg/web"
 )
@@ -32,6 +33,7 @@ func setupWebHandler(
 	p2pHost *p2p.Host,
 	dataDir string,
 	idx *indexer.Indexer,
+	identitySync func(*identity.KeyPair),
 ) chi.Router {
 	sessionMgr := web.NewSessionManager()
 	webHandler, err := web.NewHandler(db, idHolder, svc.Timeline, sessionMgr)
@@ -40,14 +42,7 @@ func setupWebHandler(
 		return nil
 	}
 
-	// When identity changes (create/unlock/import), update all social services.
-	webHandler.SetOnIdentityChange(func(kp *identity.KeyPair) {
-		svc.Posts.SetIdentity(kp)
-		svc.Reactions.SetIdentity(kp)
-		svc.Profiles.SetIdentity(kp)
-		svc.DMs.SetIdentity(kp)
-		log.Printf("Identity updated for all services: %x", kp.PublicKeyBytes()[:8])
-	})
+	webHandler.SetOnIdentityChange(identitySync)
 
 	webHandler.SetCreatePost(func(ctx context.Context, text string, replyTo string) (string, error) {
 		var replyToCID []byte
@@ -83,6 +78,51 @@ func setupWebHandler(
 			return "", err
 		}
 		return hex.EncodeToString(post.Id), nil
+	})
+
+	webHandler.SetCreateReaction(func(ctx context.Context, kp *identity.KeyPair, targetCID []byte) error {
+		reactions := social.NewReactionService(db, kp)
+		reactions.SetPublisher(p2pHost)
+		_, err := reactions.CreateReaction(ctx, targetCID)
+		return err
+	})
+
+	webHandler.SetFollow(func(ctx context.Context, kp *identity.KeyPair, targetPubkey []byte) error {
+		follows := social.NewFollowService(db, svc.Feed, kp)
+		follows.SetPublisher(p2pHost)
+		_, err := follows.Follow(ctx, targetPubkey)
+		return err
+	})
+
+	webHandler.SetUnfollow(func(ctx context.Context, kp *identity.KeyPair, targetPubkey []byte) error {
+		follows := social.NewFollowService(db, svc.Feed, kp)
+		follows.SetPublisher(p2pHost)
+		_, err := follows.Unfollow(ctx, targetPubkey)
+		return err
+	})
+
+	webHandler.SetUpdateProfile(func(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) error {
+		profiles := social.NewProfileService(db, kp)
+		profiles.SetPublisher(p2pHost)
+
+		existing, err := profiles.GetProfile(kp.PublicKeyBytes())
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			_, err = profiles.CreateProfile(ctx, displayName, bio, website, avatarCID, bannerCID)
+			return err
+		}
+
+		_, err = profiles.UpdateProfile(ctx, displayName, bio, website, avatarCID, bannerCID)
+		return err
+	})
+
+	webHandler.SetSendDM(func(ctx context.Context, kp *identity.KeyPair, recipientPubkey []byte, content string) error {
+		dms := social.NewDMService(db, kp)
+		dms.SetPublisher(p2pHost)
+		_, err := dms.SendDM(ctx, recipientPubkey, content)
+		return err
 	})
 
 	nodeStartTime := time.Now()
@@ -125,6 +165,7 @@ func buildAPIDeps(
 	cfg *config.Config,
 	cfgPath string,
 	webRoutes chi.Router,
+	identitySync func(*identity.KeyPair),
 ) *api.HandlerDeps {
 	deps := &api.HandlerDeps{
 		DB:             db,
@@ -135,6 +176,7 @@ func buildAPIDeps(
 		Reactions:      svc.Reactions,
 		Profiles:       svc.Profiles,
 		DMs:            svc.DMs,
+		Follows:        svc.Follows,
 		Notifs:         svc.Notifs,
 		Feed:           svc.Feed,
 		Timeline:       svc.Timeline,
@@ -142,6 +184,7 @@ func buildAPIDeps(
 		Config:         cfg,
 		ConfigPath:     cfgPath,
 		IndexerClient:  svc.Indexer,
+		IdentityChange: identitySync,
 		WebHandler:     webRoutes,
 	}
 	return deps
@@ -169,11 +212,6 @@ func runServer(
 
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Printf("Server shutdown error: %v", err)
-		}
-		if p2pHost != nil {
-			if err := p2pHost.Close(); err != nil {
-				log.Printf("P2P host shutdown error: %v", err)
-			}
 		}
 	}()
 
