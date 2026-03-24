@@ -1,15 +1,8 @@
 # Bootstrap peers for initial network connectivity.
-# These are normal nodes with no special authority.
-# Community members can add their own bootstrap peers.
-
-[[peers]]
-# XLeaks project bootstrap node 1
-address = "/dnsaddr/bootstrap1.xleaks.org/tcp/7460"
-
-[[peers]]
-# XLeaks project bootstrap node 2
-address = "/dnsaddr/bootstrap2.xleaks.org/tcp/7460"
-
-[[peers]]
-# Community bootstrap node
-address = "/dnsaddr/bootstrap3.xleaks.org/tcp/7460"
+# Entries must be full libp2p multiaddrs, for example:
+#
+# [[peers]]
+# address = "/dnsaddr/bootstrap.example.org/tcp/7460/p2p/12D3KooW..."
+#
+# This file intentionally ships without active defaults until valid peer IDs
+# are known.

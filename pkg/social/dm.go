@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -17,8 +18,9 @@ import (
 
 // DMService handles encrypted direct message sending and receiving.
 type DMService struct {
-	storage  *storage.DB
-	identity *identity.KeyPair
+	storage   *storage.DB
+	identity  *identity.KeyPair
+	publisher Publisher
 }
 
 // NewDMService creates a new DMService.
@@ -31,11 +33,19 @@ func NewDMService(db *storage.DB, kp *identity.KeyPair) *DMService {
 
 func (s *DMService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
 
+// SetPublisher configures the optional outbound P2P publisher.
+func (s *DMService) SetPublisher(publisher Publisher) { s.publisher = publisher }
+
 // SendDM encrypts and sends a direct message to the given recipient.
 func (s *DMService) SendDM(ctx context.Context, recipientPubKey []byte, plaintext string) (*pb.DirectMessage, error) {
+	kp, err := activeIdentity(s.identity)
+	if err != nil {
+		return nil, err
+	}
+
 	// Encrypt the message.
 	ciphertext, nonce, err := identity.EncryptDM(
-		s.identity.PrivateKey,
+		kp.PrivateKey,
 		ed25519.PublicKey(recipientPubKey),
 		[]byte(plaintext),
 	)
@@ -44,7 +54,7 @@ func (s *DMService) SendDM(ctx context.Context, recipientPubKey []byte, plaintex
 	}
 
 	dm := &pb.DirectMessage{
-		Author:           s.identity.PublicKeyBytes(),
+		Author:           kp.PublicKeyBytes(),
 		Recipient:        recipientPubKey,
 		EncryptedContent: ciphertext,
 		Nonce:            nonce[:],
@@ -58,7 +68,7 @@ func (s *DMService) SendDM(ctx context.Context, recipientPubKey []byte, plaintex
 	}
 
 	// Sign.
-	sig, err := identity.SignProtoMessage(s.identity, sigPayload)
+	sig, err := identity.SignProtoMessage(kp, sigPayload)
 	if err != nil {
 		return nil, fmt.Errorf("sign DM: %w", err)
 	}
@@ -76,17 +86,26 @@ func (s *DMService) SendDM(ctx context.Context, recipientPubKey []byte, plaintex
 		return nil, fmt.Errorf("store DM: %w", err)
 	}
 
+	if err := publishDirectMessage(ctx, s.publisher, dm); err != nil {
+		log.Printf("publish direct message: %v", err)
+	}
+
 	return dm, nil
 }
 
 // DecryptDM decrypts a direct message intended for us.
 func (s *DMService) DecryptDM(dm *pb.DirectMessage) (string, error) {
+	kp, err := activeIdentity(s.identity)
+	if err != nil {
+		return "", err
+	}
+
 	if dm == nil {
 		return "", fmt.Errorf("direct message is nil")
 	}
 
 	// Verify this message is for us.
-	if !bytes.Equal(dm.Recipient, s.identity.PublicKeyBytes()) {
+	if !bytes.Equal(dm.Recipient, kp.PublicKeyBytes()) {
 		return "", fmt.Errorf("message is not addressed to us")
 	}
 
@@ -99,7 +118,7 @@ func (s *DMService) DecryptDM(dm *pb.DirectMessage) (string, error) {
 
 	// Decrypt.
 	plaintext, err := identity.DecryptDM(
-		s.identity.PrivateKey,
+		kp.PrivateKey,
 		ed25519.PublicKey(dm.Author),
 		dm.EncryptedContent,
 		nonce,
@@ -131,7 +150,7 @@ func (s *DMService) HandleIncomingDM(dm *pb.DirectMessage) error {
 			return fmt.Errorf("store incoming DM: %w", err)
 		}
 		// Create notification if the DM is addressed to us.
-		if bytes.Equal(dm.Recipient, s.identity.PublicKeyBytes()) {
+		if hasIdentity(s.identity) && bytes.Equal(dm.Recipient, s.identity.PublicKeyBytes()) {
 			if err := s.storage.InsertNotificationTx(tx, "dm", dm.Author, nil, dm.Id, time.Now().UnixMilli()); err != nil {
 				return fmt.Errorf("create DM notification: %w", err)
 			}

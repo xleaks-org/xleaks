@@ -3,14 +3,19 @@ package social_test
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
+	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/p2p"
 	"github.com/xleaks-org/xleaks/pkg/social"
 	"github.com/xleaks-org/xleaks/pkg/storage"
+	pb "github.com/xleaks-org/xleaks/proto/gen"
+	"google.golang.org/protobuf/proto"
 )
 
 // testSetup creates a fresh DB, CAS, and key pair for each test.
@@ -18,6 +23,19 @@ type testSetup struct {
 	db  *storage.DB
 	cas *content.ContentStore
 	kp  *identity.KeyPair
+}
+
+type capturePublisher struct {
+	topic string
+	data  []byte
+	calls int
+}
+
+func (p *capturePublisher) Publish(_ context.Context, topic string, data []byte) error {
+	p.topic = topic
+	p.data = append([]byte(nil), data...)
+	p.calls++
+	return nil
 }
 
 func setup(t *testing.T) *testSetup {
@@ -111,6 +129,17 @@ func TestCreatePostSignsCorrectly(t *testing.T) {
 	}
 	if err := content.ValidatePost(post, verifier); err != nil {
 		t.Fatalf("ValidatePost failed on a properly signed post: %v", err)
+	}
+}
+
+func TestCreatePostRequiresUnlockedIdentity(t *testing.T) {
+	s := setup(t)
+	ctx := context.Background()
+
+	postSvc := social.NewPostService(s.db, s.cas, nil)
+
+	if _, err := postSvc.CreatePost(ctx, "Signed post", nil, nil); err == nil {
+		t.Fatal("expected CreatePost to fail without an unlocked identity")
 	}
 }
 
@@ -279,5 +308,52 @@ func TestDMEncryptDecrypt(t *testing.T) {
 	_, err = wrongDM.DecryptDM(dm)
 	if err == nil {
 		t.Fatal("expected error when decrypting with wrong key")
+	}
+}
+
+func TestFollowPublishesSignedEvent(t *testing.T) {
+	s := setup(t)
+	ctx := context.Background()
+
+	targetKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair target: %v", err)
+	}
+
+	publisher := &capturePublisher{}
+	followSvc := social.NewFollowService(s.db, feed.NewManager(s.db), s.kp)
+	followSvc.SetPublisher(publisher)
+
+	event, err := followSvc.Follow(ctx, targetKP.PublicKeyBytes())
+	if err != nil {
+		t.Fatalf("Follow: %v", err)
+	}
+
+	if publisher.calls != 1 {
+		t.Fatalf("publisher calls = %d, want 1", publisher.calls)
+	}
+
+	wantTopic := p2p.FollowsTopic(hex.EncodeToString(s.kp.PublicKeyBytes()))
+	if publisher.topic != wantTopic {
+		t.Fatalf("topic = %q, want %q", publisher.topic, wantTopic)
+	}
+
+	var env pb.Envelope
+	if err := proto.Unmarshal(publisher.data, &env); err != nil {
+		t.Fatalf("Unmarshal envelope: %v", err)
+	}
+	payload, ok := env.Payload.(*pb.Envelope_FollowEvent)
+	if !ok {
+		t.Fatalf("payload type = %T, want follow event", env.Payload)
+	}
+	if payload.FollowEvent.Action != "follow" {
+		t.Fatalf("action = %q, want follow", payload.FollowEvent.Action)
+	}
+
+	verifier := func(pubkey, message, signature []byte) bool {
+		return identity.Verify(pubkey, message, signature)
+	}
+	if err := content.ValidateFollowEvent(event, verifier); err != nil {
+		t.Fatalf("ValidateFollowEvent: %v", err)
 	}
 }

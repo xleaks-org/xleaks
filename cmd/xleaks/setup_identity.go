@@ -1,15 +1,14 @@
 package main
 
 import (
-	"crypto/ed25519"
 	"log"
 
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
-// setupIdentity creates the identity holder and returns a placeholder key pair.
-// The real identity is set when the user unlocks or creates one via the API.
+// setupIdentity creates the identity holder. The active key pair remains nil
+// until the user creates, imports, or unlocks an identity.
 func setupIdentity(dataDir string, db *storage.DB) (*identity.Holder, *identity.KeyPair) {
 	idHolder := identity.NewHolder(dataDir)
 	idHolder.SetDB(db)
@@ -21,11 +20,5 @@ func setupIdentity(dataDir string, db *storage.DB) (*identity.Holder, *identity.
 		log.Println("No identity found. The UI will guide you through onboarding.")
 	}
 
-	// Create a placeholder identity for services that require one at init.
-	kp := &identity.KeyPair{
-		PrivateKey: ed25519.PrivateKey(make([]byte, ed25519.PrivateKeySize)),
-		PublicKey:  ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)),
-	}
-
-	return idHolder, kp
+	return idHolder, nil
 }

@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/api"
@@ -52,10 +54,14 @@ func run() error {
 	}
 
 	svc := setupServices(db, cas, kp, idHolder)
+	wireOutboundPublishers(p2pHost, svc)
 
-	msgProcessor := wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc)
+	msgProcessor, messageHandler := wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc)
 	wireContentExchange(p2pHost, cas)
 	wireIndexerDiscovery(ctx, cfg, p2pHost, svc)
+
+	identitySync := newIdentityRuntimeSyncer(p2pHost, messageHandler, svc)
+	identitySync(nil)
 
 	// WU-1/WU-2: Start indexer mode if configured.
 	idx := setupIndexer(ctx, db, dataDir, cfg, p2pHost)
@@ -70,8 +76,8 @@ func run() error {
 	replicator.StartStorageManager(ctx, maxStorage, 5*time.Minute)
 
 	cfgPath := filepath.Join(dataDir, "config.toml")
-	webRoutes := setupWebHandler(db, idHolder, svc, cfg, p2pHost, dataDir, idx)
-	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes)
+	webRoutes := setupWebHandler(db, idHolder, svc, cfg, p2pHost, dataDir, idx, identitySync)
+	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes, identitySync)
 
 	server := api.NewServer(cfg.API.ListenAddress, deps)
 	return runServer(ctx, cancel, server, p2pHost, cfg)
@@ -87,9 +93,9 @@ func wireP2PSubscriptions(
 	db *storage.DB,
 	cas *content.ContentStore,
 	svc *ServiceBundle,
-) *p2p.MessageProcessor {
+) (*p2p.MessageProcessor, p2p.MessageHandler) {
 	if host == nil {
-		return nil
+		return nil, nil
 	}
 
 	mp := p2p.NewMessageProcessor(db, cas, svc.Notifs)
@@ -99,10 +105,18 @@ func wireP2PSubscriptions(
 		}
 	}
 
-	ownPubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
-	host.Subscribe(p2p.DMTopic(ownPubkeyHex), handler)
-	host.Subscribe(p2p.GlobalTopic(), handler)
-	host.Subscribe(p2p.ProfilesTopic(), handler)
+	if err := host.Subscribe(p2p.GlobalTopic(), handler); err != nil {
+		log.Printf("Warning: failed to subscribe to %s: %v", p2p.GlobalTopic(), err)
+	}
+	if err := host.Subscribe(p2p.ProfilesTopic(), handler); err != nil {
+		log.Printf("Warning: failed to subscribe to %s: %v", p2p.ProfilesTopic(), err)
+	}
+	if kp != nil && len(kp.PublicKeyBytes()) > 0 {
+		topic := p2p.DMTopic(hex.EncodeToString(kp.PublicKeyBytes()))
+		if err := host.Subscribe(topic, handler); err != nil {
+			log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+		}
+	}
 
 	if err := svc.Feed.LoadSubscriptions(); err != nil {
 		log.Printf("Warning: failed to load subscriptions: %v", err)
@@ -116,10 +130,12 @@ func wireP2PSubscriptions(
 	}
 
 	for _, pk := range svc.Feed.FollowedPubkeys() {
-		host.Subscribe(p2p.PostsTopic(pk), handler)
+		if err := host.Subscribe(p2p.PostsTopic(pk), handler); err != nil {
+			log.Printf("Warning: failed to subscribe to %s: %v", p2p.PostsTopic(pk), err)
+		}
 	}
 
-	return mp
+	return mp, handler
 }
 
 // wireContentExchange configures the content exchange fetcher on the P2P host.
@@ -177,5 +193,55 @@ func discoverIndexersPeriodically(ctx context.Context, host *p2p.Host, svc *Serv
 			}
 			log.Printf("DHT indexer discovery: found %d indexer(s)", len(indexers))
 		}
+	}
+}
+
+func wireOutboundPublishers(host *p2p.Host, svc *ServiceBundle) {
+	if svc == nil {
+		return
+	}
+
+	svc.Posts.SetPublisher(host)
+	svc.Reactions.SetPublisher(host)
+	svc.Profiles.SetPublisher(host)
+	svc.DMs.SetPublisher(host)
+	svc.Follows.SetPublisher(host)
+}
+
+func newIdentityRuntimeSyncer(host *p2p.Host, handler p2p.MessageHandler, svc *ServiceBundle) func(*identity.KeyPair) {
+	var mu sync.Mutex
+	var currentDMTopic string
+
+	return func(kp *identity.KeyPair) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		svc.Posts.SetIdentity(kp)
+		svc.Reactions.SetIdentity(kp)
+		svc.Profiles.SetIdentity(kp)
+		svc.DMs.SetIdentity(kp)
+		svc.Follows.SetIdentity(kp)
+
+		if host == nil || handler == nil {
+			return
+		}
+
+		if currentDMTopic != "" {
+			if err := host.Unsubscribe(currentDMTopic); err != nil && !strings.Contains(err.Error(), "not subscribed") {
+				log.Printf("Warning: failed to unsubscribe from %s: %v", currentDMTopic, err)
+			}
+			currentDMTopic = ""
+		}
+
+		if kp == nil || len(kp.PublicKeyBytes()) == 0 {
+			return
+		}
+
+		topic := p2p.DMTopic(hex.EncodeToString(kp.PublicKeyBytes()))
+		if err := host.Subscribe(topic, handler); err != nil && !strings.Contains(err.Error(), "already subscribed") {
+			log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+			return
+		}
+		currentDMTopic = topic
 	}
 }

@@ -3,6 +3,8 @@ package web
 import (
 	"context"
 	"embed"
+
+	"github.com/xleaks-org/xleaks/pkg/identity"
 )
 
 //go:embed templates/*.html
@@ -28,8 +30,8 @@ type PostView struct {
 	ReplyCount    int
 	RepostCount   int
 
-	IsLiked       bool   // whether the current user has liked this post
-	IsReposted    bool   // whether the current user has reposted this post
+	IsLiked    bool // whether the current user has liked this post
+	IsReposted bool // whether the current user has reposted this post
 
 	ReplyTo       string // hex CID of parent post (empty if top-level)
 	ReplyToAuthor string // display name of parent post author
@@ -93,6 +95,18 @@ type CreatePostFunc func(ctx context.Context, content string, replyTo string) (i
 
 // RepostFunc is a callback to create a repost (a post with repost_of set).
 type RepostFunc func(ctx context.Context, targetCIDHex string) (id string, err error)
+
+// ReactFunc creates a signed reaction for the active session identity.
+type ReactFunc func(ctx context.Context, kp *identity.KeyPair, targetCID []byte) error
+
+// FollowFunc updates follow state for the active session identity.
+type FollowFunc func(ctx context.Context, kp *identity.KeyPair, targetPubkey []byte) error
+
+// UpdateProfileFunc updates the signed profile for the active session identity.
+type UpdateProfileFunc func(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) error
+
+// SendDMFunc sends an encrypted direct message for the active session identity.
+type SendDMFunc func(ctx context.Context, kp *identity.KeyPair, recipientPubkey []byte, content string) error
 
 // NodeStatusFunc is a callback that returns live node status without making
 // an HTTP round-trip to the API server. Returns peer count, uptime in seconds,

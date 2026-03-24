@@ -27,9 +27,7 @@ Before you begin, ensure you have the following tools installed:
 
 | Tool | Version | Purpose |
 |---|---|---|
-| **Go** | 1.22+ | Backend, P2P node, all core logic |
-| **Node.js** | 18+ (LTS recommended) | Next.js frontend build |
-| **npm** | 9+ | Frontend dependency management |
+| **Go** | 1.25.7 | Backend, P2P node, API, and embedded web UI |
 | **protoc** | 3.x | Protocol Buffer compiler |
 | **protoc-gen-go** | latest | Go code generation for protobuf |
 | **golangci-lint** | latest | Go linter (for `make lint`) |
@@ -50,22 +48,7 @@ brew install go
 sudo snap install go --classic
 
 # Verify
-go version   # Should show go1.22 or higher
-```
-
-#### Node.js
-
-```bash
-# macOS
-brew install node
-
-# Ubuntu/Debian (via NodeSource)
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Verify
-node --version   # Should show v18.x or higher
-npm --version    # Should show 9.x or higher
+go version   # Should show go1.25.7
 ```
 
 #### Protocol Buffers Compiler
@@ -140,14 +123,6 @@ protoc \
   proto/messages.proto
 ```
 
-### Install Frontend Dependencies
-
-```bash
-cd web
-npm install
-cd ..
-```
-
 ### Verify Setup
 
 Run the full test suite to confirm everything is working:
@@ -166,8 +141,8 @@ make test
 make build
 ```
 
-This builds the Next.js frontend first, then compiles the Go binary. The
-output is at `bin/xleaks`.
+This compiles the Go node and embeds the server-rendered web UI assets into
+`bin/xleaks`.
 
 ### Build for All Platforms
 
@@ -185,12 +160,6 @@ Produces binaries for all supported platforms:
 | `bin/xleaks-darwin-arm64` | macOS Apple Silicon |
 | `bin/xleaks-windows-amd64.exe` | Windows x86_64 |
 
-### Build Frontend Only
-
-```bash
-make frontend
-```
-
 ### Build Release Artifacts
 
 Creates binaries, checksums, and compressed archives:
@@ -207,25 +176,19 @@ Output is placed in the `release/` directory.
 make clean
 ```
 
-Removes `bin/`, `web/.next/`, and `web/out/`.
+Removes local build artifacts such as `bin/`.
 
 ---
 
 ## 4. Running in Development Mode
 
-Development mode runs the Go node and the Next.js development server
-concurrently, with hot-reload for the frontend:
+Development mode runs the Go node directly with the embedded web UI:
 
 ```bash
 make dev
 ```
 
-This runs `scripts/dev.sh`, which:
-
-1. Starts the Next.js dev server (with hot module replacement) in the
-   background.
-2. Starts the Go node in the foreground.
-3. Stops both when you press `Ctrl+C`.
+This runs `scripts/dev.sh`, which starts the Go node in the foreground.
 
 **The node listens on:**
 
@@ -233,7 +196,6 @@ This runs `scripts/dev.sh`, which:
 |---|---|---|
 | P2P | `0.0.0.0:7460` (TCP + QUIC) | Peer-to-peer networking |
 | API | `127.0.0.1:7470` | Local HTTP + WebSocket API |
-| Frontend (dev) | `127.0.0.1:3000` | Next.js dev server (hot reload) |
 
 ### Data Directory
 
@@ -380,15 +342,12 @@ go test -race -v ./pkg/identity/...
   (e.g., `zap.String("peer_id", id)`). Never use `fmt.Println` for
   operational output.
 
-### Frontend Code (TypeScript / React)
+### Web UI Code (Go templates / htmx)
 
-- Follow the existing patterns in `web/src/`.
-- Use TypeScript strict mode.
-- Use functional components with hooks.
-- Use Tailwind CSS for styling (no inline styles or CSS modules).
-- Component files use `PascalCase.tsx`.
-- Hook files use `camelCase.ts` with `use` prefix.
-- Utility files use `camelCase.ts`.
+- Keep handlers, templates, and partials in sync.
+- Prefer small template helpers over embedding logic in handlers.
+- Preserve server-rendered flows for onboarding, feed actions, and settings.
+- Put reusable HTML in `pkg/web/templates/` and route logic in `pkg/web/`.
 
 ### Protobuf
 
@@ -620,21 +579,16 @@ xleaks/
 │   │   └── handlers/              # Endpoint handlers
 │   ├── config/                     # TOML configuration loading
 │   └── version/                    # Build version info
-├── web/                            # Next.js frontend
-│   ├── src/app/                    # Pages (App Router)
-│   ├── src/components/             # React components
-│   ├── src/hooks/                  # Custom React hooks
-│   ├── src/lib/                    # Utilities and API client
-│   └── src/styles/                 # Tailwind CSS
+├── web/                            # Embedded static assets
+│   ├── public/                     # Public files served from the Go binary
+│   └── embed.go                    # go:embed declarations
 ├── configs/
 │   ├── default.toml                # Default configuration
 │   └── bootstrap_peers.toml        # Bootstrap peer list
 ├── scripts/
-│   ├── build.sh                    # Full build script
 │   ├── dev.sh                      # Development mode
 │   └── gen-proto.sh                # Protobuf code generation
 ├── tests/
-│   ├── unit/                       # Unit tests
 │   ├── integration/                # Multi-node integration tests
 │   └── protocol/                   # Protocol conformance tests
 ├── docs/
@@ -658,9 +612,8 @@ xleaks/
 | `make test-protocol` | Run protocol tests | Conformance tests |
 | `make lint` | Run golangci-lint | Static analysis |
 | `make proto` | Regenerate protobuf | Outputs to `proto/gen/` |
-| `make frontend` | Build Next.js | Outputs to `web/out/` |
-| `make dev` | Development mode | Go node + Next.js hot reload |
-| `make clean` | Clean artifacts | Removes `bin/`, `web/.next/`, `web/out/` |
+| `make dev` | Development mode | Runs the Go node with the embedded web UI |
+| `make clean` | Clean artifacts | Removes `bin/` and related outputs |
 | `make release` | Build release | Binaries + checksums + archives |
 
 ---

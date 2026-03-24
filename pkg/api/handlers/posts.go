@@ -17,6 +17,10 @@ type createPostRequest struct {
 
 // CreatePost handles POST /api/posts.
 func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireIdentity(w); !ok {
+		return
+	}
+
 	var req createPostRequest
 	if err := parseJSON(r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())

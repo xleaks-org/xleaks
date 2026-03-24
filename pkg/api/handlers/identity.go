@@ -177,27 +177,8 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read from identity holder for current key (not h.kp which may be stale)
-	var kp *identity.KeyPair
-	if h.identity != nil {
-		kp = h.identity.Get()
-	}
+	kp := h.currentKeyPair()
 	if kp == nil {
-		kp = h.kp // fallback to handler's key
-	}
-	if kp == nil || len(kp.PublicKeyBytes()) == 0 {
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"active":           false,
-			"needs_onboarding": true,
-		})
-		return
-	}
-	// Check for zeroed placeholder key
-	allZero := true
-	for _, b := range kp.PublicKeyBytes() {
-		if b != 0 { allZero = false; break }
-	}
-	if allZero && h.identity != nil && !h.identity.IsUnlocked() {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"active":           false,
 			"needs_onboarding": true,
@@ -228,7 +209,7 @@ func (h *Handler) LockIdentity(w http.ResponseWriter, r *http.Request) {
 	if h.identity != nil {
 		h.identity.Lock()
 	}
-	h.kp = nil
+	h.updateIdentity(nil)
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "locked",
 	})
@@ -300,10 +281,7 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 
 // ExportIdentity handles GET /api/identity/export.
 func (h *Handler) ExportIdentity(w http.ResponseWriter, r *http.Request) {
-	kp := h.kp
-	if kp == nil && h.identity != nil {
-		kp = h.identity.Get()
-	}
+	kp := h.currentKeyPair()
 	if kp == nil {
 		respondError(w, http.StatusNotFound, "no active identity")
 		return
