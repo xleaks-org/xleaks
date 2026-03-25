@@ -37,22 +37,45 @@ func (s *FollowService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
 // SetPublisher configures the optional outbound P2P publisher.
 func (s *FollowService) SetPublisher(publisher Publisher) { s.publisher = publisher }
 
-// Follow records and broadcasts a follow event.
+// Follow records and broadcasts a follow event using the service's stored identity.
 func (s *FollowService) Follow(ctx context.Context, target []byte) (*pb.FollowEvent, error) {
-	return s.changeFollowState(ctx, target, "follow")
-}
-
-// Unfollow records and broadcasts an unfollow event.
-func (s *FollowService) Unfollow(ctx context.Context, target []byte) (*pb.FollowEvent, error) {
-	return s.changeFollowState(ctx, target, "unfollow")
-}
-
-func (s *FollowService) changeFollowState(ctx context.Context, target []byte, action string) (*pb.FollowEvent, error) {
 	kp, err := activeIdentity(s.identity)
 	if err != nil {
 		return nil, err
 	}
+	return s.changeFollowState(ctx, kp, target, "follow")
+}
 
+// Unfollow records and broadcasts an unfollow event using the service's stored identity.
+func (s *FollowService) Unfollow(ctx context.Context, target []byte) (*pb.FollowEvent, error) {
+	kp, err := activeIdentity(s.identity)
+	if err != nil {
+		return nil, err
+	}
+	return s.changeFollowState(ctx, kp, target, "unfollow")
+}
+
+// FollowAs records and broadcasts a follow event using the provided per-request keypair.
+// This is thread-safe and avoids creating throwaway service instances.
+func (s *FollowService) FollowAs(ctx context.Context, kp *identity.KeyPair, target []byte) (*pb.FollowEvent, error) {
+	kp, err := activeIdentity(kp)
+	if err != nil {
+		return nil, err
+	}
+	return s.changeFollowState(ctx, kp, target, "follow")
+}
+
+// UnfollowAs records and broadcasts an unfollow event using the provided per-request keypair.
+// This is thread-safe and avoids creating throwaway service instances.
+func (s *FollowService) UnfollowAs(ctx context.Context, kp *identity.KeyPair, target []byte) (*pb.FollowEvent, error) {
+	kp, err := activeIdentity(kp)
+	if err != nil {
+		return nil, err
+	}
+	return s.changeFollowState(ctx, kp, target, "unfollow")
+}
+
+func (s *FollowService) changeFollowState(ctx context.Context, kp *identity.KeyPair, target []byte, action string) (*pb.FollowEvent, error) {
 	event := &pb.FollowEvent{
 		Author:    kp.PublicKeyBytes(),
 		Target:    target,

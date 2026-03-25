@@ -133,7 +133,10 @@ func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Direct messaging not configured", http.StatusInternalServerError)
 		return
 	}
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 	recipient := r.FormValue("recipient")
 	content := strings.TrimSpace(r.FormValue("content"))
 	if recipient == "" || content == "" {
@@ -166,7 +169,10 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Profile updates not configured", http.StatusInternalServerError)
 		return
 	}
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
 	bio := strings.TrimSpace(r.FormValue("bio"))
 	if displayName == "" {

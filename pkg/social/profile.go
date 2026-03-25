@@ -33,13 +33,26 @@ func (s *ProfileService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
 // SetPublisher configures the optional outbound P2P publisher.
 func (s *ProfileService) SetPublisher(publisher Publisher) { s.publisher = publisher }
 
-// CreateProfile creates a new profile (version 1).
+// CreateProfile creates a new profile (version 1) using the service's stored identity.
 func (s *ProfileService) CreateProfile(ctx context.Context, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
 	kp, err := activeIdentity(s.identity)
 	if err != nil {
 		return nil, err
 	}
+	return s.createProfileWith(ctx, kp, displayName, bio, website, avatarCID, bannerCID)
+}
 
+// CreateProfileAs creates a new profile (version 1) using the provided per-request keypair.
+// This is thread-safe and avoids creating throwaway service instances.
+func (s *ProfileService) CreateProfileAs(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
+	kp, err := activeIdentity(kp)
+	if err != nil {
+		return nil, err
+	}
+	return s.createProfileWith(ctx, kp, displayName, bio, website, avatarCID, bannerCID)
+}
+
+func (s *ProfileService) createProfileWith(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
 	profile := &pb.Profile{
 		Author:      kp.PublicKeyBytes(),
 		DisplayName: displayName,
@@ -92,13 +105,28 @@ func (s *ProfileService) CreateProfile(ctx context.Context, displayName, bio, we
 	return profile, nil
 }
 
-// UpdateProfile updates the user's profile by incrementing the version number.
+// UpdateProfile updates the user's profile by incrementing the version number
+// using the service's stored identity.
 func (s *ProfileService) UpdateProfile(ctx context.Context, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
 	kp, err := activeIdentity(s.identity)
 	if err != nil {
 		return nil, err
 	}
+	return s.updateProfileWith(ctx, kp, displayName, bio, website, avatarCID, bannerCID)
+}
 
+// UpdateProfileAs updates the user's profile by incrementing the version number
+// using the provided per-request keypair.
+// This is thread-safe and avoids creating throwaway service instances.
+func (s *ProfileService) UpdateProfileAs(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
+	kp, err := activeIdentity(kp)
+	if err != nil {
+		return nil, err
+	}
+	return s.updateProfileWith(ctx, kp, displayName, bio, website, avatarCID, bannerCID)
+}
+
+func (s *ProfileService) updateProfileWith(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
 	// Get current version.
 	var currentVersion uint64
 	existing, err := s.storage.GetProfile(kp.PublicKeyBytes())

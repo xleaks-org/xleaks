@@ -12,7 +12,10 @@ func (h *Handler) termsPage(w http.ResponseWriter, r *http.Request) {
 
 // handleAcceptTerms processes the terms acceptance form.
 func (h *Handler) handleAcceptTerms(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 
 	node := r.FormValue("node")
 	permanent := r.FormValue("permanent")

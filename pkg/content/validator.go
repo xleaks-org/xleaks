@@ -3,6 +3,7 @@ package content
 import (
 	"bytes"
 	"fmt"
+	"sync/atomic"
 	"time"
 )
 
@@ -42,18 +43,44 @@ const (
 // It is defined as a function type to avoid circular imports with the identity package.
 type SignatureVerifier func(pubkey, message, signature []byte) bool
 
-// MaxPastAge controls how far in the past a message timestamp is allowed to be.
-// It defaults to DefaultMaxPastAge (30 days). During historical sync, set
-// HistoricalSyncMode to true to bypass this check.
-var MaxPastAge = DefaultMaxPastAge
+// maxPastAge controls how far in the past a message timestamp is allowed to be.
+// It stores the duration as nanoseconds (int64) and is safe for concurrent access.
+// Use SetMaxPastAge / GetMaxPastAge helpers instead of touching this directly.
+var maxPastAge atomic.Int64
 
-// HistoricalSyncMode disables the MaxPastAge check so that old messages can be
-// accepted during historical synchronisation.
-var HistoricalSyncMode bool
+// historicalSyncMode disables the maxPastAge check so that old messages can be
+// accepted during historical synchronisation. Safe for concurrent access.
+// Use SetHistoricalSyncMode / GetHistoricalSyncMode helpers.
+var historicalSyncMode atomic.Bool
+
+func init() {
+	maxPastAge.Store(int64(DefaultMaxPastAge))
+}
+
+// GetMaxPastAge returns the current maximum past age for message timestamps.
+func GetMaxPastAge() time.Duration {
+	return time.Duration(maxPastAge.Load())
+}
+
+// SetMaxPastAge sets the maximum past age for message timestamps.
+func SetMaxPastAge(d time.Duration) {
+	maxPastAge.Store(int64(d))
+}
+
+// GetHistoricalSyncMode returns whether historical sync mode is enabled.
+func GetHistoricalSyncMode() bool {
+	return historicalSyncMode.Load()
+}
+
+// SetHistoricalSyncMode enables or disables historical sync mode.
+// When enabled, the past-age check is bypassed for all messages.
+func SetHistoricalSyncMode(enabled bool) {
+	historicalSyncMode.Store(enabled)
+}
 
 // validateTimestamp checks that a millisecond unix timestamp is not more than
-// MaxFutureSkew (5 min) in the future and not more than MaxPastAge (30 days)
-// in the past. The past-age check is skipped when HistoricalSyncMode is true.
+// MaxFutureSkew (5 min) in the future and not more than maxPastAge (30 days)
+// in the past. The past-age check is skipped when historicalSyncMode is true.
 func validateTimestamp(tsMillis uint64) error {
 	ts := time.UnixMilli(int64(tsMillis))
 	now := time.Now()
@@ -62,8 +89,9 @@ func validateTimestamp(tsMillis uint64) error {
 		return fmt.Errorf("timestamp %v is more than %v in the future", ts, MaxFutureSkew)
 	}
 
-	if !HistoricalSyncMode && ts.Before(now.Add(-MaxPastAge)) {
-		return fmt.Errorf("timestamp %v is more than %v in the past", ts, MaxPastAge)
+	pastAge := GetMaxPastAge()
+	if !GetHistoricalSyncMode() && ts.Before(now.Add(-pastAge)) {
+		return fmt.Errorf("timestamp %v is more than %v in the past", ts, pastAge)
 	}
 
 	return nil

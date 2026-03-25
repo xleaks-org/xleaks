@@ -53,7 +53,7 @@ func run() error {
 		defer p2pHost.Close()
 	}
 
-	svc := setupServices(db, cas, kp, idHolder)
+	svc := setupServices(ctx, db, cas, kp, idHolder)
 	wireOutboundPublishers(p2pHost, svc)
 
 	msgProcessor, messageHandler := wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc)
