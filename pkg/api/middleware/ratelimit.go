@@ -29,26 +29,45 @@ type RouteRateLimiter struct {
 	visitors map[string]map[string]*visitor     // path prefix -> IP -> visitor
 	global   *routeLimit                        // global fallback limit
 	globalV  map[string]*visitor                // IP -> visitor for global limit
+	stop     chan struct{}                       // signals the cleanup goroutine to exit
 }
 
 // NewRouteRateLimiter creates a new per-route rate limiter.
+// Call Stop() when the limiter is no longer needed to release the background goroutine.
 func NewRouteRateLimiter() *RouteRateLimiter {
 	rl := &RouteRateLimiter{
 		limits:   make(map[string]*routeLimit),
 		visitors: make(map[string]map[string]*visitor),
 		globalV:  make(map[string]*visitor),
+		stop:     make(chan struct{}),
 	}
 
 	// Start background cleanup.
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			rl.cleanup()
+		for {
+			select {
+			case <-ticker.C:
+				rl.cleanup()
+			case <-rl.stop:
+				return
+			}
 		}
 	}()
 
 	return rl
+}
+
+// Stop shuts down the background cleanup goroutine and releases its resources.
+// It is safe to call Stop multiple times.
+func (rl *RouteRateLimiter) Stop() {
+	select {
+	case <-rl.stop:
+		// Already stopped.
+	default:
+		close(rl.stop)
+	}
 }
 
 // AddLimit sets a rate limit for a specific path prefix. Requests whose

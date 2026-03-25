@@ -13,7 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/feed"
-	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // feedPartial returns feed items as an htmx partial.
@@ -110,7 +109,10 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 
 // handlePost creates a new post from form data using the callback.
 func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 	content := strings.TrimSpace(r.FormValue("content"))
 	replyTo := strings.TrimSpace(r.FormValue("reply_to"))
 	if content == "" {
@@ -176,34 +178,7 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var postRows []storage.PostRow
-	if strings.HasPrefix(q, "#") {
-		postRows, _ = h.db.GetPostsByTag(strings.TrimPrefix(q, "#"), 0, 20)
-	} else {
-		postRows, _ = h.db.SearchPostsByContent(q, 20)
-	}
-
-	posts := make([]PostView, 0, len(postRows))
-	for i := range postRows {
-		posts = append(posts, h.postRowToView(&postRows[i]))
-	}
-
-	// WU-6: If no local results, try the indexer for broader search.
-	if len(posts) == 0 && h.indexerClient != nil && h.indexerClient.Available() {
-		idxResults, err := h.indexerClient.SearchPosts(q, 1, 20)
-		if err == nil && idxResults != nil {
-			for _, hit := range idxResults.Results {
-				posts = append(posts, PostView{
-					ID:            hit.ID,
-					AuthorName:    shortenHex(hit.Author),
-					AuthorInitial: getInitial(hit.Author),
-					ShortPubkey:   shortenHex(hit.Author),
-					Content:       hit.Content,
-					RelativeTime:  "indexer",
-				})
-			}
-		}
-	}
+	posts := h.performSearch(q, 20)
 
 	if len(posts) == 0 {
 		fmt.Fprintf(w, `<div class="text-center py-12 text-gray-400">`+
@@ -243,7 +218,10 @@ func (h *Handler) trendingTagsPartial(w http.ResponseWriter, r *http.Request) {
 
 // handleLike creates a like reaction and returns the updated button HTML.
 func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 	target := r.FormValue("target")
 	if target == "" {
 		http.Error(w, "missing target", http.StatusBadRequest)
@@ -284,7 +262,10 @@ func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
 // handleRepost creates a repost (a new post with repost_of set) and returns updated button HTML.
 // Per XLeaks protocol, reposts are immutable -- once reposted, it cannot be undone.
 func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 	target := r.FormValue("target")
 	if target == "" {
 		http.Error(w, "missing target", http.StatusBadRequest)

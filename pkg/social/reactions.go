@@ -34,13 +34,27 @@ func (s *ReactionService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
 // SetPublisher configures the optional outbound P2P publisher.
 func (s *ReactionService) SetPublisher(publisher Publisher) { s.publisher = publisher }
 
-// CreateReaction creates a new "like" reaction on the given target post.
+// CreateReaction creates a new "like" reaction on the given target post
+// using the service's stored identity.
 func (s *ReactionService) CreateReaction(ctx context.Context, targetCID []byte) (*pb.Reaction, error) {
 	kp, err := activeIdentity(s.identity)
 	if err != nil {
 		return nil, err
 	}
+	return s.createReactionWith(ctx, kp, targetCID)
+}
 
+// CreateReactionAs creates a new "like" reaction using the provided per-request
+// keypair. This is thread-safe and avoids creating throwaway service instances.
+func (s *ReactionService) CreateReactionAs(ctx context.Context, kp *identity.KeyPair, targetCID []byte) (*pb.Reaction, error) {
+	kp, err := activeIdentity(kp)
+	if err != nil {
+		return nil, err
+	}
+	return s.createReactionWith(ctx, kp, targetCID)
+}
+
+func (s *ReactionService) createReactionWith(ctx context.Context, kp *identity.KeyPair, targetCID []byte) (*pb.Reaction, error) {
 	reaction := &pb.Reaction{
 		Author:       kp.PublicKeyBytes(),
 		Target:       targetCID,

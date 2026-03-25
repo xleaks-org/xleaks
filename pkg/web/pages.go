@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -193,39 +192,7 @@ func (h *Handler) searchPage(w http.ResponseWriter, r *http.Request) {
 
 	var results []PostView
 	if q != "" {
-		if strings.HasPrefix(q, "#") {
-			tag := strings.TrimPrefix(q, "#")
-			posts, err := h.db.GetPostsByTag(tag, 0, 20)
-			if err == nil {
-				for _, p := range posts {
-					results = append(results, h.postRowToView(&p))
-				}
-			}
-		} else {
-			posts, err := h.db.SearchPostsByContent(q, 20)
-			if err == nil {
-				for _, p := range posts {
-					results = append(results, h.postRowToView(&p))
-				}
-			}
-		}
-
-		// WU-6: If no local results, try the indexer for broader search.
-		if len(results) == 0 && h.indexerClient != nil && h.indexerClient.Available() {
-			idxResults, err := h.indexerClient.SearchPosts(q, 1, 20)
-			if err == nil && idxResults != nil {
-				for _, hit := range idxResults.Results {
-					results = append(results, PostView{
-						ID:            hit.ID,
-						AuthorName:    shortenHex(hit.Author),
-						AuthorInitial: getInitial(hit.Author),
-						ShortPubkey:   shortenHex(hit.Author),
-						Content:       hit.Content,
-						RelativeTime:  "indexer",
-					})
-				}
-			}
-		}
+		results = h.performSearch(q, 20)
 	}
 	data["Results"] = results
 	h.renderPage(w, "search.html", data)

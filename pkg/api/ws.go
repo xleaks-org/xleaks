@@ -68,17 +68,29 @@ func (hub *WSHub) Broadcast(event WSEvent) {
 		return
 	}
 
-	hub.mu.RLock()
-	defer hub.mu.RUnlock()
+	var stale []*wsClient
 
+	hub.mu.RLock()
 	for client := range hub.clients {
 		select {
 		case client.send <- data:
 		default:
-			// Client's send buffer is full, close it.
-			close(client.send)
-			delete(hub.clients, client)
+			// Client's send buffer is full; mark for removal.
+			stale = append(stale, client)
 		}
+	}
+	hub.mu.RUnlock()
+
+	if len(stale) > 0 {
+		hub.mu.Lock()
+		for _, client := range stale {
+			// Guard against double-close: only act if the client is still registered.
+			if hub.clients[client] {
+				close(client.send)
+				delete(hub.clients, client)
+			}
+		}
+		hub.mu.Unlock()
 	}
 }
 

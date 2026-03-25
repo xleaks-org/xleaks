@@ -1,8 +1,10 @@
 package indexer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,6 +20,7 @@ type IndexerClient struct {
 	httpClient    *http.Client
 	knownIndexers []string // base URLs like "http://host:7471"
 	cache         map[string]*cachedResponse
+	cancel        context.CancelFunc
 }
 
 type cachedResponse struct {
@@ -76,14 +79,60 @@ type ClientPublisher struct {
 }
 
 // NewIndexerClient creates a new IndexerClient with an HTTP client
-// configured with a 5-second timeout.
-func NewIndexerClient() *IndexerClient {
-	return &IndexerClient{
+// configured with a 5-second timeout. It starts a background goroutine
+// that periodically removes expired cache entries every 5 minutes.
+// The goroutine is stopped when the provided context is cancelled or
+// when Close is called.
+func NewIndexerClient(ctx context.Context) *IndexerClient {
+	ctx, cancel := context.WithCancel(ctx)
+	c := &IndexerClient{
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
 		knownIndexers: make([]string, 0),
 		cache:         make(map[string]*cachedResponse),
+		cancel:        cancel,
+	}
+	go c.cacheCleanupLoop(ctx)
+	return c
+}
+
+// Close stops the background cache cleanup goroutine.
+func (c *IndexerClient) Close() {
+	c.cancel()
+}
+
+// cacheCleanupLoop periodically removes expired entries from the cache.
+// It runs every 5 minutes and stops when the context is cancelled.
+func (c *IndexerClient) cacheCleanupLoop(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.evictExpiredEntries()
+		}
+	}
+}
+
+// evictExpiredEntries removes all expired entries from the cache.
+func (c *IndexerClient) evictExpiredEntries() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	evicted := 0
+	for key, entry := range c.cache {
+		if now.After(entry.expiresAt) {
+			delete(c.cache, key)
+			evicted++
+		}
+	}
+	if evicted > 0 {
+		log.Printf("[indexer-client] cache cleanup: evicted %d expired entries, %d remaining", evicted, len(c.cache))
 	}
 }
 
@@ -282,12 +331,17 @@ func (c *IndexerClient) queryIndexer(path string, params url.Values, result inte
 }
 
 // getFromCache returns a cached value if it exists and has not expired.
+// Expired entries are deleted on access (lazy eviction).
 func (c *IndexerClient) getFromCache(key string) interface{} {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	entry, ok := c.cache[key]
-	if !ok || time.Now().After(entry.expiresAt) {
+	if !ok {
+		return nil
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(c.cache, key)
 		return nil
 	}
 	return entry.data

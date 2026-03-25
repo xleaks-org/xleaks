@@ -36,13 +36,27 @@ func (s *DMService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
 // SetPublisher configures the optional outbound P2P publisher.
 func (s *DMService) SetPublisher(publisher Publisher) { s.publisher = publisher }
 
-// SendDM encrypts and sends a direct message to the given recipient.
+// SendDM encrypts and sends a direct message to the given recipient
+// using the service's stored identity.
 func (s *DMService) SendDM(ctx context.Context, recipientPubKey []byte, plaintext string) (*pb.DirectMessage, error) {
 	kp, err := activeIdentity(s.identity)
 	if err != nil {
 		return nil, err
 	}
+	return s.sendDMWith(ctx, kp, recipientPubKey, plaintext)
+}
 
+// SendDMAs encrypts and sends a direct message using the provided per-request keypair.
+// This is thread-safe and avoids creating throwaway service instances.
+func (s *DMService) SendDMAs(ctx context.Context, kp *identity.KeyPair, recipientPubKey []byte, plaintext string) (*pb.DirectMessage, error) {
+	kp, err := activeIdentity(kp)
+	if err != nil {
+		return nil, err
+	}
+	return s.sendDMWith(ctx, kp, recipientPubKey, plaintext)
+}
+
+func (s *DMService) sendDMWith(ctx context.Context, kp *identity.KeyPair, recipientPubKey []byte, plaintext string) (*pb.DirectMessage, error) {
 	// Encrypt the message.
 	ciphertext, nonce, err := identity.EncryptDM(
 		kp.PrivateKey,

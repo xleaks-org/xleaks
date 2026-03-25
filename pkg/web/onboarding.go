@@ -68,7 +68,10 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 // handleVerifyStep shows the seed confirmation page.
 func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 	seed := r.FormValue("seed")
 	words := strings.Fields(seed)
 	if len(words) != seedPhraseLength {
@@ -80,7 +83,10 @@ func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
 
 // handleConfirmSeed verifies the user filled in the correct words.
 func (h *Handler) handleConfirmSeed(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 	seed := r.FormValue("seed")
 	words := strings.Fields(seed)
 	posStr := r.FormValue("blank_positions")
@@ -110,7 +116,10 @@ func (h *Handler) handleConfirmSeed(w http.ResponseWriter, r *http.Request) {
 
 // handleSetProfile sets the user's display name.
 func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
 	if displayName == "" {
 		displayName = "Anonymous"

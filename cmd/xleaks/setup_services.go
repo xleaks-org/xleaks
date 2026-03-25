@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
@@ -26,6 +28,7 @@ type ServiceBundle struct {
 // setupServices creates all social services, the feed manager, timeline, and
 // indexer client.
 func setupServices(
+	ctx context.Context,
 	db *storage.DB,
 	cas *content.ContentStore,
 	kp *identity.KeyPair,
@@ -45,6 +48,6 @@ func setupServices(
 		Notifs:    notifs,
 		Feed:      feedMgr,
 		Timeline:  feed.NewTimeline(db, idHolder),
-		Indexer:   indexer.NewIndexerClient(),
+		Indexer:   indexer.NewIndexerClient(ctx),
 	}
 }

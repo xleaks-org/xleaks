@@ -18,7 +18,6 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/indexer"
 	"github.com/xleaks-org/xleaks/pkg/p2p"
-	"github.com/xleaks-org/xleaks/pkg/social"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 	"github.com/xleaks-org/xleaks/pkg/web"
 )
@@ -81,47 +80,36 @@ func setupWebHandler(
 	})
 
 	webHandler.SetCreateReaction(func(ctx context.Context, kp *identity.KeyPair, targetCID []byte) error {
-		reactions := social.NewReactionService(db, kp)
-		reactions.SetPublisher(p2pHost)
-		_, err := reactions.CreateReaction(ctx, targetCID)
+		_, err := svc.Reactions.CreateReactionAs(ctx, kp, targetCID)
 		return err
 	})
 
 	webHandler.SetFollow(func(ctx context.Context, kp *identity.KeyPair, targetPubkey []byte) error {
-		follows := social.NewFollowService(db, svc.Feed, kp)
-		follows.SetPublisher(p2pHost)
-		_, err := follows.Follow(ctx, targetPubkey)
+		_, err := svc.Follows.FollowAs(ctx, kp, targetPubkey)
 		return err
 	})
 
 	webHandler.SetUnfollow(func(ctx context.Context, kp *identity.KeyPair, targetPubkey []byte) error {
-		follows := social.NewFollowService(db, svc.Feed, kp)
-		follows.SetPublisher(p2pHost)
-		_, err := follows.Unfollow(ctx, targetPubkey)
+		_, err := svc.Follows.UnfollowAs(ctx, kp, targetPubkey)
 		return err
 	})
 
 	webHandler.SetUpdateProfile(func(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) error {
-		profiles := social.NewProfileService(db, kp)
-		profiles.SetPublisher(p2pHost)
-
-		existing, err := profiles.GetProfile(kp.PublicKeyBytes())
+		existing, err := svc.Profiles.GetProfile(kp.PublicKeyBytes())
 		if err != nil {
 			return err
 		}
 		if existing == nil {
-			_, err = profiles.CreateProfile(ctx, displayName, bio, website, avatarCID, bannerCID)
+			_, err = svc.Profiles.CreateProfileAs(ctx, kp, displayName, bio, website, avatarCID, bannerCID)
 			return err
 		}
 
-		_, err = profiles.UpdateProfile(ctx, displayName, bio, website, avatarCID, bannerCID)
+		_, err = svc.Profiles.UpdateProfileAs(ctx, kp, displayName, bio, website, avatarCID, bannerCID)
 		return err
 	})
 
 	webHandler.SetSendDM(func(ctx context.Context, kp *identity.KeyPair, recipientPubkey []byte, content string) error {
-		dms := social.NewDMService(db, kp)
-		dms.SetPublisher(p2pHost)
-		_, err := dms.SendDM(ctx, recipientPubkey, content)
+		_, err := svc.DMs.SendDMAs(ctx, kp, recipientPubkey, content)
 		return err
 	})
 
