@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/indexer"
@@ -40,61 +41,153 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If no indexer client is configured or no indexers are available,
-	// return an empty result with a message.
-	if h.indexerClient == nil || !h.indexerClient.Available() {
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"type":    searchType,
-			"query":   query,
-			"results": []interface{}{},
-			"total":   0,
-			"message": "No indexer nodes available",
-		})
-		return
-	}
-
 	switch searchType {
 	case "posts":
-		resp, err := h.indexerClient.SearchPosts(query, page, pageSize)
-		if err != nil {
-			respondJSON(w, http.StatusOK, map[string]interface{}{
-				"type":    "posts",
-				"query":   query,
-				"results": []interface{}{},
-				"total":   0,
-				"message": "No indexer nodes available",
-			})
-			return
-		}
+		results, message := h.searchPostsResults(query, page, pageSize)
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"type":    "posts",
 			"query":   query,
-			"results": resp.Results,
-			"total":   resp.Total,
+			"results": results,
+			"total":   len(results),
+			"message": message,
 		})
 
 	case "users":
-		resp, err := h.indexerClient.SearchUsers(query, page, pageSize)
-		if err != nil {
-			respondJSON(w, http.StatusOK, map[string]interface{}{
-				"type":    "users",
-				"query":   query,
-				"results": []interface{}{},
-				"total":   0,
-				"message": "No indexer nodes available",
-			})
-			return
-		}
+		results, message := h.searchUsersResults(query, page, pageSize)
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"type":    "users",
 			"query":   query,
-			"results": resp.Results,
-			"total":   resp.Total,
+			"results": results,
+			"total":   len(results),
+			"message": message,
 		})
 
 	default:
 		respondError(w, http.StatusBadRequest, "type must be 'posts' or 'users'")
 	}
+}
+
+func (h *Handler) searchPostsResults(query string, page, pageSize int) ([]indexer.ClientSearchHit, string) {
+	results := make([]indexer.ClientSearchHit, 0, pageSize)
+	seen := make(map[string]struct{}, pageSize)
+	message := "Using local-only post search"
+	indexerQuery := strings.TrimSpace(strings.TrimPrefix(query, "#"))
+
+	if h.indexerClient != nil && h.indexerClient.Available() && indexerQuery != "" {
+		resp, err := h.indexerClient.SearchPosts(indexerQuery, page, pageSize)
+		if err == nil && resp != nil {
+			for _, hit := range resp.Results {
+				if hit.ID == "" {
+					continue
+				}
+				results = append(results, hit)
+				seen[hit.ID] = struct{}{}
+				if len(results) >= pageSize {
+					return results, ""
+				}
+			}
+			message = ""
+		}
+	}
+
+	if strings.HasPrefix(query, "#") {
+		tag := strings.TrimSpace(strings.TrimPrefix(query, "#"))
+		if posts, err := h.db.GetPostsByTag(tag, 0, pageSize); err == nil {
+			for _, post := range posts {
+				id := hex.EncodeToString(post.CID)
+				if _, ok := seen[id]; ok {
+					continue
+				}
+				results = append(results, indexer.ClientSearchHit{
+					ID:      id,
+					Type:    "post",
+					Content: post.Content,
+					Author:  hex.EncodeToString(post.Author),
+				})
+				seen[id] = struct{}{}
+			}
+		}
+	} else if posts, err := h.db.SearchPostsByContent(query, pageSize); err == nil {
+		for _, post := range posts {
+			id := hex.EncodeToString(post.CID)
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			results = append(results, indexer.ClientSearchHit{
+				ID:      id,
+				Type:    "post",
+				Content: post.Content,
+				Author:  hex.EncodeToString(post.Author),
+			})
+			seen[id] = struct{}{}
+		}
+	}
+
+	return results, message
+}
+
+func (h *Handler) searchUsersResults(query string, page, pageSize int) ([]indexer.ClientSearchHit, string) {
+	results := make([]indexer.ClientSearchHit, 0, pageSize)
+	seen := make(map[string]struct{}, pageSize)
+	normalized := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(query, "@")))
+	if normalized == "" {
+		return results, "query parameter 'q' is required"
+	}
+	message := "Using local-only user search"
+
+	if h.indexerClient != nil && h.indexerClient.Available() {
+		resp, err := h.indexerClient.SearchUsers(normalized, page, pageSize)
+		if err == nil && resp != nil {
+			for _, hit := range resp.Results {
+				pubkeyHex := hit.Author
+				if pubkeyHex == "" {
+					pubkeyHex = hit.ID
+				}
+				if pubkeyHex == "" {
+					continue
+				}
+				if _, ok := seen[pubkeyHex]; ok {
+					continue
+				}
+				hit.ID = pubkeyHex
+				hit.Type = "user"
+				results = append(results, hit)
+				seen[pubkeyHex] = struct{}{}
+				if len(results) >= pageSize {
+					return results, ""
+				}
+			}
+			message = ""
+		}
+	}
+
+	if profiles, err := h.db.GetAllProfiles(); err == nil {
+		for _, profile := range profiles {
+			pubkeyHex := hex.EncodeToString(profile.Pubkey)
+			if _, ok := seen[pubkeyHex]; ok {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(profile.DisplayName), normalized) &&
+				!strings.Contains(strings.ToLower(profile.Bio), normalized) &&
+				!strings.Contains(strings.ToLower(profile.Website), normalized) &&
+				!strings.Contains(strings.ToLower(pubkeyHex), normalized) {
+				continue
+			}
+			results = append(results, indexer.ClientSearchHit{
+				ID:    pubkeyHex,
+				Type:  "user",
+				Name:  profile.DisplayName,
+				Bio:   profile.Bio,
+				Score: 1,
+			})
+			seen[pubkeyHex] = struct{}{}
+			if len(results) >= pageSize {
+				return results, message
+			}
+		}
+	}
+
+	return results, message
 }
 
 // GetTrending handles GET /api/trending.

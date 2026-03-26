@@ -45,7 +45,11 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 
 	// Advertise as indexer on DHT.
 	if p2pHost != nil {
-		go p2pHost.AdvertiseAsIndexer(ctx)
+		go func() {
+			if err := p2pHost.AdvertiseAsIndexer(ctx, cfg.Indexer.PublicAPIAddress); err != nil {
+				log.Printf("Warning: indexer advertisement failed: %v", err)
+			}
+		}()
 	}
 
 	// Reindex existing posts so the Bleve index catches up with DB content.
@@ -68,6 +72,25 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 			}
 		}
 		log.Printf("Indexer: reindexed %d existing posts", indexed)
+	}()
+
+	go func() {
+		profiles, err := db.GetAllProfiles()
+		if err != nil {
+			log.Printf("Warning: failed to load profiles for reindexing: %v", err)
+			return
+		}
+		indexed := 0
+		for _, profile := range profiles {
+			if err := idx.Search().IndexProfile(
+				hex.EncodeToString(profile.Pubkey),
+				profile.DisplayName,
+				profile.Bio,
+			); err == nil {
+				indexed++
+			}
+		}
+		log.Printf("Indexer: reindexed %d existing profiles", indexed)
 	}()
 
 	log.Println("Indexer mode enabled")
