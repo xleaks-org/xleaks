@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -20,6 +24,20 @@ const (
 	// advertise themselves.
 	indexerDHTKey = "/xleaks/indexers"
 )
+
+// IndexerInfo describes a discovered indexer node and the HTTP API endpoints
+// that regular nodes can query for search/explore/trending data.
+type IndexerInfo struct {
+	PeerID      peer.ID
+	Addrs       []ma.Multiaddr
+	APIBaseURLs []string
+}
+
+type indexerAdvertisement struct {
+	PeerID      string   `json:"peer_id"`
+	Addrs       []string `json:"addrs,omitempty"`
+	APIBaseURLs []string `json:"api_base_urls,omitempty"`
+}
 
 // Bootstrap connects to the provided bootstrap peers and bootstraps the DHT
 // routing table. If bootstrapPeers is empty, the peers from the host's
@@ -113,12 +131,16 @@ func (n *mdnsNotifee) HandlePeerFound(info peer.AddrInfo) {
 	_ = n.host.host.Connect(n.ctx, info)
 }
 
-// AdvertiseAsIndexer publishes this node's peer info under the well-known
+// AdvertiseAsIndexer publishes this node's peer info and public indexer API
+// endpoints under the well-known
 // DHT key so that other nodes can discover indexer nodes.
-func (h *Host) AdvertiseAsIndexer(ctx context.Context) error {
-	info := peer.AddrInfo{
-		ID:    h.host.ID(),
-		Addrs: h.host.Addrs(),
+func (h *Host) AdvertiseAsIndexer(ctx context.Context, publicAPIAddress string) error {
+	info := indexerAdvertisement{
+		PeerID:      h.host.ID().String(),
+		APIBaseURLs: indexerAPIBaseURLs(h.host.Addrs(), publicAPIAddress),
+	}
+	for _, addr := range h.host.Addrs() {
+		info.Addrs = append(info.Addrs, addr.String())
 	}
 
 	data, err := json.Marshal(info)
@@ -135,7 +157,7 @@ func (h *Host) AdvertiseAsIndexer(ctx context.Context) error {
 
 // FindIndexers looks up indexer nodes by querying the DHT for the well-known
 // indexer key. It collects up to 10 results from the DHT query channel.
-func (h *Host) FindIndexers(ctx context.Context) ([]peer.AddrInfo, error) {
+func (h *Host) FindIndexers(ctx context.Context) ([]IndexerInfo, error) {
 	const maxResults = 10
 
 	ch, err := h.dht.SearchValue(ctx, indexerDHTKey)
@@ -144,18 +166,18 @@ func (h *Host) FindIndexers(ctx context.Context) ([]peer.AddrInfo, error) {
 	}
 
 	seen := make(map[peer.ID]bool)
-	var results []peer.AddrInfo
+	var results []IndexerInfo
 
 	for val := range ch {
-		var info peer.AddrInfo
-		if err := json.Unmarshal(val, &info); err != nil {
+		info, err := parseIndexerInfo(val)
+		if err != nil {
 			log.Printf("warning: failed to unmarshal indexer info: %v", err)
 			continue
 		}
-		if seen[info.ID] {
+		if seen[info.PeerID] {
 			continue
 		}
-		seen[info.ID] = true
+		seen[info.PeerID] = true
 		results = append(results, info)
 		if len(results) >= maxResults {
 			break
@@ -167,4 +189,119 @@ func (h *Host) FindIndexers(ctx context.Context) ([]peer.AddrInfo, error) {
 	}
 
 	return results, nil
+}
+
+func parseIndexerInfo(data []byte) (IndexerInfo, error) {
+	var advert indexerAdvertisement
+	if err := json.Unmarshal(data, &advert); err == nil && advert.PeerID != "" {
+		pid, err := peer.Decode(advert.PeerID)
+		if err != nil {
+			return IndexerInfo{}, err
+		}
+		return IndexerInfo{
+			PeerID:      pid,
+			Addrs:       parseMultiaddrs(advert.Addrs),
+			APIBaseURLs: dedupeStrings(advert.APIBaseURLs),
+		}, nil
+	}
+
+	var legacy peer.AddrInfo
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return IndexerInfo{}, err
+	}
+	return IndexerInfo{
+		PeerID:      legacy.ID,
+		Addrs:       legacy.Addrs,
+		APIBaseURLs: indexerAPIBaseURLs(legacy.Addrs, ":7471"),
+	}, nil
+}
+
+func parseMultiaddrs(values []string) []ma.Multiaddr {
+	addrs := make([]ma.Multiaddr, 0, len(values))
+	for _, value := range values {
+		addr, err := ma.NewMultiaddr(value)
+		if err != nil {
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+	return addrs
+}
+
+func indexerAPIBaseURLs(addrs []ma.Multiaddr, publicAPIAddress string) []string {
+	port := apiPort(publicAPIAddress)
+	if port == "" {
+		port = "7471"
+	}
+
+	results := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		host := multiaddrHost(addr)
+		if host == "" || !isPublicIndexerHost(host) {
+			continue
+		}
+		results = append(results, "http://"+net.JoinHostPort(host, port))
+	}
+	return dedupeStrings(results)
+}
+
+func apiPort(publicAPIAddress string) string {
+	if publicAPIAddress == "" {
+		return ""
+	}
+	if _, port, err := net.SplitHostPort(publicAPIAddress); err == nil {
+		return port
+	}
+	if parsed, err := url.Parse(publicAPIAddress); err == nil {
+		if port := parsed.Port(); port != "" {
+			return port
+		}
+	}
+	if strings.HasPrefix(publicAPIAddress, ":") {
+		return strings.TrimPrefix(publicAPIAddress, ":")
+	}
+	if _, err := strconv.Atoi(publicAPIAddress); err == nil {
+		return publicAPIAddress
+	}
+	return ""
+}
+
+func multiaddrHost(addr ma.Multiaddr) string {
+	for _, code := range []int{ma.P_DNS, ma.P_DNS4, ma.P_DNS6, ma.P_IP4, ma.P_IP6} {
+		if value, err := addr.ValueForProtocol(code); err == nil && value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func isPublicIndexerHost(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return host != "" && host != "localhost"
+	}
+	if !ip.IsGlobalUnicast() {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return false
+	}
+	return true
+}
+
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

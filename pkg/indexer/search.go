@@ -14,8 +14,13 @@ type SearchIndex struct {
 
 // SearchResult represents a single search hit.
 type SearchResult struct {
-	ID    string
-	Score float64
+	ID      string  `json:"id"`
+	Score   float64 `json:"score"`
+	Type    string  `json:"type"`
+	Content string  `json:"content,omitempty"`
+	Author  string  `json:"author,omitempty"`
+	Name    string  `json:"name,omitempty"`
+	Bio     string  `json:"bio,omitempty"`
 }
 
 // postDocument is the internal document shape indexed for posts.
@@ -79,13 +84,13 @@ func (si *SearchIndex) IndexProfile(pubkeyHex string, displayName string, bio st
 // the total number of matches.
 func (si *SearchIndex) SearchPosts(query string, page int, pageSize int) ([]SearchResult, int, error) {
 	q := bleve.NewQueryStringQuery(query)
-	req := bleve.NewSearchRequestOptions(q, pageSize, page*pageSize, false)
 
 	// Add a type filter to only return posts.
 	typeQuery := bleve.NewTermQuery("post")
 	typeQuery.SetField("type")
 	combined := bleve.NewConjunctionQuery(q, typeQuery)
-	req = bleve.NewSearchRequestOptions(combined, pageSize, page*pageSize, false)
+	req := bleve.NewSearchRequestOptions(combined, pageSize, page*pageSize, false)
+	req.Fields = []string{"author", "content", "type"}
 
 	res, err := si.index.Search(req)
 	if err != nil {
@@ -95,8 +100,11 @@ func (si *SearchIndex) SearchPosts(query string, page int, pageSize int) ([]Sear
 	results := make([]SearchResult, 0, len(res.Hits))
 	for _, hit := range res.Hits {
 		results = append(results, SearchResult{
-			ID:    hit.ID,
-			Score: hit.Score,
+			ID:      hit.ID,
+			Score:   hit.Score,
+			Type:    stringField(hit.Fields["type"]),
+			Content: stringField(hit.Fields["content"]),
+			Author:  stringField(hit.Fields["author"]),
 		})
 	}
 	return results, int(res.Total), nil
@@ -112,6 +120,7 @@ func (si *SearchIndex) SearchUsers(query string, page int, pageSize int) ([]Sear
 	typeQuery.SetField("type")
 	combined := bleve.NewConjunctionQuery(q, typeQuery)
 	req := bleve.NewSearchRequestOptions(combined, pageSize, page*pageSize, false)
+	req.Fields = []string{"display_name", "bio", "type"}
 
 	res, err := si.index.Search(req)
 	if err != nil {
@@ -123,6 +132,9 @@ func (si *SearchIndex) SearchUsers(query string, page int, pageSize int) ([]Sear
 		results = append(results, SearchResult{
 			ID:    hit.ID,
 			Score: hit.Score,
+			Type:  stringField(hit.Fields["type"]),
+			Name:  stringField(hit.Fields["display_name"]),
+			Bio:   stringField(hit.Fields["bio"]),
 		})
 	}
 	return results, int(res.Total), nil
@@ -138,4 +150,13 @@ func parsePageParam(s string) int {
 		return 0
 	}
 	return n
+}
+
+func stringField(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	default:
+		return ""
+	}
 }

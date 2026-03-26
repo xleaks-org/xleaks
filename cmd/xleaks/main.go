@@ -62,7 +62,7 @@ func run() error {
 		log.Printf("Warning: failed to backfill pinned content state: %v", err)
 	}
 
-	msgProcessor, messageHandler := wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc)
+	msgProcessor, messageHandler := wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc, cfg.IsIndexer())
 	ensureTopicSubscription := newTopicSubscriber(p2pHost, messageHandler)
 	wireContentExchange(p2pHost, cas)
 	if msgProcessor != nil {
@@ -122,6 +122,7 @@ func wireP2PSubscriptions(
 	db *storage.DB,
 	cas *content.ContentStore,
 	svc *ServiceBundle,
+	subscribeObservedPublisherPosts bool,
 ) (*p2p.MessageProcessor, p2p.MessageHandler) {
 	if host == nil {
 		return nil, nil
@@ -135,7 +136,7 @@ func wireP2PSubscriptions(
 			log.Printf("P2P message error: %v", err)
 			return
 		}
-		if err := ensureObservedTopicSubscriptions(ensureTopic, data); err != nil {
+		if err := ensureObservedTopicSubscriptions(ensureTopic, data, subscribeObservedPublisherPosts); err != nil {
 			log.Printf("P2P topic tracking error: %v", err)
 		}
 	}
@@ -166,6 +167,9 @@ func wireP2PSubscriptions(
 		}
 	}
 	seedKnownFollowSubscriptions(db, ensureTopic)
+	if subscribeObservedPublisherPosts {
+		seedKnownPublisherSubscriptions(db, ensureTopic)
+	}
 
 	return mp, handler
 }
@@ -248,6 +252,26 @@ func backfillPinnedContent(db *storage.DB) error {
 
 // discoverIndexersPeriodically queries the DHT for indexers every 5 minutes.
 func discoverIndexersPeriodically(ctx context.Context, host *p2p.Host, svc *ServiceBundle) {
+	discover := func() {
+		indexers, err := host.FindIndexers(ctx)
+		if err != nil {
+			log.Printf("DHT indexer discovery failed: %v", err)
+			return
+		}
+		discovered := 0
+		for _, info := range indexers {
+			for _, baseURL := range info.APIBaseURLs {
+				svc.Indexer.AddIndexer(baseURL)
+				discovered++
+			}
+		}
+		if discovered > 0 {
+			log.Printf("DHT indexer discovery: found %d queryable indexer endpoint(s)", discovered)
+		}
+	}
+
+	discover()
+
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -255,17 +279,7 @@ func discoverIndexersPeriodically(ctx context.Context, host *p2p.Host, svc *Serv
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			indexers, err := host.FindIndexers(ctx)
-			if err != nil {
-				log.Printf("DHT indexer discovery failed: %v", err)
-				continue
-			}
-			for _, info := range indexers {
-				for _, addr := range info.Addrs {
-					svc.Indexer.AddIndexer(fmt.Sprintf("http://%s", addr.String()))
-				}
-			}
-			log.Printf("DHT indexer discovery: found %d indexer(s)", len(indexers))
+			discover()
 		}
 	}
 }
@@ -361,7 +375,53 @@ func seedKnownFollowSubscriptions(db *storage.DB, ensureTopic func(string) error
 	}
 }
 
-func ensureObservedTopicSubscriptions(ensureTopic func(string) error, data []byte) error {
+func seedKnownPublisherSubscriptions(db *storage.DB, ensureTopic func(string) error) {
+	if db == nil || ensureTopic == nil {
+		return
+	}
+	seen := make(map[string]struct{})
+	profiles, err := db.GetAllProfiles()
+	if err != nil {
+		log.Printf("Warning: failed to load profiles for post subscriptions: %v", err)
+	} else {
+		for _, profile := range profiles {
+			if len(profile.Pubkey) == 0 {
+				continue
+			}
+			pubkeyHex := hex.EncodeToString(profile.Pubkey)
+			if _, ok := seen[pubkeyHex]; ok {
+				continue
+			}
+			seen[pubkeyHex] = struct{}{}
+			topic := p2p.PostsTopic(pubkeyHex)
+			if err := ensureTopic(topic); err != nil {
+				log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+			}
+		}
+	}
+
+	posts, err := db.GetAllPosts(0, 10000)
+	if err != nil {
+		log.Printf("Warning: failed to load posts for post subscriptions: %v", err)
+		return
+	}
+	for _, post := range posts {
+		if len(post.Author) == 0 {
+			continue
+		}
+		pubkeyHex := hex.EncodeToString(post.Author)
+		if _, ok := seen[pubkeyHex]; ok {
+			continue
+		}
+		seen[pubkeyHex] = struct{}{}
+		topic := p2p.PostsTopic(pubkeyHex)
+		if err := ensureTopic(topic); err != nil {
+			log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+		}
+	}
+}
+
+func ensureObservedTopicSubscriptions(ensureTopic func(string) error, data []byte, subscribePublisherPosts bool) error {
 	if ensureTopic == nil || len(data) == 0 {
 		return nil
 	}
@@ -386,10 +446,25 @@ func ensureObservedTopicSubscriptions(ensureTopic func(string) error, data []byt
 		if payload.Profile == nil {
 			return nil
 		}
+		if subscribePublisherPosts {
+			if err := ensureTopic(p2p.PostsTopic(hex.EncodeToString(payload.Profile.Author))); err != nil {
+				return err
+			}
+		}
 		return ensureTopic(p2p.FollowsTopic(hex.EncodeToString(payload.Profile.Author)))
 	case *pb.Envelope_FollowEvent:
 		if payload.FollowEvent == nil {
 			return nil
+		}
+		if subscribePublisherPosts {
+			if err := ensureTopic(p2p.PostsTopic(hex.EncodeToString(payload.FollowEvent.Author))); err != nil {
+				return err
+			}
+			if len(payload.FollowEvent.Target) > 0 {
+				if err := ensureTopic(p2p.PostsTopic(hex.EncodeToString(payload.FollowEvent.Target))); err != nil {
+					return err
+				}
+			}
 		}
 		return ensureTopic(p2p.FollowsTopic(hex.EncodeToString(payload.FollowEvent.Author)))
 	}

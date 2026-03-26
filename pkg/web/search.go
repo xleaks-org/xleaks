@@ -21,38 +21,72 @@ func (h *Handler) performSearch(q string, limit int) searchResults {
 }
 
 func (h *Handler) searchPosts(q string, limit int) []PostView {
-	var results []PostView
+	results := make([]PostView, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	indexerQuery := normalizedPostSearchQuery(q)
 
-	if strings.HasPrefix(q, "#") {
-		tag := strings.TrimPrefix(q, "#")
-		posts, err := h.db.GetPostsByTag(tag, 0, limit)
-		if err == nil {
-			for i := range posts {
-				results = append(results, h.postRowToView(&posts[i]))
-			}
-		}
-	} else {
-		posts, err := h.db.SearchPostsByContent(q, limit)
-		if err == nil {
-			for i := range posts {
-				results = append(results, h.postRowToView(&posts[i]))
+	if h.indexerClient != nil && h.indexerClient.Available() && indexerQuery != "" {
+		idxResults, err := h.indexerClient.SearchPosts(indexerQuery, 0, limit)
+		if err == nil && idxResults != nil {
+			for _, hit := range idxResults.Results {
+				if hit.ID == "" {
+					continue
+				}
+				if _, ok := seen[hit.ID]; ok {
+					continue
+				}
+				author := hit.Author
+				if author == "" {
+					author = "unknown"
+				}
+				results = append(results, PostView{
+					ID:            hit.ID,
+					AuthorName:    shortenHex(author),
+					AuthorInitial: getInitial(author),
+					AuthorPubkey:  author,
+					ShortPubkey:   shortenHex(author),
+					Content:       hit.Content,
+					RelativeTime:  "indexer",
+				})
+				seen[hit.ID] = struct{}{}
+				if len(results) >= limit {
+					break
+				}
 			}
 		}
 	}
 
-	if len(results) == 0 && h.indexerClient != nil && h.indexerClient.Available() {
-		idxResults, err := h.indexerClient.SearchPosts(q, 1, limit)
-		if err == nil && idxResults != nil {
-			for _, hit := range idxResults.Results {
-				results = append(results, PostView{
-					ID:            hit.ID,
-					AuthorName:    shortenHex(hit.Author),
-					AuthorInitial: getInitial(hit.Author),
-					AuthorPubkey:  hit.Author,
-					ShortPubkey:   shortenHex(hit.Author),
-					Content:       hit.Content,
-					RelativeTime:  "indexer",
-				})
+	if len(results) < limit {
+		if strings.HasPrefix(q, "#") {
+			tag := strings.TrimPrefix(q, "#")
+			posts, err := h.db.GetPostsByTag(tag, 0, limit)
+			if err == nil {
+				for i := range posts {
+					view := h.postRowToView(&posts[i])
+					if _, ok := seen[view.ID]; ok {
+						continue
+					}
+					results = append(results, view)
+					seen[view.ID] = struct{}{}
+					if len(results) >= limit {
+						break
+					}
+				}
+			}
+		} else {
+			posts, err := h.db.SearchPostsByContent(q, limit)
+			if err == nil {
+				for i := range posts {
+					view := h.postRowToView(&posts[i])
+					if _, ok := seen[view.ID]; ok {
+						continue
+					}
+					results = append(results, view)
+					seen[view.ID] = struct{}{}
+					if len(results) >= limit {
+						break
+					}
+				}
 			}
 		}
 	}
@@ -69,22 +103,9 @@ func (h *Handler) searchUsers(q string, limit int) []SearchUserView {
 	results := make([]SearchUserView, 0, limit)
 	seen := make(map[string]struct{}, limit)
 
-	if profiles, err := h.db.GetAllProfiles(); err == nil {
-		for _, profile := range profiles {
-			pubkeyHex := hex.EncodeToString(profile.Pubkey)
-			if !profileMatchesQuery(profile, query, pubkeyHex) {
-				continue
-			}
-			results = append(results, searchUserView(profile))
-			seen[pubkeyHex] = struct{}{}
-			if len(results) >= limit {
-				return results
-			}
-		}
-	}
-
-	if h.indexerClient != nil && h.indexerClient.Available() && len(results) < limit {
-		idxResults, err := h.indexerClient.SearchUsers(q, 1, limit)
+	indexerQuery := normalizedUserSearchQuery(q)
+	if h.indexerClient != nil && h.indexerClient.Available() && indexerQuery != "" {
+		idxResults, err := h.indexerClient.SearchUsers(indexerQuery, 0, limit)
 		if err == nil && idxResults != nil {
 			for _, hit := range idxResults.Results {
 				pubkeyHex := hit.Author
@@ -106,10 +127,27 @@ func (h *Handler) searchUsers(q string, limit int) []SearchUserView {
 					Pubkey:      pubkeyHex,
 					ShortPubkey: shortenHex(pubkeyHex),
 					Initial:     getInitial(displayName),
+					Bio:         hit.Bio,
 				})
 				seen[pubkeyHex] = struct{}{}
 				if len(results) >= limit {
 					break
+				}
+			}
+		}
+	}
+
+	if len(results) < limit {
+		if profiles, err := h.db.GetAllProfiles(); err == nil {
+			for _, profile := range profiles {
+				pubkeyHex := hex.EncodeToString(profile.Pubkey)
+				if _, ok := seen[pubkeyHex]; ok || !profileMatchesQuery(profile, query, pubkeyHex) {
+					continue
+				}
+				results = append(results, searchUserView(profile))
+				seen[pubkeyHex] = struct{}{}
+				if len(results) >= limit {
+					return results
 				}
 			}
 		}
@@ -139,4 +177,12 @@ func searchUserView(profile storage.ProfileRow) SearchUserView {
 		Bio:         profile.Bio,
 		Website:     profile.Website,
 	}
+}
+
+func normalizedUserSearchQuery(q string) string {
+	return strings.TrimSpace(strings.TrimPrefix(q, "@"))
+}
+
+func normalizedPostSearchQuery(q string) string {
+	return strings.TrimSpace(strings.TrimPrefix(q, "#"))
 }

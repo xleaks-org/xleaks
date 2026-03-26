@@ -42,6 +42,7 @@ type ClientSearchHit struct {
 	Content string  `json:"content,omitempty"`
 	Author  string  `json:"author,omitempty"`
 	Name    string  `json:"name,omitempty"`
+	Bio     string  `json:"bio,omitempty"`
 }
 
 // ClientTrendingResponse is the response returned by the indexer trending endpoint.
