@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -90,7 +90,7 @@ func (ce *ContentExchange) tryProviders(
 		data, err := ce.fetchFromPeer(ctx, pid, cidBytes)
 		if err != nil {
 			lastErr = fmt.Errorf("fetching from peer %s: %w", pid, err)
-			log.Printf("content exchange: failed to fetch %s from %s: %v", cidHex, pid, err)
+			slog.Debug("content exchange: failed to fetch from peer", "cid", cidHex, "peer", pid, "error", err)
 			continue
 		}
 

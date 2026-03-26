@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/url"
 	"strconv"
@@ -55,13 +55,13 @@ func (h *Host) Bootstrap(ctx context.Context, bootstrapPeers []string) error {
 	for _, addrStr := range bootstrapPeers {
 		maddr, err := ma.NewMultiaddr(addrStr)
 		if err != nil {
-			log.Printf("warning: skipping invalid bootstrap peer %q: %v", addrStr, err)
+			slog.Warn("skipping invalid bootstrap peer", "addr", addrStr, "error", err)
 			continue
 		}
 
 		info, err := peer.AddrInfoFromP2pAddr(maddr)
 		if err != nil {
-			log.Printf("warning: skipping invalid bootstrap peer %q: %v", addrStr, err)
+			slog.Warn("skipping invalid bootstrap peer", "addr", addrStr, "error", err)
 			continue
 		}
 
@@ -171,7 +171,7 @@ func (h *Host) FindIndexers(ctx context.Context) ([]IndexerInfo, error) {
 	for val := range ch {
 		info, err := parseIndexerInfo(val)
 		if err != nil {
-			log.Printf("warning: failed to unmarshal indexer info: %v", err)
+			slog.Warn("failed to unmarshal indexer info", "error", err)
 			continue
 		}
 		if seen[info.PeerID] {

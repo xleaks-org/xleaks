@@ -2,13 +2,19 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/api/middleware"
+	"github.com/xleaks-org/xleaks/pkg/version"
 )
+
+// serverStartTime records when the server package was first loaded, used
+// to compute the uptime reported by the /health endpoint.
+var serverStartTime = time.Now()
 
 // ServerConfig holds configuration options for the API server.
 type ServerConfig struct {
@@ -50,10 +56,15 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 	handler = middleware.CORS("*")(handler)
 
+	// Create a top-level mux so /health bypasses all auth/local middleware.
+	topMux := http.NewServeMux()
+	topMux.HandleFunc("GET /health", handleHealth)
+	topMux.Handle("/", handler)
+
 	s := &Server{
 		httpServer: &http.Server{
 			Addr:         cfg.ListenAddr,
-			Handler:      handler,
+			Handler:      topMux,
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
@@ -66,9 +77,20 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	return s
 }
 
+// handleHealth responds with the node's health status, version, and uptime.
+// This endpoint is unauthenticated and bypasses all middleware.
+func handleHealth(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":         "ok",
+		"version":        version.Version,
+		"uptime_seconds": int(time.Since(serverStartTime).Seconds()),
+	})
+}
+
 // Start begins listening for HTTP connections.
 func (s *Server) Start() error {
-	log.Printf("API server listening on %s", s.httpServer.Addr)
+	slog.Info("API server listening", "addr", s.httpServer.Addr)
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("server error: %w", err)
 	}

@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 
@@ -43,7 +43,7 @@ func NewWSHub() *WSHub {
 func (hub *WSHub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("websocket upgrade failed: %v", err)
+		slog.Error("websocket upgrade failed", "error", err)
 		return
 	}
 
@@ -64,7 +64,7 @@ func (hub *WSHub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 func (hub *WSHub) Broadcast(event WSEvent) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("failed to marshal ws event: %v", err)
+		slog.Error("failed to marshal websocket event", "error", err)
 		return
 	}
 

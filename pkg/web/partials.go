@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -39,11 +39,11 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 				}
 				data := struct{ Posts []PostView }{Posts: posts}
 				if err := h.partials.ExecuteTemplate(w, "feed_items.html", data); err != nil {
-					log.Printf("web: template error rendering reply feed: %v", err)
+					slog.Error("template error rendering reply feed", "error", err)
 				}
 				return
 			}
-			log.Printf("web: failed to get thread for %s: %v", replyTo, err)
+			slog.Warn("failed to get thread", "reply_to", replyTo, "error", err)
 		}
 	}
 
@@ -61,7 +61,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 		var err error
 		entries, err = h.timeline.GetFeed(before, pageSize+1)
 		if err != nil {
-			log.Printf("web: failed to get feed: %v", err)
+			slog.Error("failed to get feed", "error", err)
 			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load feed.</p></div>`)
 			return
 		}
@@ -75,7 +75,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 		var err error
 		entries, err = h.timeline.GetGlobalFeed(before, pageSize+1)
 		if err != nil {
-			log.Printf("web: failed to get global feed: %v", err)
+			slog.Error("failed to get global feed", "error", err)
 			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load feed.</p></div>`)
 			return
 		}
@@ -92,7 +92,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.partials.ExecuteTemplate(w, "feed_items.html", map[string]interface{}{"Posts": posts}); err != nil {
-		log.Printf("web: template error rendering feed_items: %v", err)
+		slog.Error("template error rendering feed_items", "error", err)
 	}
 
 	if hasMore && len(entries) > 0 {
@@ -131,7 +131,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 
 	postID, err := h.createPost(r.Context(), content, mediaCIDs, replyTo)
 	if err != nil {
-		log.Printf("Post creation failed: %v", err)
+		slog.Error("post creation failed", "error", err)
 		http.Error(w, "Failed to create post: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -144,7 +144,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.partials.ExecuteTemplate(w, "feed_items.html", struct{ Posts []PostView }{Posts: []PostView{post}}); err != nil {
-		log.Printf("web: failed to render feed item: %v", err)
+		slog.Error("failed to render feed item", "error", err)
 	}
 }
 
@@ -225,7 +225,7 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 	if len(results.Posts) > 0 {
 		fmt.Fprint(w, `<section><div class="px-4 py-3 text-xs uppercase tracking-[0.2em] text-gray-500">Posts</div>`)
 		if err := h.partials.ExecuteTemplate(w, "feed_items.html", map[string]interface{}{"Posts": results.Posts}); err != nil {
-			log.Printf("web: template error rendering search results: %v", err)
+			slog.Error("template error rendering search results", "error", err)
 		}
 		fmt.Fprint(w, `</section>`)
 	}
@@ -238,7 +238,7 @@ func (h *Handler) trendingTagsPartial(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().Add(-24 * time.Hour).UnixMilli()
 	tags, err := h.db.GetTrendingTagsSince(since, 10)
 	if err != nil {
-		log.Printf("web: failed to get trending tags: %v", err)
+		slog.Error("failed to get trending tags", "error", err)
 		fmt.Fprint(w, `<p class="text-gray-400 text-sm">Could not load trending topics.</p>`)
 		return
 	}
@@ -276,7 +276,7 @@ func (h *Handler) trendingPostsPartial(w http.ResponseWriter, r *http.Request) {
 		since := time.Now().Add(-24 * time.Hour).UnixMilli()
 		localPosts, err := h.db.GetTrendingPosts(since, 20)
 		if err != nil {
-			log.Printf("web: failed to get trending posts: %v", err)
+			slog.Error("failed to get trending posts", "error", err)
 			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Could not load trending posts.</p></div>`)
 			return
 		}
@@ -291,7 +291,7 @@ func (h *Handler) trendingPostsPartial(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.partials.ExecuteTemplate(w, "feed_items.html", map[string]interface{}{"Posts": posts}); err != nil {
-		log.Printf("web: template error rendering trending posts: %v", err)
+		slog.Error("template error rendering trending posts", "error", err)
 	}
 }
 
@@ -323,7 +323,7 @@ func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.createReaction(r.Context(), kp, targetBytes); err != nil {
-		log.Printf("web: failed to create like reaction: %v", err)
+		slog.Error("failed to create like reaction", "error", err)
 		http.Error(w, "failed to create reaction", http.StatusInternalServerError)
 		return
 	}
@@ -377,7 +377,7 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 	// Create repost via the social service (creates actual post with repost_of)
 	if h.repostPost != nil {
 		if _, err := h.repostPost(r.Context(), target); err != nil {
-			log.Printf("web: repost failed: %v", err)
+			slog.Error("repost failed", "error", err)
 		}
 	}
 
@@ -389,7 +389,7 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 	repostData = append(repostData, targetBytes...)
 	cid, _ := content.ComputeCID(repostData)
 	if err := h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "repost", time.Now().UnixMilli()); err != nil {
-		log.Printf("web: failed to insert repost reaction: %v", err)
+		slog.Warn("failed to insert repost reaction", "error", err)
 	}
 
 	_, _, reposts, _ := h.db.GetFullReactionCounts(targetBytes)
@@ -419,7 +419,7 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.followUser(r.Context(), kp, pubkeyBytes); err != nil {
-		log.Printf("web: failed to follow: %v", err)
+		slog.Error("failed to follow user", "error", err)
 		http.Error(w, "failed to follow user", http.StatusInternalServerError)
 		return
 	}
@@ -446,7 +446,7 @@ func (h *Handler) handleUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.unfollowUser(r.Context(), kp, pubkeyBytes); err != nil {
-		log.Printf("web: failed to unfollow: %v", err)
+		slog.Error("failed to unfollow user", "error", err)
 		http.Error(w, "failed to unfollow user", http.StatusInternalServerError)
 		return
 	}

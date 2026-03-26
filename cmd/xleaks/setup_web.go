@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -38,7 +38,7 @@ func setupWebHandler(
 	sessionMgr := web.NewSessionManager()
 	webHandler, err := web.NewHandler(db, idHolder, svc.Timeline, sessionMgr)
 	if err != nil {
-		log.Printf("Warning: web UI failed to initialize: %v", err)
+		slog.Warn("web UI failed to initialize", "error", err)
 		return nil
 	}
 
@@ -73,7 +73,7 @@ func setupWebHandler(
 		// WU-3: Index locally created posts.
 		if idx != nil {
 			if err := idx.IndexPost(post); err != nil {
-				log.Printf("Warning: failed to index local post: %v", err)
+				slog.Warn("failed to index local post", "error", err)
 			}
 		}
 
@@ -211,22 +211,22 @@ func runServer(
 
 	go func() {
 		<-sigCh
-		log.Println("Shutting down gracefully...")
+		slog.Info("shutting down gracefully")
 		cancel()
 
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Server shutdown error: %v", err)
+			slog.Error("server shutdown error", "error", err)
 		}
 	}()
 
-	log.Printf("XLeaks node starting on %s", cfg.API.ListenAddress)
+	slog.Info("XLeaks node starting", "addr", cfg.API.ListenAddress)
 	if p2pHost != nil {
-		log.Printf("Connected peers: %d", p2pHost.PeerCount())
+		slog.Info("P2P connected", "peers", p2pHost.PeerCount())
 	} else {
-		log.Println("Running in offline mode (no P2P)")
+		slog.Info("running in offline mode (no P2P)")
 	}
 
 	if err := server.Start(); err != nil {

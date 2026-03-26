@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -67,7 +67,7 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 
 	// Create a default profile in the database.
 	if err := h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis()); err != nil {
-		log.Printf("api: failed to upsert profile: %v", err)
+		slog.Error("failed to upsert profile", "error", err)
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
@@ -125,7 +125,7 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
 	if err := h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis()); err != nil {
-		log.Printf("api: failed to upsert profile: %v", err)
+		slog.Error("failed to upsert profile", "error", err)
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{

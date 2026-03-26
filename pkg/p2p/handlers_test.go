@@ -169,6 +169,7 @@ func (m *mockCAS) Has(cid []byte) bool {
 type mockNotifier struct {
 	likes   []notifRecord
 	replies []notifRecord
+	reposts []notifRecord
 	follows []notifRecord
 	dmNotif []notifRecord
 }
@@ -184,6 +185,11 @@ func (m *mockNotifier) NotifyLike(actor, targetCID, reactionCID []byte) error {
 
 func (m *mockNotifier) NotifyReply(actor, targetCID, replyCID []byte) error {
 	m.replies = append(m.replies, notifRecord{Actor: actor, Target: targetCID, Related: replyCID})
+	return nil
+}
+
+func (m *mockNotifier) NotifyRepost(actor, targetCID, repostCID []byte) error {
+	m.reposts = append(m.reposts, notifRecord{Actor: actor, Target: targetCID, Related: repostCID})
 	return nil
 }
 

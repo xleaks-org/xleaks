@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -119,7 +119,7 @@ func (s *DMService) sendDMWith(ctx context.Context, kp *identity.KeyPair, recipi
 	}
 
 	if err := publishDirectMessage(ctx, s.publisher, dm); err != nil {
-		log.Printf("publish direct message: %v", err)
+		slog.Error("failed to publish direct message", "error", err)
 	}
 
 	return dm, nil

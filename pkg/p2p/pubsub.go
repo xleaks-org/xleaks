@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -101,7 +101,7 @@ func (h *Host) SubscribeWithFilter(
 	filtered := func(ctx context.Context, from peer.ID, data []byte) {
 		authorHex, msgType, cidHex, err := authorExtractor(data)
 		if err != nil {
-			log.Printf("dropping message: failed to extract author info: %v", err)
+			slog.Debug("dropping message: failed to extract author info", "error", err)
 			return
 		}
 
@@ -118,7 +118,7 @@ func (h *Host) SubscribeWithFilter(
 
 		// Rate limiting: drop if the author has exceeded their limit.
 		if h.rateLimiter != nil && !h.rateLimiter.Allow(authorHex, msgType) {
-			log.Printf("rate limit exceeded for author %s (type: %s)", authorHex, msgType)
+			slog.Warn("rate limit exceeded", "author", authorHex, "type", msgType)
 			return
 		}
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/identity"
@@ -62,6 +62,7 @@ type ContentWriter interface {
 type Notifier interface {
 	NotifyLike(actor, targetCID, reactionCID []byte) error
 	NotifyReply(actor, targetCID, replyCID []byte) error
+	NotifyRepost(actor, targetCID, repostCID []byte) error
 	NotifyFollow(actor, target []byte) error
 	NotifyDM(actor, recipient []byte) error
 }
@@ -156,17 +157,26 @@ func (mp *MessageProcessor) handlePost(_ context.Context, post *pb.Post) error {
 	// Feed into indexer if available.
 	if mp.indexer != nil {
 		if err := mp.indexer.IndexPost(post); err != nil {
-			log.Printf("index post error: %v", err)
+			slog.Warn("failed to index post", "error", err)
 		}
 	}
 
 	// If this is a reply, create a notification and update counts on target.
 	if len(post.ReplyTo) > 0 {
 		if err := mp.notifier.NotifyReply(post.Author, post.ReplyTo, post.Id); err != nil {
-			log.Printf("notify reply error: %v", err)
+			slog.Warn("failed to notify reply", "error", err)
 		}
 		if err := mp.db.UpdateReactionCount(post.ReplyTo); err != nil {
-			log.Printf("update reaction count (reply): %v", err)
+			slog.Warn("failed to update reaction count for reply", "error", err)
+		}
+	}
+	// If this is a repost, notify the original post's author.
+	if len(post.RepostOf) > 0 {
+		if err := mp.notifier.NotifyRepost(post.Author, post.RepostOf, post.Id); err != nil {
+			slog.Warn("failed to notify repost", "error", err)
+		}
+		if err := mp.db.UpdateReactionCount(post.RepostOf); err != nil {
+			slog.Warn("failed to update reaction count for repost", "error", err)
 		}
 	}
 	mp.emit("new_post", map[string]interface{}{
@@ -208,12 +218,12 @@ func (mp *MessageProcessor) handleReaction(_ context.Context, reaction *pb.React
 
 	// Update materialized counts on the target post.
 	if err := mp.db.UpdateReactionCount(reaction.Target); err != nil {
-		log.Printf("update reaction count: %v", err)
+		slog.Warn("failed to update reaction count", "error", err)
 	}
 
 	// Notify: a like on a post.
 	if err := mp.notifier.NotifyLike(reaction.Author, reaction.Target, reaction.Id); err != nil {
-		log.Printf("notify like error: %v", err)
+		slog.Warn("failed to notify like", "error", err)
 	}
 	mp.emit("new_reaction", map[string]interface{}{
 		"id":     hex.EncodeToString(reaction.Id),
@@ -260,7 +270,7 @@ func (mp *MessageProcessor) handleProfile(_ context.Context, profile *pb.Profile
 	// Feed into indexer if available.
 	if mp.indexer != nil {
 		if err := mp.indexer.IndexProfile(profile); err != nil {
-			log.Printf("index profile error: %v", err)
+			slog.Warn("failed to index profile", "error", err)
 		}
 	}
 
@@ -280,14 +290,14 @@ func (mp *MessageProcessor) handleFollow(_ context.Context, event *pb.FollowEven
 
 	if event.Action == "follow" {
 		if err := mp.notifier.NotifyFollow(event.Author, event.Target); err != nil {
-			log.Printf("notify follow error: %v", err)
+			slog.Warn("failed to notify follow", "error", err)
 		}
 	}
 	if err := mp.db.UpdateFollowerCount(event.Author); err != nil {
-		log.Printf("update author follow counts: %v", err)
+		slog.Warn("failed to update author follow counts", "error", err)
 	}
 	if err := mp.db.UpdateFollowerCount(event.Target); err != nil {
-		log.Printf("update target follow counts: %v", err)
+		slog.Warn("failed to update target follow counts", "error", err)
 	}
 	return nil
 }
@@ -321,7 +331,7 @@ func (mp *MessageProcessor) handleDM(_ context.Context, dm *pb.DirectMessage) er
 	}
 
 	if err := mp.notifier.NotifyDM(dm.Author, dm.Recipient); err != nil {
-		log.Printf("notify dm error: %v", err)
+		slog.Warn("failed to notify DM", "error", err)
 	}
 	mp.emit("new_dm", map[string]interface{}{
 		"id":        hex.EncodeToString(dm.Id),
@@ -356,7 +366,7 @@ func (mp *MessageProcessor) handleMediaObject(ctx context.Context, obj *pb.Media
 		}
 		if shouldPin {
 			if err := mp.prefetchMediaContent(ctx, obj); err != nil {
-				log.Printf("prefetch media %x: %v", obj.Cid, err)
+				slog.Warn("failed to prefetch media", "cid", hex.EncodeToString(obj.Cid), "error", err)
 			}
 		}
 	}

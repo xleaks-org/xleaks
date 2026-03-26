@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
 	"time"
 
@@ -65,7 +65,7 @@ func (s *Syncer) SyncPublisher(ctx context.Context, pubkey []byte) error {
 		}
 
 		if err := fetchAndStore(ctx, cidHex, s.replicator.OnFetchContent, s.replicator.cas, s.db); err != nil {
-			log.Printf("sync: %v", err)
+			slog.Warn("sync fetch failed", "cid", cidHex, "error", err)
 			continue
 		}
 	}
@@ -116,7 +116,7 @@ func (s *Syncer) StartBackgroundSync(ctx context.Context) {
 
 			pubkeys, err := s.GetPendingSyncs(nil)
 			if err != nil {
-				log.Printf("background sync: failed to get pending syncs: %v", err)
+				slog.Warn("background sync: failed to get pending syncs", "error", err)
 				backoff = nextBackoff(backoff, maxSyncBackoff)
 				continue
 			}
@@ -130,8 +130,8 @@ func (s *Syncer) StartBackgroundSync(ctx context.Context) {
 				}
 
 				if err := s.SyncPublisher(ctx, pubkey); err != nil {
-					log.Printf("background sync: failed to sync publisher %s: %v",
-						hex.EncodeToString(pubkey)[:16], err)
+					slog.Warn("background sync: failed to sync publisher",
+						"pubkey", hex.EncodeToString(pubkey)[:16], "error", err)
 					hadError = true
 				}
 			}

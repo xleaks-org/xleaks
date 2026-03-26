@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
-	"log"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 
@@ -24,12 +24,12 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 
 	idx, err := indexer.NewIndexer(db, filepath.Join(dataDir, "indexer"))
 	if err != nil {
-		log.Printf("Warning: indexer initialization failed: %v", err)
+		slog.Warn("indexer initialization failed", "error", err)
 		return nil
 	}
 
 	if err := idx.Start(ctx); err != nil {
-		log.Printf("Warning: indexer start failed: %v", err)
+		slog.Warn("indexer start failed", "error", err)
 		return nil
 	}
 
@@ -37,9 +37,9 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 	idxAPI := indexer.NewIndexerAPI(idx.Search(), idx.Trending(), idx.Stats())
 	go func() {
 		addr := cfg.Indexer.PublicAPIAddress
-		log.Printf("Indexer API listening on %s", addr)
+		slog.Info("indexer API listening", "addr", addr)
 		if err := http.ListenAndServe(addr, idxAPI.Handler()); err != nil {
-			log.Printf("Indexer API error: %v", err)
+			slog.Error("indexer API error", "error", err)
 		}
 	}()
 
@@ -47,7 +47,7 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 	if p2pHost != nil {
 		go func() {
 			if err := p2pHost.AdvertiseAsIndexer(ctx, cfg.Indexer.PublicAPIAddress); err != nil {
-				log.Printf("Warning: indexer advertisement failed: %v", err)
+				slog.Warn("indexer advertisement failed", "error", err)
 			}
 		}()
 	}
@@ -56,7 +56,7 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 	go func() {
 		posts, err := db.GetAllPosts(0, 10000)
 		if err != nil {
-			log.Printf("Warning: failed to load posts for reindexing: %v", err)
+			slog.Warn("failed to load posts for reindexing", "error", err)
 			return
 		}
 		indexed := 0
@@ -71,13 +71,13 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 				indexed++
 			}
 		}
-		log.Printf("Indexer: reindexed %d existing posts", indexed)
+		slog.Info("indexer reindexed existing posts", "count", indexed)
 	}()
 
 	go func() {
 		profiles, err := db.GetAllProfiles()
 		if err != nil {
-			log.Printf("Warning: failed to load profiles for reindexing: %v", err)
+			slog.Warn("failed to load profiles for reindexing", "error", err)
 			return
 		}
 		indexed := 0
@@ -90,9 +90,9 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 				indexed++
 			}
 		}
-		log.Printf("Indexer: reindexed %d existing profiles", indexed)
+		slog.Info("indexer reindexed existing profiles", "count", indexed)
 	}()
 
-	log.Println("Indexer mode enabled")
+	slog.Info("indexer mode enabled")
 	return idx
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"path/filepath"
 
 	pb "github.com/xleaks-org/xleaks/proto/gen"
@@ -50,10 +50,10 @@ func (idx *Indexer) Start(ctx context.Context) error {
 	// (e.g., re-indexing stale data, refreshing trending caches).
 	go func() {
 		<-ctx.Done()
-		log.Println("indexer: stopped")
+		slog.Info("indexer stopped")
 	}()
 
-	log.Println("indexer: started")
+	slog.Info("indexer started")
 	return nil
 }
 

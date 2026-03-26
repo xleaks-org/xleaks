@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/storage"
@@ -15,9 +15,9 @@ func setupIdentity(dataDir string, db *storage.DB) (*identity.Holder, *identity.
 
 	// Log identity status.
 	if idHolder.HasIdentity() {
-		log.Println("Identity found. Unlock via API to activate.")
+		slog.Info("identity found, unlock via API to activate")
 	} else {
-		log.Println("No identity found. The UI will guide you through onboarding.")
+		slog.Info("no identity found, the UI will guide you through onboarding")
 	}
 
 	return idHolder, nil

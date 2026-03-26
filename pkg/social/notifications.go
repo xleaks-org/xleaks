@@ -70,6 +70,22 @@ func (s *NotificationService) NotifyReply(actor, targetCID, replyCID []byte) err
 	return nil
 }
 
+// NotifyRepost creates a notification when a post is reposted.
+func (s *NotificationService) NotifyRepost(actor, targetCID, repostCID []byte) error {
+	owner, err := s.ownerForPost(targetCID)
+	if err != nil {
+		return fmt.Errorf("resolve repost owner: %w", err)
+	}
+	if len(owner) == 0 || bytes.Equal(owner, actor) {
+		return nil // don't notify self
+	}
+	if err := s.storage.InsertNotification(owner, "repost", actor, targetCID, repostCID, time.Now().UnixMilli()); err != nil {
+		return fmt.Errorf("notify repost: %w", err)
+	}
+	s.emit("repost", owner, actor, targetCID, repostCID)
+	return nil
+}
+
 // NotifyFollow creates a notification for a follow event.
 func (s *NotificationService) NotifyFollow(actor, target []byte) error {
 	if len(target) == 0 || bytes.Equal(actor, target) {
