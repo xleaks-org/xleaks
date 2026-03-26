@@ -5,7 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -147,14 +147,14 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 			// Don't notify yourself.
 			if !bytes.Equal(parentPost.Author, post.Author) {
 				if err := s.notifications.NotifyReply(post.Author, replyTo, post.Id); err != nil {
-					log.Printf("failed to send reply notification: %v", err)
+					slog.Error("failed to send reply notification", "error", err)
 				}
 			}
 		}
 	}
 
 	if err := publishPost(ctx, s.publisher, post); err != nil {
-		log.Printf("publish post: %v", err)
+		slog.Error("failed to publish post", "error", err)
 	}
 
 	return post, nil
@@ -232,8 +232,15 @@ func (s *PostService) CreateRepost(ctx context.Context, originalCID []byte) (*pb
 		return nil, fmt.Errorf("track repost content: %w", err)
 	}
 
+	// Send repost notification to the original post's author.
+	if s.notifications != nil {
+		if err := s.notifications.NotifyRepost(kp.PublicKeyBytes(), originalCID, cid); err != nil {
+			slog.Error("failed to send repost notification", "error", err)
+		}
+	}
+
 	if err := publishPost(ctx, s.publisher, post); err != nil {
-		log.Printf("publish repost: %v", err)
+		slog.Error("failed to publish repost", "error", err)
 	}
 
 	return post, nil

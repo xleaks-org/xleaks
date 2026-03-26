@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -115,7 +115,7 @@ func (h *Handler) messagesPage(w http.ResponseWriter, r *http.Request) {
 
 	convos, err := h.db.GetConversations(kp.PublicKeyBytes())
 	if err != nil {
-		log.Printf("web: failed to get conversations: %v", err)
+		slog.Error("failed to get conversations", "error", err)
 	}
 
 	views := make([]ConversationView, 0, len(convos))
@@ -172,12 +172,12 @@ func (h *Handler) conversationPage(w http.ResponseWriter, r *http.Request) {
 	ownPubkey := kp.PublicKeyBytes()
 	msgs, err := h.db.GetConversation(ownPubkey, peerBytes, 0, 50)
 	if err != nil {
-		log.Printf("web: failed to get conversation: %v", err)
+		slog.Error("failed to get conversation", "error", err)
 	}
 	for _, msg := range msgs {
 		if bytes.Equal(msg.Recipient, ownPubkey) && !msg.Read {
 			if err := h.db.MarkDMRead(msg.CID); err != nil {
-				log.Printf("web: failed to mark message read: %v", err)
+				slog.Warn("failed to mark message read", "error", err)
 			}
 		}
 	}
@@ -226,7 +226,7 @@ func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.sendDM(r.Context(), kp, recipientPubkey, content); err != nil {
-		log.Printf("web: failed to send direct message: %v", err)
+		slog.Error("failed to send direct message", "error", err)
 		http.Error(w, "Failed to send direct message", http.StatusInternalServerError)
 		return
 	}
@@ -278,7 +278,7 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.updateProfile(r.Context(), kp, displayName, bio, website, avatarCID, bannerCID); err != nil {
-		log.Printf("web: failed to update profile: %v", err)
+		slog.Error("failed to update profile", "error", err)
 		http.Error(w, "Failed to update profile", http.StatusInternalServerError)
 		return
 	}
@@ -319,7 +319,7 @@ func (h *Handler) handleSwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 	token, err := h.sessions.Create(h.identity.Get())
 	if err != nil {
-		log.Printf("web: failed to create session after switch: %v", err)
+		slog.Error("failed to create session after identity switch", "error", err)
 		http.Redirect(w, r, "/settings?error=failed+to+create+session", http.StatusSeeOther)
 		return
 	}

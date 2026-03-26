@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -95,7 +95,7 @@ func (r *Replicator) FetchMissingContent(ctx context.Context, authorPubkey []byt
 
 		cidHex := hex.EncodeToString(post.CID)
 		if err := fetchAndStore(ctx, cidHex, r.OnFetchContent, r.cas, r.db); err != nil {
-			log.Printf("replicator: %v", err)
+			slog.Warn("replicator fetch failed", "cid", cidHex, "error", err)
 			continue
 		}
 	}
@@ -122,12 +122,12 @@ func (r *Replicator) EvictStaleContent(maxBytes int64) error {
 
 		// Remove from content-addressed store.
 		if err := r.cas.Delete(cid); err != nil {
-			log.Printf("replicator: eviction: failed to delete content %s from CAS: %v", cidHex, err)
+			slog.Warn("replicator eviction: failed to delete content from CAS", "cid", cidHex, "error", err)
 		}
 
 		// Remove from tracking table.
 		if err := r.db.DeleteContentAccess(cid); err != nil {
-			log.Printf("replicator: eviction: failed to delete content access tracking for %s: %v", cidHex, err)
+			slog.Warn("replicator eviction: failed to delete content access tracking", "cid", cidHex, "error", err)
 		}
 	}
 
@@ -159,7 +159,7 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 	dataDir := r.cas.BasePath()
 	currentSize, err := content.DirSize(dataDir)
 	if err != nil {
-		log.Printf("replicator: checkAndEvict: failed to compute DirSize for %s: %v", dataDir, err)
+		slog.Warn("replicator: failed to compute directory size", "dir", dataDir, "error", err)
 		return
 	}
 
@@ -167,7 +167,7 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 		return
 	}
 
-	log.Printf("replicator: checkAndEvict: starting eviction — current=%d bytes, max=%d bytes", currentSize, maxBytes)
+	slog.Info("replicator: starting eviction", "current_bytes", currentSize, "max_bytes", maxBytes)
 
 	// Evict until we're under the eviction target percentage of max.
 	targetBytes := int64(float64(maxBytes) * evictionTarget)
@@ -184,17 +184,17 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 		// Recalculate size after eviction.
 		newSize, err := content.DirSize(dataDir)
 		if err != nil {
-			log.Printf("replicator: checkAndEvict: failed to recompute DirSize after eviction: %v", err)
+			slog.Warn("replicator: failed to recompute directory size after eviction", "error", err)
 			break
 		}
 
 		// If no progress was made (nothing left to evict), stop.
 		if newSize >= currentSize {
-			log.Printf("replicator: checkAndEvict: no progress made, stopping eviction")
+			slog.Warn("replicator: eviction made no progress, stopping")
 			break
 		}
 		currentSize = newSize
 	}
 
-	log.Printf("replicator: checkAndEvict: eviction complete — current=%d bytes", currentSize)
+	slog.Info("replicator: eviction complete", "current_bytes", currentSize)
 }

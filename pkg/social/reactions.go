@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -116,7 +116,7 @@ func (s *ReactionService) createReactionWith(ctx context.Context, kp *identity.K
 	}
 
 	if err := publishReaction(ctx, s.publisher, reaction); err != nil {
-		log.Printf("publish reaction: %v", err)
+		slog.Error("failed to publish reaction", "error", err)
 	}
 
 	return reaction, nil

@@ -3,7 +3,7 @@ package social
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -121,19 +121,19 @@ func (s *FollowService) changeFollowState(ctx context.Context, kp *identity.KeyP
 		return nil, fmt.Errorf("store follow event: %w", err)
 	}
 	if err := s.storage.UpdateFollowerCount(event.Author); err != nil {
-		log.Printf("update own follow counts: %v", err)
+		slog.Error("failed to update own follow counts", "error", err)
 	}
 	if err := s.storage.UpdateFollowerCount(event.Target); err != nil {
-		log.Printf("update target follow counts: %v", err)
+		slog.Error("failed to update target follow counts", "error", err)
 	}
 	if pin, err := s.storage.ShouldPinAuthor(event.Target); err != nil {
-		log.Printf("recompute follow pin state: %v", err)
+		slog.Error("failed to recompute follow pin state", "error", err)
 	} else if err := s.storage.SetPinnedForAuthor(event.Target, pin); err != nil {
-		log.Printf("apply follow pin state: %v", err)
+		slog.Error("failed to apply follow pin state", "error", err)
 	}
 
 	if err := publishFollowEvent(ctx, s.publisher, event); err != nil {
-		log.Printf("publish follow event: %v", err)
+		slog.Error("failed to publish follow event", "error", err)
 	}
 
 	return event, nil

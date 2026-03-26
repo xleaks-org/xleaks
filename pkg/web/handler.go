@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -118,7 +118,7 @@ func (h *Handler) ensureProfile() {
 	profile, _ := h.db.GetProfile(kp.PublicKeyBytes())
 	if profile == nil {
 		if err := h.db.UpsertProfile(kp.PublicKeyBytes(), "Anonymous", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
-			log.Printf("web: failed to upsert profile: %v", err)
+			slog.Error("failed to upsert profile", "error", err)
 		}
 	}
 }
@@ -301,7 +301,7 @@ func (h *Handler) pageData(r *http.Request, active, title string) map[string]int
 func (h *Handler) renderLanding(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.landing.ExecuteTemplate(w, "landing", nil); err != nil {
-		log.Printf("web: template error rendering landing: %v", err)
+		slog.Error("template error rendering landing", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
@@ -340,13 +340,13 @@ func (h *Handler) renderPage(w http.ResponseWriter, tmplName string, data map[st
 
 	t, ok := h.pages[tmplName]
 	if !ok {
-		log.Printf("web: template %s not found", tmplName)
+		slog.Error("template not found", "template", tmplName)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	if err := t.Execute(w, data); err != nil {
-		log.Printf("web: template error rendering %s: %v", tmplName, err)
+		slog.Error("template error rendering page", "template", tmplName, "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }

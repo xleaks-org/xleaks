@@ -3,7 +3,7 @@ package social
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -118,7 +118,7 @@ func (s *ProfileService) createProfileWith(ctx context.Context, kp *identity.Key
 	}
 
 	if err := publishProfile(ctx, s.publisher, profile); err != nil {
-		log.Printf("publish profile: %v", err)
+		slog.Error("failed to publish profile", "error", err)
 	}
 
 	return profile, nil
@@ -215,7 +215,7 @@ func (s *ProfileService) updateProfileWith(ctx context.Context, kp *identity.Key
 	}
 
 	if err := publishProfile(ctx, s.publisher, profile); err != nil {
-		log.Printf("publish profile: %v", err)
+		slog.Error("failed to publish profile", "error", err)
 	}
 
 	return profile, nil

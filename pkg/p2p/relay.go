@@ -3,7 +3,7 @@ package p2p
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	libp2p "github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -28,20 +28,20 @@ func (h *Host) ConnectToRelays(ctx context.Context, relayAddrs []string) {
 	for _, addr := range relayAddrs {
 		maddr, err := ma.NewMultiaddr(addr)
 		if err != nil {
-			log.Printf("invalid relay address %s: %v", addr, err)
+			slog.Warn("invalid relay address", "addr", addr, "error", err)
 			continue
 		}
 
 		info, err := peer.AddrInfoFromP2pAddr(maddr)
 		if err != nil {
-			log.Printf("invalid relay address %s: %v", addr, err)
+			slog.Warn("invalid relay address", "addr", addr, "error", err)
 			continue
 		}
 
 		if err := h.host.Connect(ctx, *info); err != nil {
-			log.Printf("failed to connect to relay %s: %v", addr, err)
+			slog.Warn("failed to connect to relay", "addr", addr, "error", err)
 		} else {
-			log.Printf("connected to relay %s", info.ID)
+			slog.Info("connected to relay", "peer_id", info.ID)
 		}
 	}
 }

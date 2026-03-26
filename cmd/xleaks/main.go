@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -15,6 +15,7 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/p2p"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 	pb "github.com/xleaks-org/xleaks/proto/gen"
@@ -34,6 +35,10 @@ func run() error {
 	cfg, err := config.Load(defaultConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	if err := logging.Setup(cfg.Logging.Level, cfg.Logging.File); err != nil {
+		return fmt.Errorf("failed to set up logging: %w", err)
 	}
 
 	db, cas, err := setupDatabase(cfg)
@@ -59,7 +64,7 @@ func run() error {
 	svc := setupServices(ctx, db, cas, kp, idHolder)
 	wireOutboundPublishers(p2pHost, svc)
 	if err := backfillPinnedContent(db); err != nil {
-		log.Printf("Warning: failed to backfill pinned content state: %v", err)
+		slog.Warn("failed to backfill pinned content state", "error", err)
 	}
 
 	msgProcessor, messageHandler := wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc, cfg.IsIndexer())
@@ -133,25 +138,25 @@ func wireP2PSubscriptions(
 	var handler p2p.MessageHandler
 	handler = func(ctx context.Context, _ p2p.PeerID, data []byte) {
 		if err := mp.HandleMessage(ctx, data); err != nil {
-			log.Printf("P2P message error: %v", err)
+			slog.Error("P2P message handling failed", "error", err)
 			return
 		}
 		if err := ensureObservedTopicSubscriptions(ensureTopic, data, subscribeObservedPublisherPosts); err != nil {
-			log.Printf("P2P topic tracking error: %v", err)
+			slog.Warn("P2P topic tracking failed", "error", err)
 		}
 	}
 	ensureTopic = newTopicSubscriber(host, handler)
 
 	if err := ensureTopic(p2p.GlobalTopic()); err != nil {
-		log.Printf("Warning: failed to subscribe to %s: %v", p2p.GlobalTopic(), err)
+		slog.Warn("failed to subscribe to topic", "topic", p2p.GlobalTopic(), "error", err)
 	}
 	if err := ensureTopic(p2p.ProfilesTopic()); err != nil {
-		log.Printf("Warning: failed to subscribe to %s: %v", p2p.ProfilesTopic(), err)
+		slog.Warn("failed to subscribe to topic", "topic", p2p.ProfilesTopic(), "error", err)
 	}
 	if kp != nil && len(kp.PublicKeyBytes()) > 0 {
 		topic := p2p.DMTopic(hex.EncodeToString(kp.PublicKeyBytes()))
 		if err := ensureTopic(topic); err != nil {
-			log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+			slog.Warn("failed to subscribe to topic", "topic", topic, "error", err)
 		}
 	}
 
@@ -163,7 +168,7 @@ func wireP2PSubscriptions(
 	}
 	if kp != nil && len(kp.PublicKeyBytes()) > 0 {
 		if err := svc.Feed.ReloadSubscriptions(ctx, kp.PublicKeyBytes()); err != nil {
-			log.Printf("Warning: failed to load subscriptions: %v", err)
+			slog.Warn("failed to load subscriptions", "error", err)
 		}
 	}
 	seedKnownFollowSubscriptions(db, ensureTopic)
@@ -255,7 +260,7 @@ func discoverIndexersPeriodically(ctx context.Context, host *p2p.Host, svc *Serv
 	discover := func() {
 		indexers, err := host.FindIndexers(ctx)
 		if err != nil {
-			log.Printf("DHT indexer discovery failed: %v", err)
+			slog.Debug("DHT indexer discovery failed", "error", err)
 			return
 		}
 		discovered := 0
@@ -266,7 +271,7 @@ func discoverIndexersPeriodically(ctx context.Context, host *p2p.Host, svc *Serv
 			}
 		}
 		if discovered > 0 {
-			log.Printf("DHT indexer discovery: found %d queryable indexer endpoint(s)", discovered)
+			slog.Info("DHT indexer discovery completed", "endpoints", discovered)
 		}
 	}
 
@@ -315,7 +320,7 @@ func newIdentityRuntimeSyncer(host *p2p.Host, handler p2p.MessageHandler, ensure
 				ownerPubkey = kp.PublicKeyBytes()
 			}
 			if err := svc.Feed.ReloadSubscriptions(context.Background(), ownerPubkey); err != nil {
-				log.Printf("Warning: failed to reload subscriptions: %v", err)
+				slog.Warn("failed to reload subscriptions", "error", err)
 			}
 		}
 
@@ -325,7 +330,7 @@ func newIdentityRuntimeSyncer(host *p2p.Host, handler p2p.MessageHandler, ensure
 
 		if currentDMTopic != "" {
 			if err := host.Unsubscribe(currentDMTopic); err != nil && !strings.Contains(err.Error(), "not subscribed") {
-				log.Printf("Warning: failed to unsubscribe from %s: %v", currentDMTopic, err)
+				slog.Warn("failed to unsubscribe from topic", "topic", currentDMTopic, "error", err)
 			}
 			currentDMTopic = ""
 		}
@@ -336,7 +341,7 @@ func newIdentityRuntimeSyncer(host *p2p.Host, handler p2p.MessageHandler, ensure
 
 		topic := p2p.DMTopic(hex.EncodeToString(kp.PublicKeyBytes()))
 		if err := ensureTopic(topic); err != nil {
-			log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+			slog.Warn("failed to subscribe to topic", "topic", topic, "error", err)
 			return
 		}
 		currentDMTopic = topic
@@ -361,7 +366,7 @@ func seedKnownFollowSubscriptions(db *storage.DB, ensureTopic func(string) error
 	}
 	profiles, err := db.GetAllProfiles()
 	if err != nil {
-		log.Printf("Warning: failed to load profiles for follow subscriptions: %v", err)
+		slog.Warn("failed to load profiles for follow subscriptions", "error", err)
 		return
 	}
 	for _, profile := range profiles {
@@ -370,7 +375,7 @@ func seedKnownFollowSubscriptions(db *storage.DB, ensureTopic func(string) error
 		}
 		topic := p2p.FollowsTopic(hex.EncodeToString(profile.Pubkey))
 		if err := ensureTopic(topic); err != nil {
-			log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+			slog.Warn("failed to subscribe to topic", "topic", topic, "error", err)
 		}
 	}
 }
@@ -382,7 +387,7 @@ func seedKnownPublisherSubscriptions(db *storage.DB, ensureTopic func(string) er
 	seen := make(map[string]struct{})
 	profiles, err := db.GetAllProfiles()
 	if err != nil {
-		log.Printf("Warning: failed to load profiles for post subscriptions: %v", err)
+		slog.Warn("failed to load profiles for post subscriptions", "error", err)
 	} else {
 		for _, profile := range profiles {
 			if len(profile.Pubkey) == 0 {
@@ -395,14 +400,14 @@ func seedKnownPublisherSubscriptions(db *storage.DB, ensureTopic func(string) er
 			seen[pubkeyHex] = struct{}{}
 			topic := p2p.PostsTopic(pubkeyHex)
 			if err := ensureTopic(topic); err != nil {
-				log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+				slog.Warn("failed to subscribe to topic", "topic", topic, "error", err)
 			}
 		}
 	}
 
 	posts, err := db.GetAllPosts(0, 10000)
 	if err != nil {
-		log.Printf("Warning: failed to load posts for post subscriptions: %v", err)
+		slog.Warn("failed to load posts for post subscriptions", "error", err)
 		return
 	}
 	for _, post := range posts {
@@ -416,7 +421,7 @@ func seedKnownPublisherSubscriptions(db *storage.DB, ensureTopic func(string) er
 		seen[pubkeyHex] = struct{}{}
 		topic := p2p.PostsTopic(pubkeyHex)
 		if err := ensureTopic(topic); err != nil {
-			log.Printf("Warning: failed to subscribe to %s: %v", topic, err)
+			slog.Warn("failed to subscribe to topic", "topic", topic, "error", err)
 		}
 	}
 }

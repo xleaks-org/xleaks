@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/xleaks-org/xleaks/pkg/config"
@@ -31,38 +31,38 @@ func setupP2P(ctx context.Context, cfg *config.Config) (*p2p.Host, error) {
 
 	host, err := p2p.NewHost(ctx, p2pPrivKey, p2pCfg)
 	if err != nil {
-		log.Printf("WARNING: P2P host failed to start: %v", err)
-		log.Println("Running in offline mode — local data is still accessible.")
+		slog.Warn("P2P host failed to start", "error", err)
+		slog.Info("running in offline mode, local data is still accessible")
 		return nil, nil
 	}
 
-	log.Printf("P2P host started. Peer ID: %s", host.ID())
+	slog.Info("P2P host started", "peer_id", host.ID())
 	for _, addr := range host.Addrs() {
-		log.Printf("  Listening on: %s/p2p/%s", addr, host.ID())
+		slog.Info("P2P listening", "addr", addr, "peer_id", host.ID())
 	}
 
 	if err := host.InitPubSub(ctx); err != nil {
-		log.Printf("Warning: GossipSub init failed: %v", err)
+		slog.Warn("GossipSub init failed", "error", err)
 	}
 
 	go func() {
 		if err := host.Bootstrap(ctx, cfg.Network.BootstrapPeers); err != nil {
 			fallbackPeers := discoverBootstrapFallbackPeers(ctx, cfg)
 			if len(fallbackPeers) > 0 {
-				log.Printf("Bootstrap retry: loaded %d peer(s) from remote discovery sources", len(fallbackPeers))
+				slog.Info("bootstrap retry with remote discovery", "peers", len(fallbackPeers))
 				if retryErr := host.Bootstrap(ctx, dedupeStrings(append(cfg.Network.BootstrapPeers, fallbackPeers...))); retryErr == nil {
 					return
 				} else {
-					log.Printf("Warning: DHT bootstrap retry failed: %v", retryErr)
+					slog.Warn("DHT bootstrap retry failed", "error", retryErr)
 				}
 			}
-			log.Printf("Warning: DHT bootstrap failed: %v", err)
+			slog.Warn("DHT bootstrap failed", "error", err)
 		}
 	}()
 
 	if cfg.Network.EnableMDNS {
 		if err := host.SetupMDNS(ctx); err != nil {
-			log.Printf("Warning: mDNS setup failed: %v", err)
+			slog.Warn("mDNS setup failed", "error", err)
 		}
 	}
 

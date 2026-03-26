@@ -2,7 +2,7 @@ package web
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -56,7 +56,7 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// Create a session for the new identity.
 	token, err := h.sessions.Create(kp)
 	if err != nil {
-		log.Printf("web: failed to create session after identity create: %v", err)
+		slog.Error("failed to create session after identity create", "error", err)
 	} else {
 		h.sessions.SetCookie(w, token)
 	}
@@ -130,14 +130,14 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 	sess := h.sessions.GetFromRequest(r)
 	if sess != nil {
 		if err := h.db.UpsertProfile(sess.KeyPair.PublicKeyBytes(), displayName, "", nil, nil, "", 2, time.Now().UnixMilli()); err != nil {
-			log.Printf("web: failed to upsert profile: %v", err)
+			slog.Error("failed to upsert profile", "error", err)
 		}
 	} else if h.identity.IsUnlocked() {
 		kp := h.identity.Get()
 		if kp != nil {
 			// Use version 2 to ensure it overwrites the default "Anonymous" profile (version 1)
 			if err := h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, "", nil, nil, "", 2, time.Now().UnixMilli()); err != nil {
-				log.Printf("web: failed to upsert profile: %v", err)
+				slog.Error("failed to upsert profile", "error", err)
 			}
 		}
 	}
@@ -172,7 +172,7 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	// Create a session for the imported identity.
 	token, err := h.sessions.Create(kp)
 	if err != nil {
-		log.Printf("web: failed to create session after identity import: %v", err)
+		slog.Error("failed to create session after identity import", "error", err)
 	} else {
 		h.sessions.SetCookie(w, token)
 	}
@@ -215,7 +215,7 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	// Create a session for the unlocked identity.
 	token, err := h.sessions.Create(kp)
 	if err != nil {
-		log.Printf("web: failed to create session after unlock: %v", err)
+		slog.Error("failed to create session after unlock", "error", err)
 	} else {
 		h.sessions.SetCookie(w, token)
 	}

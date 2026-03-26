@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -103,7 +103,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		thumbData, thumbCID, err := content.GenerateMediaThumbnail(data, mimeType, thumbnailQuality)
 		if err == nil {
 			if err := h.cas.Put(thumbCID, thumbData); err != nil {
-				log.Printf("store thumbnail in CAS: %v", err)
+				slog.Error("failed to store thumbnail in CAS", "error", err)
 			} else {
 				thumbnailCID = thumbCID
 			}
@@ -155,7 +155,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.p2pHost != nil {
 		if err := social.PublishMediaObject(r.Context(), h.p2pHost, mediaObj); err != nil {
-			log.Printf("publish media metadata: %v", err)
+			slog.Error("failed to publish media metadata", "error", err)
 		}
 		h.provideContent(r.Context(), fileCID, thumbnailCID, chunks)
 	}
@@ -189,7 +189,7 @@ func (h *Handler) GetMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	if media != nil {
 		if err := h.db.TrackContentForMedia(cidBytes, cidBytes); err != nil {
-			log.Printf("track media access %x: %v", cidBytes, err)
+			slog.Warn("failed to track media access", "cid", hex.EncodeToString(cidBytes), "error", err)
 		}
 	}
 
@@ -216,7 +216,7 @@ func (h *Handler) GetMediaThumbnail(w http.ResponseWriter, r *http.Request) {
 		data, err := h.loadContent(r.Context(), media.ThumbnailCID)
 		if err == nil {
 			if err := h.db.TrackContentForMedia(media.ThumbnailCID, media.CID); err != nil {
-				log.Printf("track thumbnail access %x: %v", media.ThumbnailCID, err)
+				slog.Warn("failed to track thumbnail access", "cid", hex.EncodeToString(media.ThumbnailCID), "error", err)
 			}
 			w.Header().Set("Content-Type", "image/jpeg")
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -359,7 +359,7 @@ func (h *Handler) loadContent(ctx context.Context, cidBytes []byte) ([]byte, err
 	data, err := h.cas.Get(cidBytes)
 	if err == nil {
 		if trackErr := h.db.TrackContentAccess(cidBytes, false); trackErr != nil {
-			log.Printf("track content access %x: %v", cidBytes, trackErr)
+			slog.Warn("failed to track content access", "cid", hex.EncodeToString(cidBytes), "error", trackErr)
 		}
 		return data, nil
 	}
@@ -382,10 +382,10 @@ func (h *Handler) loadContent(ctx context.Context, cidBytes []byte) ([]byte, err
 		return nil, err
 	}
 	if putErr := h.cas.Put(cidBytes, data); putErr != nil {
-		log.Printf("cache fetched media %s: %v", cidHex, putErr)
+		slog.Warn("failed to cache fetched media", "cid", cidHex, "error", putErr)
 	}
 	if trackErr := h.db.TrackContentAccess(cidBytes, false); trackErr != nil {
-		log.Printf("track fetched content %s: %v", cidHex, trackErr)
+		slog.Warn("failed to track fetched content", "cid", cidHex, "error", trackErr)
 	}
 	return data, nil
 }
@@ -417,7 +417,7 @@ func (h *Handler) provideContent(_ context.Context, fileCID, thumbnailCID []byte
 				continue
 			}
 			if err := ce.Provide(provideCtx, hex.EncodeToString(cid)); err != nil {
-				log.Printf("provide content %x: %v", cid, err)
+				slog.Warn("failed to provide content", "cid", hex.EncodeToString(cid), "error", err)
 			}
 		}
 	}()

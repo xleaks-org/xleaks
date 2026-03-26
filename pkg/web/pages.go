@@ -2,7 +2,7 @@ package web
 
 import (
 	"encoding/hex"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -174,7 +174,7 @@ func (h *Handler) notificationsPage(w http.ResponseWriter, r *http.Request) {
 
 	notifs, err := h.db.GetNotifications(kp.PublicKeyBytes(), 0, 50)
 	if err != nil {
-		log.Printf("web: failed to get notifications: %v", err)
+		slog.Error("failed to get notifications", "error", err)
 	}
 
 	// Local profile cache to avoid querying the same actor multiple times (N+1 fix).
@@ -250,7 +250,7 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 	if h.indexerClient != nil && h.indexerClient.Available() {
 		publishers, err := h.indexerClient.GetExplorePublishers(32)
 		if err != nil {
-			log.Printf("web: failed to get explore publishers: %v", err)
+			slog.Warn("failed to get explore publishers", "error", err)
 		} else {
 			for _, publisher := range publishers {
 				if publisher.Pubkey == "" || publisher.Pubkey == ownPubkey {
@@ -279,7 +279,7 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 
 	profiles, err := h.db.GetAllProfiles()
 	if err != nil {
-		log.Printf("web: failed to get all profiles: %v", err)
+		slog.Error("failed to get all profiles", "error", err)
 	}
 	for _, p := range profiles {
 		pubkeyHex := hex.EncodeToString(p.Pubkey)

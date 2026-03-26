@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -27,13 +27,13 @@ func (ce *ContentExchange) ServeContent(cas ContentServer) {
 // handleContentStream processes a single incoming content request stream.
 func (ce *ContentExchange) handleContentStream(stream network.Stream) {
 	if err := stream.SetDeadline(time.Now().Add(streamDeadline)); err != nil {
-		log.Printf("content exchange: failed to set stream deadline: %v", err)
+		slog.Warn("content exchange: failed to set stream deadline", "error", err)
 		return
 	}
 
 	cidBytes, err := readCIDFromStream(stream)
 	if err != nil {
-		log.Printf("content exchange: %v", err)
+		slog.Debug("content exchange: failed to read CID from stream", "error", err)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (ce *ContentExchange) handleContentStream(stream network.Stream) {
 	ce.mu.RUnlock()
 
 	if srv == nil {
-		log.Printf("content exchange: no content server configured")
+		slog.Warn("content exchange: no content server configured")
 		ce.writeEmptyResponse(stream)
 		return
 	}
@@ -89,11 +89,11 @@ func writeContentResponse(stream network.Stream, data []byte) {
 		byte(dataLen),
 	}
 	if _, err := stream.Write(respHeader); err != nil {
-		log.Printf("content exchange: failed to write response length: %v", err)
+		slog.Warn("content exchange: failed to write response length", "error", err)
 		return
 	}
 	if _, err := stream.Write(data); err != nil {
-		log.Printf("content exchange: failed to write response data: %v", err)
+		slog.Warn("content exchange: failed to write response data", "error", err)
 	}
 }
 
