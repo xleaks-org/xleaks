@@ -140,7 +140,11 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 	data["FollowingCount"] = len(following)
 
 	// Check if the current user is following this profile.
-	data["IsFollowing"] = h.db.IsSubscribed(pubkeyBytes)
+	isFollowing := false
+	if kp := h.getKeyPair(r); kp != nil {
+		isFollowing = h.db.IsSubscribed(kp.PublicKeyBytes(), pubkeyBytes)
+	}
+	data["IsFollowing"] = isFollowing
 
 	h.renderPage(w, "profile.html", data)
 }

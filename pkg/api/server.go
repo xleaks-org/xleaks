@@ -12,8 +12,9 @@ import (
 
 // ServerConfig holds configuration options for the API server.
 type ServerConfig struct {
-	ListenAddr string
-	APIToken   string // empty = no auth required
+	ListenAddr      string
+	APIToken        string // empty = no auth required
+	EnableWebSocket bool
 }
 
 // Server wraps the HTTP server, WebSocket hub, and all handler dependencies.
@@ -27,12 +28,15 @@ type Server struct {
 // NewServer creates a new API server. It accepts a listen address string and
 // handler dependencies. To configure an API token, use NewServerWithConfig.
 func NewServer(listenAddr string, deps *HandlerDeps) *Server {
-	return NewServerWithConfig(ServerConfig{ListenAddr: listenAddr}, deps)
+	return NewServerWithConfig(ServerConfig{ListenAddr: listenAddr, EnableWebSocket: true}, deps)
 }
 
 // NewServerWithConfig creates a new API server from the given config.
 func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
-	wsHub := NewWSHub()
+	var wsHub *WSHub
+	if cfg.EnableWebSocket {
+		wsHub = NewWSHub()
+	}
 	router := NewRouter(deps, wsHub)
 
 	// Build the middleware chain (outermost first, innermost last):

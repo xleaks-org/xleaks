@@ -71,7 +71,7 @@ func (s *Syncer) SyncPublisher(ctx context.Context, pubkey []byte) error {
 	}
 
 	// Mark sync as complete.
-	if err := s.MarkSyncComplete(pubkey); err != nil {
+	if err := s.MarkSyncComplete(nil, pubkey); err != nil {
 		return err
 	}
 
@@ -79,16 +79,16 @@ func (s *Syncer) SyncPublisher(ctx context.Context, pubkey []byte) error {
 }
 
 // MarkSyncComplete marks a subscription's historical sync as done.
-func (s *Syncer) MarkSyncComplete(pubkey []byte) error {
-	if err := s.db.MarkSyncCompleted(pubkey); err != nil {
+func (s *Syncer) MarkSyncComplete(ownerPubkey, pubkey []byte) error {
+	if err := s.db.MarkSyncCompleted(ownerPubkey, pubkey); err != nil {
 		return fmt.Errorf("mark sync complete: %w", err)
 	}
 	return nil
 }
 
 // GetPendingSyncs returns publishers that still need historical sync.
-func (s *Syncer) GetPendingSyncs() ([][]byte, error) {
-	subs, err := s.db.GetPendingSyncs()
+func (s *Syncer) GetPendingSyncs(ownerPubkey []byte) ([][]byte, error) {
+	subs, err := s.db.GetPendingSyncs(ownerPubkey)
 	if err != nil {
 		return nil, fmt.Errorf("get pending syncs: %w", err)
 	}
@@ -114,7 +114,7 @@ func (s *Syncer) StartBackgroundSync(ctx context.Context) {
 			case <-time.After(backoff):
 			}
 
-			pubkeys, err := s.GetPendingSyncs()
+			pubkeys, err := s.GetPendingSyncs(nil)
 			if err != nil {
 				log.Printf("background sync: failed to get pending syncs: %v", err)
 				backoff = nextBackoff(backoff, maxSyncBackoff)

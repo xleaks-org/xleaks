@@ -114,9 +114,10 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	content := strings.TrimSpace(r.FormValue("content"))
+	mediaCIDs := r.Form["media_cids"]
 	replyTo := strings.TrimSpace(r.FormValue("reply_to"))
-	if content == "" {
-		http.Error(w, "Post content is required", http.StatusBadRequest)
+	if content == "" && len(mediaCIDs) == 0 {
+		http.Error(w, "Post content or media is required", http.StatusBadRequest)
 		return
 	}
 	if h.currentUser(r) == nil {
@@ -128,7 +129,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postID, err := h.createPost(r.Context(), content, replyTo)
+	postID, err := h.createPost(r.Context(), content, mediaCIDs, replyTo)
 	if err != nil {
 		log.Printf("Post creation failed: %v", err)
 		http.Error(w, "Failed to create post: "+err.Error(), http.StatusInternalServerError)
@@ -136,6 +137,11 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	post := h.buildNewPostView(r, postID, content)
+	if postCID, err := hex.DecodeString(postID); err == nil {
+		if stored, dbErr := h.db.GetPost(postCID); dbErr == nil && stored != nil {
+			post = h.postRowToView(stored)
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	h.partials.ExecuteTemplate(w, "feed_items.html", struct{ Posts []PostView }{Posts: []PostView{post}})
 }
@@ -150,7 +156,11 @@ func (h *Handler) nodeStatusPartial(w http.ResponseWriter, r *http.Request) {
 	if h.nodeStatus != nil {
 		peers, uptimeSecs, storageUsed, storageLimit, subscriptions = h.nodeStatus()
 	} else if h.db != nil {
-		if count, err := h.db.CountSubscriptions(); err == nil {
+		var ownerPubkey []byte
+		if kp := h.identity.Get(); kp != nil {
+			ownerPubkey = kp.PublicKeyBytes()
+		}
+		if count, err := h.db.CountSubscriptions(ownerPubkey); err == nil {
 			subscriptions = count
 		}
 	}

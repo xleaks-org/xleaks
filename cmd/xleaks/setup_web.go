@@ -44,8 +44,18 @@ func setupWebHandler(
 
 	webHandler.SetOnIdentityChange(identitySync)
 	webHandler.SetTopicSubscriber(ensureTopic)
+	webHandler.SetWebSocketEnabled(cfg.API.EnableWebSocket)
 
-	webHandler.SetCreatePost(func(ctx context.Context, text string, replyTo string) (string, error) {
+	webHandler.SetCreatePost(func(ctx context.Context, text string, mediaCIDHexes []string, replyTo string) (string, error) {
+		mediaCIDs := make([][]byte, 0, len(mediaCIDHexes))
+		for _, mediaCIDHex := range mediaCIDHexes {
+			mediaCID, err := hex.DecodeString(mediaCIDHex)
+			if err != nil {
+				return "", fmt.Errorf("invalid media CID hex: %w", err)
+			}
+			mediaCIDs = append(mediaCIDs, mediaCID)
+		}
+
 		var replyToCID []byte
 		if replyTo != "" {
 			var err error
@@ -54,7 +64,7 @@ func setupWebHandler(
 				return "", fmt.Errorf("invalid reply_to hex: %w", err)
 			}
 		}
-		post, err := svc.Posts.CreatePost(ctx, text, nil, replyToCID)
+		post, err := svc.Posts.CreatePost(ctx, text, mediaCIDs, replyToCID)
 		if err != nil {
 			return "", err
 		}
@@ -131,7 +141,11 @@ func setupWebHandler(
 		}
 
 		var subscriptions int
-		if count, err := db.CountSubscriptions(); err == nil {
+		var ownerPubkey []byte
+		if kp := idHolder.Get(); kp != nil {
+			ownerPubkey = kp.PublicKeyBytes()
+		}
+		if count, err := db.CountSubscriptions(ownerPubkey); err == nil {
 			subscriptions = count
 		}
 

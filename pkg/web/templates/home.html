@@ -4,7 +4,7 @@
 </header>
 
 <!-- Post Composer -->
-<form hx-post="/web/post" hx-target="#feed" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful) this.reset()" class="border-b border-gray-800 p-4">
+<form id="composer-form" hx-post="/web/post" hx-target="#feed" hx-swap="afterbegin" class="border-b border-gray-800 p-4">
     <div class="flex gap-3">
         {{if .User}}
         <div class="w-10 h-10 rounded-full bg-blue-600 flex-shrink-0 flex items-center justify-center font-bold text-sm">{{slice .User.DisplayName 0 1}}</div>
@@ -13,8 +13,20 @@
             <textarea name="content" rows="3" placeholder="What's happening?"
                 class="w-full bg-transparent text-white resize-none outline-none text-lg placeholder-gray-500 mb-3 border-none p-0"
                 style="background: transparent; border: none; padding: 0;"></textarea>
-            <div class="flex justify-end border-t border-gray-800 pt-3">
-                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-5 py-2.5 rounded-full transition-colors">Post</button>
+            <div class="border-t border-gray-800 pt-3 space-y-3">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex items-center gap-3 text-sm text-gray-400">
+                        <label for="composer-files" class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-700 px-4 py-2 hover:border-gray-600 hover:text-white transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828L18 9.828A4 4 0 0012.343 4.17L5.757 10.757a6 6 0 108.486 8.486L20.5 13"/></svg>
+                            Attach media
+                        </label>
+                        <input id="composer-files" type="file" accept="image/*,video/*,audio/*" multiple class="hidden">
+                        <span id="composer-file-summary" class="text-xs text-gray-500">Images, video, or audio</span>
+                    </div>
+                    <button type="submit" id="composer-submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-5 py-2.5 rounded-full transition-colors">Post</button>
+                </div>
+                <div id="composer-media-cids"></div>
+                <div id="composer-upload-status" class="hidden rounded-xl border border-gray-800 bg-gray-900/70 px-3 py-2 text-sm text-gray-300"></div>
             </div>
         </div>
     </div>
@@ -31,4 +43,143 @@
         <div class="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
     </div>
 </div>
+
+<script>
+(function() {
+    var form = document.getElementById('composer-form');
+    if (!form) {
+        return;
+    }
+
+    var fileInput = document.getElementById('composer-files');
+    var summary = document.getElementById('composer-file-summary');
+    var hiddenCIDs = document.getElementById('composer-media-cids');
+    var status = document.getElementById('composer-upload-status');
+    var submitButton = document.getElementById('composer-submit');
+
+    function setStatus(message, isError) {
+        if (!message) {
+            status.textContent = '';
+            status.classList.add('hidden');
+            status.classList.remove('border-red-500/50', 'text-red-300');
+            status.classList.add('border-gray-800', 'text-gray-300');
+            return;
+        }
+        status.textContent = message;
+        status.classList.remove('hidden');
+        status.classList.toggle('border-red-500/50', !!isError);
+        status.classList.toggle('text-red-300', !!isError);
+        status.classList.toggle('border-gray-800', !isError);
+        status.classList.toggle('text-gray-300', !isError);
+    }
+
+    function clearPreparedMedia() {
+        hiddenCIDs.innerHTML = '';
+        form.dataset.mediaPrepared = '';
+    }
+
+    function resetComposer() {
+        form.reset();
+        clearPreparedMedia();
+        summary.textContent = 'Images, video, or audio';
+        setStatus('');
+        submitButton.disabled = false;
+        submitButton.classList.remove('opacity-60', 'cursor-not-allowed');
+    }
+
+    async function uploadSelectedFiles() {
+        if (!fileInput.files || fileInput.files.length === 0) {
+            clearPreparedMedia();
+            form.dataset.mediaPrepared = '1';
+            return true;
+        }
+
+        submitButton.disabled = true;
+        submitButton.classList.add('opacity-60', 'cursor-not-allowed');
+        clearPreparedMedia();
+
+        var files = Array.prototype.slice.call(fileInput.files);
+        for (var i = 0; i < files.length; i++) {
+            setStatus('Uploading ' + (i + 1) + ' of ' + files.length + ': ' + files[i].name);
+
+            var body = new FormData();
+            body.append('file', files[i], files[i].name);
+
+            var response = await fetch('/api/media', {
+                method: 'POST',
+                body: body,
+                credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                var message = 'Upload failed';
+                try {
+                    var payload = await response.json();
+                    if (payload && payload.error) {
+                        message = payload.error;
+                    }
+                } catch (err) {
+                }
+                setStatus(message, true);
+                submitButton.disabled = false;
+                submitButton.classList.remove('opacity-60', 'cursor-not-allowed');
+                return false;
+            }
+
+            var payload = await response.json();
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'media_cids';
+            input.value = payload.cid;
+            hiddenCIDs.appendChild(input);
+        }
+
+        setStatus('Media ready to post.');
+        form.dataset.mediaPrepared = '1';
+        submitButton.disabled = false;
+        submitButton.classList.remove('opacity-60', 'cursor-not-allowed');
+        return true;
+    }
+
+    fileInput.addEventListener('change', function() {
+        clearPreparedMedia();
+        if (!fileInput.files || fileInput.files.length === 0) {
+            summary.textContent = 'Images, video, or audio';
+            setStatus('');
+            return;
+        }
+        var names = Array.prototype.slice.call(fileInput.files).map(function(file) { return file.name; });
+        summary.textContent = names.length === 1 ? names[0] : names.length + ' files selected';
+        setStatus('');
+    });
+
+    form.addEventListener('submit', function(event) {
+        if (form.dataset.uploading === '1' || form.dataset.mediaPrepared === '1' || !fileInput.files || fileInput.files.length === 0) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        form.dataset.uploading = '1';
+
+        uploadSelectedFiles().then(function(ok) {
+            form.dataset.uploading = '';
+            if (ok) {
+                form.requestSubmit();
+            }
+        });
+    }, true);
+
+    form.addEventListener('htmx:afterRequest', function(event) {
+        if (!event.detail.successful) {
+            submitButton.disabled = false;
+            submitButton.classList.remove('opacity-60', 'cursor-not-allowed');
+            return;
+        }
+        resetComposer();
+    });
+
+    window.XLeaksComposerReset = resetComposer;
+})();
+</script>
 {{end}}

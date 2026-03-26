@@ -67,7 +67,11 @@ func (h *Handler) GetNodeStatus(w http.ResponseWriter, r *http.Request) {
 	// Subscription count.
 	subscriptionCount := 0
 	if h.db != nil {
-		count, err := h.db.CountSubscriptions()
+		var ownerPubkey []byte
+		if kp := h.currentKeyPair(); kp != nil {
+			ownerPubkey = kp.PublicKeyBytes()
+		}
+		count, err := h.db.CountSubscriptions(ownerPubkey)
 		if err == nil {
 			subscriptionCount = count
 		}

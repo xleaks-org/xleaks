@@ -90,9 +90,11 @@ CREATE TABLE IF NOT EXISTS reaction_counts (
 
 -- Subscriptions (who this user follows)
 CREATE TABLE IF NOT EXISTS subscriptions (
-    pubkey BLOB PRIMARY KEY,
+    owner_pubkey BLOB NOT NULL,
+    pubkey BLOB NOT NULL,
     followed_at INTEGER NOT NULL,
-    sync_completed INTEGER DEFAULT 0
+    sync_completed INTEGER DEFAULT 0,
+    PRIMARY KEY (owner_pubkey, pubkey)
 );
 
 -- Follow events (seen on network, for follower count display)
@@ -140,7 +142,6 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read, timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_notifications_owner_unread ON notifications(owner_pubkey, read, timestamp DESC);
 
 -- Hashtags for local search/trending
 CREATE TABLE IF NOT EXISTS post_tags (

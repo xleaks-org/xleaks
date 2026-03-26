@@ -147,10 +147,12 @@ func (h *Handler) SendDM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
+	dmData := map[string]interface{}{
 		"id":        hex.EncodeToString(dm.Id),
 		"author":    hex.EncodeToString(dm.Author),
 		"recipient": hex.EncodeToString(dm.Recipient),
 		"timestamp": dm.Timestamp,
-	})
+	}
+	h.emit(EventNewDM, dmData)
+	respondJSON(w, http.StatusCreated, dmData)
 }

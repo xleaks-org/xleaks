@@ -82,7 +82,19 @@ func run() error {
 	webRoutes := setupWebHandler(db, idHolder, svc, cfg, p2pHost, dataDir, idx, identitySync, ensureTopicSubscription)
 	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes, identitySync, ensureTopicSubscription)
 
-	server := api.NewServer(cfg.API.ListenAddress, deps)
+	server := api.NewServerWithConfig(api.ServerConfig{
+		ListenAddr:      cfg.API.ListenAddress,
+		EnableWebSocket: cfg.API.EnableWebSocket,
+	}, deps)
+	if wsHub := server.WSHub(); wsHub != nil {
+		broadcast := func(eventType string, data interface{}) {
+			wsHub.Broadcast(api.WSEvent{Type: eventType, Data: data})
+		}
+		svc.Notifs.SetBroadcaster(broadcast)
+		if msgProcessor != nil {
+			msgProcessor.SetBroadcaster(broadcast)
+		}
+	}
 	return runServer(ctx, cancel, server, p2pHost, cfg)
 }
 
@@ -128,20 +140,15 @@ func wireP2PSubscriptions(
 		}
 	}
 
-	if err := svc.Feed.LoadSubscriptions(); err != nil {
-		log.Printf("Warning: failed to load subscriptions: %v", err)
-	}
-
 	svc.Feed.OnSubscribe = func(_ context.Context, pubkeyHex string) error {
 		return ensureTopic(p2p.PostsTopic(pubkeyHex))
 	}
 	svc.Feed.OnUnsubscribe = func(pubkeyHex string) error {
 		return host.Unsubscribe(p2p.PostsTopic(pubkeyHex))
 	}
-
-	for _, pk := range svc.Feed.FollowedPubkeys() {
-		if err := ensureTopic(p2p.PostsTopic(pk)); err != nil {
-			log.Printf("Warning: failed to subscribe to %s: %v", p2p.PostsTopic(pk), err)
+	if kp != nil && len(kp.PublicKeyBytes()) > 0 {
+		if err := svc.Feed.ReloadSubscriptions(ctx, kp.PublicKeyBytes()); err != nil {
+			log.Printf("Warning: failed to load subscriptions: %v", err)
 		}
 	}
 	seedKnownFollowSubscriptions(db, ensureTopic)
@@ -243,6 +250,15 @@ func newIdentityRuntimeSyncer(host *p2p.Host, handler p2p.MessageHandler, ensure
 		svc.Profiles.SetIdentity(kp)
 		svc.DMs.SetIdentity(kp)
 		svc.Follows.SetIdentity(kp)
+		if svc.Feed != nil {
+			var ownerPubkey []byte
+			if kp != nil {
+				ownerPubkey = kp.PublicKeyBytes()
+			}
+			if err := svc.Feed.ReloadSubscriptions(context.Background(), ownerPubkey); err != nil {
+				log.Printf("Warning: failed to reload subscriptions: %v", err)
+			}
+		}
 
 		if host == nil || handler == nil {
 			return
