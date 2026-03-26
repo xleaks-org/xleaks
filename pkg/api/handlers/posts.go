@@ -5,7 +5,9 @@ import (
 	"net/http"
 
 	"github.com/xleaks-org/xleaks/pkg/feed"
+	"github.com/xleaks-org/xleaks/pkg/p2p"
 	"github.com/xleaks-org/xleaks/pkg/social"
+	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
 // createPostRequest is the JSON body for POST /api/posts.
@@ -56,11 +58,15 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	postData := map[string]interface{}{
-		"id":        hex.EncodeToString(post.Id),
-		"author":    hex.EncodeToString(post.Author),
-		"content":   post.Content,
-		"timestamp": post.Timestamp,
-		"tags":      post.Tags,
+		"id":         hex.EncodeToString(post.Id),
+		"author":     hex.EncodeToString(post.Author),
+		"content":    post.Content,
+		"media_cids": hexSlice(post.MediaCids),
+		"timestamp":  post.Timestamp,
+		"tags":       post.Tags,
+	}
+	if h.ensureTopic != nil {
+		_ = h.ensureTopic(p2p.ReactionsTopic(hex.EncodeToString(post.Id)))
 	}
 	h.emit(EventNewPost, postData)
 	respondJSON(w, http.StatusCreated, postData)
@@ -83,13 +89,18 @@ func (h *Handler) GetPost(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "post not found")
 		return
 	}
+	if h.ensureTopic != nil {
+		_ = h.ensureTopic(p2p.ReactionsTopic(hex.EncodeToString(cidBytes)))
+	}
 
 	likeCount, _ := h.db.GetReactionCount(cidBytes)
+	mediaCIDs := h.mediaCIDsForPost(cidBytes)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"id":         hex.EncodeToString(postRow.CID),
 		"author":     hex.EncodeToString(postRow.Author),
 		"content":    postRow.Content,
+		"media_cids": mediaCIDs,
 		"reply_to":   hexOrEmpty(postRow.ReplyTo),
 		"repost_of":  hexOrEmpty(postRow.RepostOf),
 		"timestamp":  postRow.Timestamp,
@@ -111,7 +122,7 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, threadNodeToMap(thread))
+	respondJSON(w, http.StatusOK, threadNodeToMap(h.db, thread))
 }
 
 // GetPostReactions handles GET /api/posts/{cid}/reactions.
@@ -158,7 +169,7 @@ func (h *Handler) GetUserPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, timelineEntriesToJSON(entries))
+	respondJSON(w, http.StatusOK, timelineEntriesToJSON(h.db, entries))
 }
 
 // hexOrEmpty returns the hex encoding of b, or an empty string if b is nil/empty.
@@ -170,24 +181,25 @@ func hexOrEmpty(b []byte) string {
 }
 
 // threadNodeToMap converts a ThreadNode tree to a JSON-friendly map.
-func threadNodeToMap(node *social.ThreadNode) map[string]interface{} {
+func threadNodeToMap(db mediaLookup, node *social.ThreadNode) map[string]interface{} {
 	if node == nil {
 		return nil
 	}
 
 	children := make([]map[string]interface{}, 0, len(node.Children))
 	for _, child := range node.Children {
-		children = append(children, threadNodeToMap(child))
+		children = append(children, threadNodeToMap(db, child))
 	}
 
 	result := map[string]interface{}{
 		"post": map[string]interface{}{
-			"id":        hex.EncodeToString(node.Post.Id),
-			"author":    hex.EncodeToString(node.Post.Author),
-			"content":   node.Post.Content,
-			"timestamp": node.Post.Timestamp,
-			"reply_to":  hexOrEmpty(node.Post.ReplyTo),
-			"repost_of": hexOrEmpty(node.Post.RepostOf),
+			"id":         hex.EncodeToString(node.Post.Id),
+			"author":     hex.EncodeToString(node.Post.Author),
+			"content":    node.Post.Content,
+			"media_cids": mediaCIDsForPost(db, node.Post.Id),
+			"timestamp":  node.Post.Timestamp,
+			"reply_to":   hexOrEmpty(node.Post.ReplyTo),
+			"repost_of":  hexOrEmpty(node.Post.RepostOf),
 		},
 		"reply_count": node.ReplyCount,
 		"like_count":  node.LikeCount,
@@ -197,7 +209,7 @@ func threadNodeToMap(node *social.ThreadNode) map[string]interface{} {
 }
 
 // timelineEntriesToJSON converts timeline entries to JSON-friendly slices.
-func timelineEntriesToJSON(entries []feed.TimelineEntry) []map[string]interface{} {
+func timelineEntriesToJSON(db mediaLookup, entries []feed.TimelineEntry) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(entries))
 	for _, e := range entries {
 		result = append(result, map[string]interface{}{
@@ -205,6 +217,7 @@ func timelineEntriesToJSON(entries []feed.TimelineEntry) []map[string]interface{
 			"author":       hex.EncodeToString(e.Post.Author),
 			"author_name":  e.AuthorName,
 			"content":      e.Post.Content,
+			"media_cids":   mediaCIDsForPost(db, e.Post.CID),
 			"reply_to":     hexOrEmpty(e.Post.ReplyTo),
 			"repost_of":    hexOrEmpty(e.Post.RepostOf),
 			"timestamp":    e.Post.Timestamp,
@@ -214,6 +227,29 @@ func timelineEntriesToJSON(entries []feed.TimelineEntry) []map[string]interface{
 			"is_liked":     e.IsLiked,
 			"is_reposted":  e.IsReposted,
 		})
+	}
+	return result
+}
+
+type mediaLookup interface {
+	GetPostMedia(postCID []byte) ([]storage.PostMediaRow, error)
+}
+
+func (h *Handler) mediaCIDsForPost(postCID []byte) []string {
+	return mediaCIDsForPost(h.db, postCID)
+}
+
+func mediaCIDsForPost(db mediaLookup, postCID []byte) []string {
+	if db == nil || len(postCID) == 0 {
+		return nil
+	}
+	items, err := db.GetPostMedia(postCID)
+	if err != nil {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		result = append(result, hex.EncodeToString(item.CID))
 	}
 	return result
 }

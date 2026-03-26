@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -281,21 +282,38 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 
 // ExportIdentity handles GET /api/identity/export.
 func (h *Handler) ExportIdentity(w http.ResponseWriter, r *http.Request) {
-	kp := h.currentKeyPair()
-	if kp == nil {
-		respondError(w, http.StatusNotFound, "no active identity")
+	if h.identity == nil {
+		respondError(w, http.StatusInternalServerError, "identity system not initialized")
 		return
 	}
 
-	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
-	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
+	enc, pubkeyHex, err := h.identity.ExportActiveIdentity()
+	if err != nil {
+		respondError(w, http.StatusNotFound, "no active identity")
+		return
+	}
+	address, _ := identity.PubKeyToAddress(mustDecodeHexString(pubkeyHex))
+	body, err := json.MarshalIndent(map[string]interface{}{
+		"pubkey":        pubkeyHex,
+		"address":       address,
+		"encrypted_key": enc,
+	}, "", "  ")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to export identity")
+		return
+	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"pubkey":  pubkeyHex,
-		"address": address,
-	})
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+pubkeyHex+`.xleaks-key.json"`)
+	w.WriteHeader(http.StatusOK)
+	w.Write(body)
 }
 
 func nowMillis() int64 {
 	return time.Now().UnixMilli()
+}
+
+func mustDecodeHexString(s string) []byte {
+	b, _ := hex.DecodeString(s)
+	return b
 }

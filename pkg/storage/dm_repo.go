@@ -22,7 +22,7 @@ type DMRow struct {
 // message metadata, used for listing conversations.
 type ConversationSummary struct {
 	PeerPubkey       []byte
-	LastTimestamp     int64
+	LastTimestamp    int64
 	LastAuthor       []byte
 	EncryptedContent []byte
 	Nonce            []byte
@@ -93,16 +93,39 @@ func (db *DB) GetConversation(pubkey1, pubkey2 []byte, before int64, limit int) 
 // It uses a single aggregation query to avoid N+1 round-trips.
 func (db *DB) GetConversations(ownPubkey []byte) ([]ConversationSummary, error) {
 	rows, err := db.Query(
-		`SELECT
-		     CASE WHEN author < recipient THEN author ELSE recipient END AS peer_a,
-		     CASE WHEN author > recipient THEN author ELSE recipient END AS peer_b,
-		     MAX(timestamp) AS last_ts,
-		     SUM(CASE WHEN read = 0 AND recipient = ? THEN 1 ELSE 0 END) AS unread
-		 FROM direct_messages
-		 WHERE author = ? OR recipient = ?
-		 GROUP BY peer_a, peer_b
-		 ORDER BY last_ts DESC`,
-		ownPubkey, ownPubkey, ownPubkey,
+		`WITH convo_messages AS (
+		     SELECT
+		         CASE WHEN author < recipient THEN author ELSE recipient END AS peer_a,
+		         CASE WHEN author > recipient THEN author ELSE recipient END AS peer_b,
+		         author,
+		         recipient,
+		         encrypted_content,
+		         nonce,
+		         timestamp,
+		         read,
+		         ROW_NUMBER() OVER (
+		             PARTITION BY CASE WHEN author < recipient THEN author ELSE recipient END,
+		                          CASE WHEN author > recipient THEN author ELSE recipient END
+		             ORDER BY timestamp DESC
+		         ) AS rn
+		     FROM direct_messages
+		     WHERE author = ? OR recipient = ?
+		 ),
+		 unread AS (
+		     SELECT
+		         CASE WHEN author < recipient THEN author ELSE recipient END AS peer_a,
+		         CASE WHEN author > recipient THEN author ELSE recipient END AS peer_b,
+		         SUM(CASE WHEN read = 0 AND recipient = ? THEN 1 ELSE 0 END) AS unread
+		     FROM direct_messages
+		     WHERE author = ? OR recipient = ?
+		     GROUP BY peer_a, peer_b
+		 )
+		 SELECT cm.peer_a, cm.peer_b, cm.timestamp, cm.author, cm.encrypted_content, cm.nonce, COALESCE(u.unread, 0)
+		 FROM convo_messages cm
+		 LEFT JOIN unread u ON u.peer_a = cm.peer_a AND u.peer_b = cm.peer_b
+		 WHERE cm.rn = 1
+		 ORDER BY cm.timestamp DESC`,
+		ownPubkey, ownPubkey, ownPubkey, ownPubkey, ownPubkey,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get conversations: %w", err)
@@ -113,7 +136,7 @@ func (db *DB) GetConversations(ownPubkey []byte) ([]ConversationSummary, error) 
 	for rows.Next() {
 		var peerA, peerB []byte
 		var cs ConversationSummary
-		if err := rows.Scan(&peerA, &peerB, &cs.LastTimestamp, &cs.UnreadCount); err != nil {
+		if err := rows.Scan(&peerA, &peerB, &cs.LastTimestamp, &cs.LastAuthor, &cs.EncryptedContent, &cs.Nonce, &cs.UnreadCount); err != nil {
 			return nil, fmt.Errorf("scan conversation summary: %w", err)
 		}
 
@@ -128,7 +151,6 @@ func (db *DB) GetConversations(ownPubkey []byte) ([]ConversationSummary, error) 
 	}
 	return summaries, rows.Err()
 }
-
 
 // MarkDMRead marks a direct message as read by its CID.
 func (db *DB) MarkDMRead(cid []byte) error {

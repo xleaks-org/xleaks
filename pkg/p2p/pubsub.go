@@ -70,6 +70,18 @@ func (h *Host) Subscribe(topic string, handler MessageHandler) error {
 	return nil
 }
 
+// EnsureSubscribed joins the given topic if needed and starts the read loop.
+// It is safe to call repeatedly for the same topic.
+func (h *Host) EnsureSubscribed(topic string, handler MessageHandler) error {
+	h.mu.RLock()
+	_, exists := h.topics[topic]
+	h.mu.RUnlock()
+	if exists {
+		return nil
+	}
+	return h.Subscribe(topic, handler)
+}
+
 // FilteredMessageHandler is a callback invoked when a message passes rate
 // limiting and replay protection checks. It receives the author's public key
 // hex and the message type in addition to the raw data.

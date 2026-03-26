@@ -20,6 +20,8 @@ type mockStorage struct {
 	reactions   map[string]bool
 	follows     []followRecord
 	dms         []dmRecord
+	postMedia   map[string][]string
+	media       map[string]bool
 	profiles    map[string]profileRecord
 	insertErr   error
 	profilesMap map[string]profileRecord
@@ -44,6 +46,8 @@ func newMockStorage() *mockStorage {
 	return &mockStorage{
 		posts:       make(map[string]bool),
 		reactions:   make(map[string]bool),
+		postMedia:   make(map[string][]string),
+		media:       make(map[string]bool),
 		profiles:    make(map[string]profileRecord),
 		profilesMap: make(map[string]profileRecord),
 	}
@@ -54,6 +58,16 @@ func (m *mockStorage) InsertPost(cid, author []byte, content string, replyTo, re
 		return m.insertErr
 	}
 	m.posts[string(cid)] = true
+	return nil
+}
+
+func (m *mockStorage) InsertPostMedia(postCID, mediaCID []byte, position int) error {
+	m.postMedia[string(postCID)] = append(m.postMedia[string(postCID)], string(mediaCID))
+	return nil
+}
+
+func (m *mockStorage) InsertMediaObject(cid, author []byte, mimeType string, size uint64, chunkCount uint32, width, height, duration uint32, thumbnailCID []byte, timestamp int64) error {
+	m.media[string(cid)] = true
 	return nil
 }
 
@@ -118,8 +132,8 @@ func (m *mockCAS) Has(cid []byte) bool {
 type mockNotifier struct {
 	likes   []notifRecord
 	replies []notifRecord
-	follows [][]byte
-	dmNotif [][]byte
+	follows []notifRecord
+	dmNotif []notifRecord
 }
 
 type notifRecord struct {
@@ -136,13 +150,13 @@ func (m *mockNotifier) NotifyReply(actor, targetCID, replyCID []byte) error {
 	return nil
 }
 
-func (m *mockNotifier) NotifyFollow(actor []byte) error {
-	m.follows = append(m.follows, actor)
+func (m *mockNotifier) NotifyFollow(actor, target []byte) error {
+	m.follows = append(m.follows, notifRecord{Actor: actor, Target: target})
 	return nil
 }
 
-func (m *mockNotifier) NotifyDM(actor []byte) error {
-	m.dmNotif = append(m.dmNotif, actor)
+func (m *mockNotifier) NotifyDM(actor, recipient []byte) error {
+	m.dmNotif = append(m.dmNotif, notifRecord{Actor: actor, Target: recipient})
 	return nil
 }
 

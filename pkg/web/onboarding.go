@@ -219,6 +219,10 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 
 // handleLogout destroys the session and redirects to the landing page.
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if h.identity != nil {
+		h.identity.Lock()
+		h.notifyIdentityChange()
+	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		h.sessions.Destroy(cookie.Value)
 	}

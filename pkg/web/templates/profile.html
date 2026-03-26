@@ -12,13 +12,21 @@
 <!-- Profile Header -->
 <div class="border-b border-gray-800">
     <!-- Banner -->
-    <div class="h-24 sm:h-32 bg-gradient-to-r from-blue-900 via-gray-900 to-gray-950"></div>
+    <div class="h-24 sm:h-32 bg-gradient-to-r from-blue-900 via-gray-900 to-gray-950 overflow-hidden">
+        {{if .ProfileUser.BannerURL}}
+        <img src="{{.ProfileUser.BannerURL}}" alt="{{.ProfileUser.DisplayName}} banner" class="h-full w-full object-cover">
+        {{end}}
+    </div>
     <!-- Avatar & Info -->
     <div class="px-4 pb-4">
         <div class="flex justify-between items-end -mt-10 mb-3">
+            {{if .ProfileUser.AvatarURL}}
+            <img src="{{.ProfileUser.AvatarURL}}" alt="{{.ProfileUser.DisplayName}}" class="w-20 h-20 rounded-full border-4 border-[#0a0a0a] object-cover bg-gray-900">
+            {{else}}
             <div class="w-20 h-20 rounded-full bg-gradient-to-br from-blue-700 to-blue-900 border-4 border-[#0a0a0a] flex items-center justify-center text-2xl font-bold">
                 {{.ProfileUser.Initial}}
             </div>
+            {{end}}
             {{if .IsOwnProfile}}
             <a href="/settings" class="border border-gray-600 hover:border-gray-400 text-white font-bold px-4 py-2 rounded-full text-sm transition-colors">Edit Profile</a>
             {{else}}
@@ -38,10 +46,15 @@
         </span></h2>
         <div class="flex items-center gap-2 mb-2">
             <p class="text-gray-500 font-mono text-xs">{{.ProfileUser.ShortPubkey}}</p>
-            <button onclick="navigator.clipboard.writeText('{{.ProfileUser.ShortPubkey}}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)" class="text-xs text-blue-500 hover:text-blue-400 transition-colors">Copy</button>
+            <button onclick="navigator.clipboard.writeText('{{.ProfileUser.Pubkey}}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)" class="text-xs text-blue-500 hover:text-blue-400 transition-colors">Copy</button>
         </div>
         {{if .ProfileUser.Bio}}
         <p class="text-sm mb-2">{{.ProfileUser.Bio}}</p>
+        {{end}}
+        {{if .ProfileUser.Website}}
+        <p class="text-sm mb-2">
+            <a href="{{.ProfileUser.Website}}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 hover:underline">{{.ProfileUser.Website}}</a>
+        </p>
         {{end}}
         <div class="flex flex-wrap gap-3 sm:gap-4 text-sm mt-2">
             <span><strong>{{.FollowingCount}}</strong> <span class="text-gray-400">Following</span></span>

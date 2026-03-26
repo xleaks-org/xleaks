@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"log"
@@ -36,6 +37,7 @@ type Handler struct {
 	nodeStatus       NodeStatusFunc
 	onIdentityChange IdentityChangeFunc
 	indexerClient    *indexer.IndexerClient
+	ensureTopic      func(string) error
 }
 
 // SetRepost sets the repost callback.
@@ -71,6 +73,11 @@ func (h *Handler) SetIndexerClient(ic *indexer.IndexerClient) {
 	h.indexerClient = ic
 }
 
+// SetTopicSubscriber sets the best-effort runtime topic subscription callback.
+func (h *Handler) SetTopicSubscriber(fn func(string) error) {
+	h.ensureTopic = fn
+}
+
 // SetOnIdentityChange sets the callback invoked when the user creates, imports, or unlocks an identity.
 func (h *Handler) SetOnIdentityChange(fn IdentityChangeFunc) {
 	h.onIdentityChange = fn
@@ -78,10 +85,7 @@ func (h *Handler) SetOnIdentityChange(fn IdentityChangeFunc) {
 
 func (h *Handler) notifyIdentityChange() {
 	if h.onIdentityChange != nil {
-		kp := h.identity.Get()
-		if kp != nil {
-			h.onIdentityChange(kp)
-		}
+		h.onIdentityChange(h.identity.Get())
 	}
 }
 
@@ -190,6 +194,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/unlock", h.handleUnlock)
 	r.Get("/logout", h.handleLogout)
 	r.Get("/settings", h.settingsPage)
+	r.Post("/settings/switch", h.handleSwitchIdentity)
 	r.Get("/post/{id}", h.postPage)
 	r.Get("/user/{pubkey}", h.profilePage)
 	r.Get("/notifications", h.notificationsPage)
@@ -225,8 +230,18 @@ func (h *Handler) currentUser(r *http.Request) *UserInfo {
 		address, _ := identity.PubKeyToAddress(sess.KeyPair.PublicKeyBytes())
 
 		displayName := identity.DefaultDisplayName
-		if profile, err := h.db.GetProfile(sess.KeyPair.PublicKeyBytes()); err == nil && profile != nil && profile.DisplayName != "" {
-			displayName = profile.DisplayName
+		bio := ""
+		website := ""
+		avatarURL := ""
+		if profile, err := h.db.GetProfile(sess.KeyPair.PublicKeyBytes()); err == nil && profile != nil {
+			if profile.DisplayName != "" {
+				displayName = profile.DisplayName
+			}
+			bio = profile.Bio
+			website = profile.Website
+			if len(profile.AvatarCID) > 0 {
+				avatarURL = "/api/media/" + hex.EncodeToString(profile.AvatarCID)
+			}
 		}
 
 		short := pubkeyHex
@@ -239,6 +254,9 @@ func (h *Handler) currentUser(r *http.Request) *UserInfo {
 			Address:     address,
 			Pubkey:      pubkeyHex,
 			ShortPubkey: short,
+			Bio:         bio,
+			Website:     website,
+			AvatarURL:   avatarURL,
 		}
 	}
 

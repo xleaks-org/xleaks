@@ -1,6 +1,7 @@
 package social
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
@@ -33,7 +34,14 @@ func NewNotificationService(db *storage.DB) *NotificationService {
 
 // NotifyLike creates a notification for a like reaction.
 func (s *NotificationService) NotifyLike(actor, targetCID, reactionCID []byte) error {
-	if err := s.storage.InsertNotification("like", actor, targetCID, reactionCID, time.Now().UnixMilli()); err != nil {
+	owner, err := s.ownerForPost(targetCID)
+	if err != nil {
+		return fmt.Errorf("resolve like owner: %w", err)
+	}
+	if len(owner) == 0 || bytes.Equal(owner, actor) {
+		return nil
+	}
+	if err := s.storage.InsertNotification(owner, "like", actor, targetCID, reactionCID, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify like: %w", err)
 	}
 	return nil
@@ -41,7 +49,14 @@ func (s *NotificationService) NotifyLike(actor, targetCID, reactionCID []byte) e
 
 // NotifyReply creates a notification for a reply.
 func (s *NotificationService) NotifyReply(actor, targetCID, replyCID []byte) error {
-	if err := s.storage.InsertNotification("reply", actor, targetCID, replyCID, time.Now().UnixMilli()); err != nil {
+	owner, err := s.ownerForPost(targetCID)
+	if err != nil {
+		return fmt.Errorf("resolve reply owner: %w", err)
+	}
+	if len(owner) == 0 || bytes.Equal(owner, actor) {
+		return nil
+	}
+	if err := s.storage.InsertNotification(owner, "reply", actor, targetCID, replyCID, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify reply: %w", err)
 	}
 	return nil
@@ -49,23 +64,36 @@ func (s *NotificationService) NotifyReply(actor, targetCID, replyCID []byte) err
 
 // NotifyRepost creates a notification for a repost.
 func (s *NotificationService) NotifyRepost(actor, targetCID, repostCID []byte) error {
-	if err := s.storage.InsertNotification("repost", actor, targetCID, repostCID, time.Now().UnixMilli()); err != nil {
+	owner, err := s.ownerForPost(targetCID)
+	if err != nil {
+		return fmt.Errorf("resolve repost owner: %w", err)
+	}
+	if len(owner) == 0 || bytes.Equal(owner, actor) {
+		return nil
+	}
+	if err := s.storage.InsertNotification(owner, "repost", actor, targetCID, repostCID, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify repost: %w", err)
 	}
 	return nil
 }
 
 // NotifyFollow creates a notification for a follow event.
-func (s *NotificationService) NotifyFollow(actor []byte) error {
-	if err := s.storage.InsertNotification("follow", actor, nil, nil, time.Now().UnixMilli()); err != nil {
+func (s *NotificationService) NotifyFollow(actor, target []byte) error {
+	if len(target) == 0 || bytes.Equal(actor, target) {
+		return nil
+	}
+	if err := s.storage.InsertNotification(target, "follow", actor, nil, nil, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify follow: %w", err)
 	}
 	return nil
 }
 
 // NotifyDM creates a notification for a direct message.
-func (s *NotificationService) NotifyDM(actor []byte) error {
-	if err := s.storage.InsertNotification("dm", actor, nil, nil, time.Now().UnixMilli()); err != nil {
+func (s *NotificationService) NotifyDM(actor, recipient []byte) error {
+	if len(recipient) == 0 || bytes.Equal(actor, recipient) {
+		return nil
+	}
+	if err := s.storage.InsertNotification(recipient, "dm", actor, nil, nil, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify dm: %w", err)
 	}
 	return nil
@@ -73,8 +101,8 @@ func (s *NotificationService) NotifyDM(actor []byte) error {
 
 // GetNotifications returns enriched notifications with actor profile info.
 // Uses a local profile cache to avoid querying the same actor multiple times.
-func (s *NotificationService) GetNotifications(before int64, limit int) ([]NotificationView, error) {
-	rows, err := s.storage.GetNotifications(before, limit)
+func (s *NotificationService) GetNotifications(ownerPubkey []byte, before int64, limit int) ([]NotificationView, error) {
+	rows, err := s.storage.GetNotifications(ownerPubkey, before, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get notifications: %w", err)
 	}
@@ -109,4 +137,18 @@ func (s *NotificationService) GetNotifications(before int64, limit int) ([]Notif
 	}
 
 	return views, nil
+}
+
+func (s *NotificationService) ownerForPost(targetCID []byte) ([]byte, error) {
+	if len(targetCID) == 0 {
+		return nil, nil
+	}
+	post, err := s.storage.GetPost(targetCID)
+	if err != nil {
+		return nil, err
+	}
+	if post == nil {
+		return nil, nil
+	}
+	return post.Author, nil
 }

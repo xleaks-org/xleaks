@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -41,6 +42,12 @@ func (db *DB) Migrate() error {
 	_, err := db.Exec(Schema)
 	if err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN owner_pubkey BLOB`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("migrate notifications.owner_pubkey: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_owner_unread ON notifications(owner_pubkey, read, timestamp DESC)`); err != nil {
+		return fmt.Errorf("create notifications owner index: %w", err)
 	}
 	return nil
 }

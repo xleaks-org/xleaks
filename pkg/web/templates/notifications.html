@@ -22,6 +22,8 @@
                 <span class="text-gray-400">reposted your post</span>
                 {{else if eq .Type "follow"}}
                 <span class="text-gray-400">followed you</span>
+                {{else if eq .Type "dm"}}
+                <span class="text-gray-400">sent you a direct message</span>
                 {{else}}
                 <span class="text-gray-400">{{.Type}}</span>
                 {{end}}

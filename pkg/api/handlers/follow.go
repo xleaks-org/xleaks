@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/hex"
 	"net/http"
+
+	"github.com/xleaks-org/xleaks/pkg/p2p"
 )
 
 // Follow handles POST /api/follow/{pubkey}.
@@ -20,6 +22,9 @@ func (h *Handler) Follow(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.follows.Follow(r.Context(), pubkey); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if h.ensureTopic != nil {
+		_ = h.ensureTopic(p2p.FollowsTopic(hex.EncodeToString(pubkey)))
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -43,6 +48,9 @@ func (h *Handler) Unfollow(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.follows.Unfollow(r.Context(), pubkey); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if h.ensureTopic != nil {
+		_ = h.ensureTopic(p2p.FollowsTopic(hex.EncodeToString(pubkey)))
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{

@@ -338,12 +338,12 @@ func TestNotificationGeneration(t *testing.T) {
 	}
 
 	// Generate a follow notification.
-	if err := notifSvc.NotifyFollow(otherKP.PublicKeyBytes()); err != nil {
+	if err := notifSvc.NotifyFollow(otherKP.PublicKeyBytes(), env.kp.PublicKeyBytes()); err != nil {
 		t.Fatalf("NotifyFollow: %v", err)
 	}
 
 	// Verify notifications.
-	notifs, err := notifSvc.GetNotifications(0, 10)
+	notifs, err := notifSvc.GetNotifications(env.kp.PublicKeyBytes(), 0, 10)
 	if err != nil {
 		t.Fatalf("GetNotifications: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestNotificationGeneration(t *testing.T) {
 	}
 
 	// Verify unread count.
-	unread, err := env.db.UnreadCount()
+	unread, err := env.db.UnreadCount(env.kp.PublicKeyBytes())
 	if err != nil {
 		t.Fatalf("UnreadCount: %v", err)
 	}
@@ -376,10 +376,10 @@ func TestNotificationGeneration(t *testing.T) {
 	}
 
 	// Mark all read and verify.
-	if err := env.db.MarkAllRead(); err != nil {
+	if err := env.db.MarkAllRead(env.kp.PublicKeyBytes()); err != nil {
 		t.Fatalf("MarkAllRead: %v", err)
 	}
-	unread, _ = env.db.UnreadCount()
+	unread, _ = env.db.UnreadCount(env.kp.PublicKeyBytes())
 	if unread != 0 {
 		t.Errorf("unread after MarkAllRead = %d, want 0", unread)
 	}

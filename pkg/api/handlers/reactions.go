@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/hex"
 	"net/http"
+
+	"github.com/xleaks-org/xleaks/pkg/p2p"
 )
 
 // createReactionRequest is the JSON body for POST /api/reactions.
@@ -42,6 +44,9 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if h.ensureTopic != nil {
+		_ = h.ensureTopic(p2p.ReactionsTopic(hex.EncodeToString(targetCID)))
 	}
 
 	reactionData := map[string]interface{}{

@@ -16,15 +16,36 @@
 {{end}}
 <article class="px-4 py-4 border-b border-gray-800">
     <div class="flex gap-3 mb-3">
-        <a href="/user/{{.Post.ShortPubkey}}" class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-800 to-blue-900 flex-shrink-0 flex items-center justify-center text-base font-bold hover:opacity-80">
+        <a href="/user/{{.Post.AuthorPubkey}}" class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-800 to-blue-900 flex-shrink-0 flex items-center justify-center text-base font-bold hover:opacity-80">
             {{.Post.AuthorInitial}}
         </a>
         <div class="flex-1 min-w-0">
-            <a href="/user/{{.Post.ShortPubkey}}" class="font-semibold hover:underline">{{.Post.AuthorName}}</a>
+            <a href="/user/{{.Post.AuthorPubkey}}" class="font-semibold hover:underline">{{.Post.AuthorName}}</a>
             <p class="text-gray-500 font-mono text-xs">{{.Post.ShortPubkey}}</p>
         </div>
     </div>
     <p class="text-lg whitespace-pre-wrap break-words mb-3">{{renderContent .Post.Content}}</p>
+    {{if .Post.Media}}
+    <div class="grid gap-3 mb-4">
+        {{range .Post.Media}}
+        {{if .IsImage}}
+        <img src="{{.URL}}" alt="Attachment" class="w-full rounded-2xl border border-gray-800 object-cover max-h-[32rem]">
+        {{else if .IsVideo}}
+        <video controls preload="metadata" {{if .ThumbnailURL}}poster="{{.ThumbnailURL}}"{{end}} class="w-full rounded-2xl border border-gray-800 bg-black max-h-[32rem]">
+            <source src="{{.URL}}" type="{{.MimeType}}">
+        </video>
+        {{else if .IsAudio}}
+        <audio controls preload="metadata" class="w-full rounded-2xl border border-gray-800 bg-gray-900 p-3">
+            <source src="{{.URL}}" type="{{.MimeType}}">
+        </audio>
+        {{else}}
+        <a href="{{.URL}}" target="_blank" class="inline-flex items-center gap-2 rounded-xl border border-gray-800 px-3 py-2 text-sm text-blue-400 hover:text-blue-300 hover:border-gray-700">
+            Download attachment
+        </a>
+        {{end}}
+        {{end}}
+    </div>
+    {{end}}
     <p class="text-gray-500 text-sm mb-3">{{.Post.RelativeTime}}</p>
     <!-- Action bar with interactive buttons -->
     <div class="flex gap-8 py-2 border-t border-gray-800 text-gray-500 text-sm">

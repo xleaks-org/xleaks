@@ -33,6 +33,7 @@ func setupWebHandler(
 	dataDir string,
 	idx *indexer.Indexer,
 	identitySync func(*identity.KeyPair),
+	ensureTopic func(string) error,
 ) chi.Router {
 	sessionMgr := web.NewSessionManager()
 	webHandler, err := web.NewHandler(db, idHolder, svc.Timeline, sessionMgr)
@@ -42,6 +43,7 @@ func setupWebHandler(
 	}
 
 	webHandler.SetOnIdentityChange(identitySync)
+	webHandler.SetTopicSubscriber(ensureTopic)
 
 	webHandler.SetCreatePost(func(ctx context.Context, text string, replyTo string) (string, error) {
 		var replyToCID []byte
@@ -154,6 +156,7 @@ func buildAPIDeps(
 	cfgPath string,
 	webRoutes chi.Router,
 	identitySync func(*identity.KeyPair),
+	ensureTopic func(string) error,
 ) *api.HandlerDeps {
 	deps := &api.HandlerDeps{
 		DB:             db,
@@ -173,6 +176,7 @@ func buildAPIDeps(
 		ConfigPath:     cfgPath,
 		IndexerClient:  svc.Indexer,
 		IdentityChange: identitySync,
+		EnsureTopic:    ensureTopic,
 		WebHandler:     webRoutes,
 	}
 	return deps

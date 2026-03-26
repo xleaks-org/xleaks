@@ -20,11 +20,27 @@ type MediaObjectRow struct {
 	FullyFetched bool
 }
 
+// PostMediaRow represents a media attachment associated with a post.
+type PostMediaRow struct {
+	MediaObjectRow
+	Position int
+}
+
 // InsertMediaObject inserts a new media object metadata record.
 func (db *DB) InsertMediaObject(cid, author []byte, mimeType string, size uint64, chunkCount uint32, width, height, duration uint32, thumbnailCID []byte, timestamp int64) error {
 	_, err := db.Exec(
-		`INSERT OR IGNORE INTO media_objects (cid, author, mime_type, size, chunk_count, width, height, duration, thumbnail_cid, timestamp)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO media_objects (cid, author, mime_type, size, chunk_count, width, height, duration, thumbnail_cid, timestamp)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(cid) DO UPDATE SET
+		     author = excluded.author,
+		     mime_type = excluded.mime_type,
+		     size = excluded.size,
+		     chunk_count = excluded.chunk_count,
+		     width = excluded.width,
+		     height = excluded.height,
+		     duration = excluded.duration,
+		     thumbnail_cid = excluded.thumbnail_cid,
+		     timestamp = excluded.timestamp`,
 		cid, author, mimeType, size, chunkCount, width, height, duration, nilIfEmpty(thumbnailCID), timestamp,
 	)
 	if err != nil {
@@ -84,4 +100,55 @@ func (db *DB) InsertPostMediaTx(tx *sql.Tx, postCID, mediaCID []byte, position i
 		return fmt.Errorf("insert post media tx: %w", err)
 	}
 	return nil
+}
+
+// GetPostMedia returns media attachments linked to a post ordered by position.
+func (db *DB) GetPostMedia(postCID []byte) ([]PostMediaRow, error) {
+	rows, err := db.Query(
+		`SELECT pm.media_cid, pm.position,
+		        COALESCE(mo.author, x''),
+		        COALESCE(mo.mime_type, ''),
+		        COALESCE(mo.size, 0),
+		        COALESCE(mo.chunk_count, 0),
+		        COALESCE(mo.width, 0),
+		        COALESCE(mo.height, 0),
+		        COALESCE(mo.duration, 0),
+		        mo.thumbnail_cid,
+		        COALESCE(mo.timestamp, 0),
+		        COALESCE(mo.fully_fetched, 0)
+		 FROM post_media pm
+		 LEFT JOIN media_objects mo ON mo.cid = pm.media_cid
+		 WHERE pm.post_cid = ?
+		 ORDER BY pm.position ASC`,
+		postCID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get post media: %w", err)
+	}
+	defer rows.Close()
+
+	var items []PostMediaRow
+	for rows.Next() {
+		var row PostMediaRow
+		var fetchedInt int
+		if err := rows.Scan(
+			&row.CID,
+			&row.Position,
+			&row.Author,
+			&row.MimeType,
+			&row.Size,
+			&row.ChunkCount,
+			&row.Width,
+			&row.Height,
+			&row.Duration,
+			&row.ThumbnailCID,
+			&row.Timestamp,
+			&fetchedInt,
+		); err != nil {
+			return nil, fmt.Errorf("scan post media row: %w", err)
+		}
+		row.FullyFetched = fetchedInt == 1
+		items = append(items, row)
+	}
+	return items, rows.Err()
 }

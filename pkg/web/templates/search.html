@@ -4,7 +4,7 @@
 </header>
 
 <div class="p-4">
-    <form hx-get="/web/search-results" hx-target="#search-results" hx-swap="innerHTML" hx-trigger="submit" class="mb-4">
+    <form method="GET" action="/search" class="mb-4">
         <div class="relative">
             <svg class="w-5 h-5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
             <input type="text" name="q" placeholder="Search posts, users, or hashtags..."
@@ -16,24 +16,54 @@
 
 <div id="search-results">
     {{if .Query}}
-    {{if .Results}}
-    {{range .Results}}
-    <article class="border-b border-gray-800 px-4 py-3 hover:bg-gray-900/50 transition-colors">
-        <div class="flex gap-3">
-            <div class="w-10 h-10 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center text-sm font-bold">
-                {{.AuthorInitial}}
-            </div>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 text-sm">
-                    <span class="font-semibold">{{.AuthorName}}</span>
-                    <span class="text-gray-500 font-mono text-xs">{{.ShortPubkey}}</span>
-                    <span class="text-gray-500">·</span>
-                    <span class="text-gray-500">{{.RelativeTime}}</span>
+    {{if .HasResults}}
+    {{if .UserResults}}
+    <section class="border-b border-gray-800">
+        <div class="px-4 py-3 text-xs uppercase tracking-[0.2em] text-gray-500">Users</div>
+        {{range .UserResults}}
+        <a href="/user/{{.Pubkey}}" class="block border-t border-gray-800 px-4 py-3 hover:bg-gray-900/50 transition-colors">
+            <div class="flex gap-3">
+                <div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold">{{.Initial}}</div>
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="font-semibold">{{.DisplayName}}</span>
+                        <span class="text-xs font-mono text-gray-500">{{.ShortPubkey}}</span>
+                    </div>
+                    {{if .Bio}}
+                    <p class="mt-1 text-sm text-gray-400">{{.Bio}}</p>
+                    {{end}}
+                    {{if .Website}}
+                    <p class="mt-1 text-xs text-blue-400">{{.Website}}</p>
+                    {{end}}
                 </div>
-                <p class="mt-1 whitespace-pre-wrap break-words">{{.Content}}</p>
             </div>
-        </div>
-    </article>
+        </a>
+        {{end}}
+    </section>
+    {{end}}
+
+    {{if .PostResults}}
+    <section>
+        <div class="px-4 py-3 text-xs uppercase tracking-[0.2em] text-gray-500">Posts</div>
+        {{range .PostResults}}
+        <article class="border-b border-gray-800 px-4 py-3 hover:bg-gray-900/50 transition-colors">
+            <div class="flex gap-3">
+                <div class="w-10 h-10 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center text-sm font-bold">
+                    {{.AuthorInitial}}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 text-sm">
+                        <a href="/user/{{.AuthorPubkey}}" class="font-semibold hover:underline">{{.AuthorName}}</a>
+                        <span class="text-gray-500 font-mono text-xs">{{.ShortPubkey}}</span>
+                        <span class="text-gray-500">·</span>
+                        <span class="text-gray-500">{{.RelativeTime}}</span>
+                    </div>
+                    <a href="/post/{{.ID}}" class="block mt-1 whitespace-pre-wrap break-words hover:text-blue-200 transition-colors">{{.Content}}</a>
+                </div>
+            </div>
+        </article>
+        {{end}}
+    </section>
     {{end}}
     {{else}}
     <div class="text-center py-12 text-gray-400">

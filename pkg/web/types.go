@@ -16,6 +16,9 @@ type UserInfo struct {
 	Address     string
 	Pubkey      string
 	ShortPubkey string
+	Bio         string
+	Website     string
+	AvatarURL   string
 }
 
 // PostView is a template-friendly representation of a post.
@@ -23,12 +26,14 @@ type PostView struct {
 	ID            string
 	AuthorName    string
 	AuthorInitial string
+	AuthorPubkey  string
 	ShortPubkey   string
 	Content       string
 	RelativeTime  string
 	LikeCount     int
 	ReplyCount    int
 	RepostCount   int
+	Media         []MediaView
 
 	IsLiked    bool // whether the current user has liked this post
 	IsReposted bool // whether the current user has reposted this post
@@ -37,6 +42,17 @@ type PostView struct {
 	ReplyToAuthor string // display name of parent post author
 	RepostOf      string // hex CID of original post (empty if original)
 	RepostAuthor  string // display name of original post author
+}
+
+// MediaView is a template-friendly representation of a post attachment.
+type MediaView struct {
+	CID          string
+	URL          string
+	ThumbnailURL string
+	MimeType     string
+	IsImage      bool
+	IsVideo      bool
+	IsAudio      bool
 }
 
 // NotificationView is a template-friendly representation of a notification.
@@ -65,6 +81,28 @@ type ProfileView struct {
 	ShortPubkey string
 	Initial     string
 	Bio         string
+	Website     string
+	AvatarURL   string
+	BannerURL   string
+}
+
+// IdentityView is a template-friendly representation of a local identity.
+type IdentityView struct {
+	Pubkey      string
+	ShortPubkey string
+	Address     string
+	DisplayName string
+	IsActive    bool
+}
+
+// SearchUserView is a template-friendly user search result.
+type SearchUserView struct {
+	DisplayName string
+	Pubkey      string
+	ShortPubkey string
+	Initial     string
+	Bio         string
+	Website     string
 }
 
 // MessageView is a template-friendly representation of a single DM message.

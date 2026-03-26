@@ -17,12 +17,33 @@
             </div>
             {{end}}
             <div class="flex items-center gap-2 text-sm">
-                <a href="/user/{{.ShortPubkey}}" class="font-semibold hover:underline" onclick="event.stopPropagation()">{{.AuthorName}}</a>
+                <a href="/user/{{.AuthorPubkey}}" class="font-semibold hover:underline" onclick="event.stopPropagation()">{{.AuthorName}}</a>
                 <span class="text-gray-500 font-mono text-xs">{{.ShortPubkey}}</span>
                 <span class="text-gray-500">·</span>
                 <span class="text-gray-500">{{.RelativeTime}}</span>
             </div>
             <p class="mt-1 whitespace-pre-wrap break-words leading-relaxed">{{renderContent .Content}}</p>
+            {{if .Media}}
+            <div class="mt-3 grid gap-2">
+                {{range .Media}}
+                {{if .IsImage}}
+                <img src="{{.URL}}" alt="Attachment" class="w-full rounded-2xl border border-gray-800 object-cover max-h-[28rem]">
+                {{else if .IsVideo}}
+                <video controls preload="metadata" {{if .ThumbnailURL}}poster="{{.ThumbnailURL}}"{{end}} class="w-full rounded-2xl border border-gray-800 bg-black max-h-[28rem]">
+                    <source src="{{.URL}}" type="{{.MimeType}}">
+                </video>
+                {{else if .IsAudio}}
+                <audio controls preload="metadata" class="w-full rounded-2xl border border-gray-800 bg-gray-900 p-3">
+                    <source src="{{.URL}}" type="{{.MimeType}}">
+                </audio>
+                {{else}}
+                <a href="{{.URL}}" target="_blank" onclick="event.stopPropagation()" class="inline-flex items-center gap-2 rounded-xl border border-gray-800 px-3 py-2 text-sm text-blue-400 hover:text-blue-300 hover:border-gray-700">
+                    Download attachment
+                </a>
+                {{end}}
+                {{end}}
+            </div>
+            {{end}}
             <div class="flex gap-6 mt-3 text-gray-500 text-sm">
                 <!-- Reply: toggles inline reply area -->
                 <button onclick="event.stopPropagation();var r=this.closest('article').querySelector('.reply-area');r.classList.toggle('hidden');if(!r.classList.contains('hidden'))r.querySelector('textarea').focus()" class="py-1.5 px-1 rounded-lg hover:text-blue-400 flex items-center gap-1 transition-colors">

@@ -130,6 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_dm_recipient ON direct_messages(recipient, timest
 -- Notifications
 CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_pubkey BLOB,
     type TEXT NOT NULL,
     actor BLOB NOT NULL,
     target_cid BLOB,
@@ -139,6 +140,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_owner_unread ON notifications(owner_pubkey, read, timestamp DESC);
 
 -- Hashtags for local search/trending
 CREATE TABLE IF NOT EXISTS post_tags (
