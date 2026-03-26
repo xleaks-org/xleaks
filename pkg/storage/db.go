@@ -43,6 +43,12 @@ func (db *DB) Migrate() error {
 	if err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := db.migrateSubscriptionsTable(); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_subscriptions_owner ON subscriptions(owner_pubkey, followed_at DESC)`); err != nil {
+		return fmt.Errorf("create subscriptions owner index: %w", err)
+	}
 	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN owner_pubkey BLOB`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 		return fmt.Errorf("migrate notifications.owner_pubkey: %w", err)
 	}
@@ -50,6 +56,86 @@ func (db *DB) Migrate() error {
 		return fmt.Errorf("create notifications owner index: %w", err)
 	}
 	return nil
+}
+
+func (db *DB) migrateSubscriptionsTable() error {
+	if hasOwner, err := db.tableHasColumn("subscriptions", "owner_pubkey"); err != nil {
+		return fmt.Errorf("inspect subscriptions schema: %w", err)
+	} else if hasOwner {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin subscriptions migration: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		CREATE TABLE subscriptions_new (
+			owner_pubkey BLOB NOT NULL,
+			pubkey BLOB NOT NULL,
+			followed_at INTEGER NOT NULL,
+			sync_completed INTEGER DEFAULT 0,
+			PRIMARY KEY (owner_pubkey, pubkey)
+		)
+	`); err != nil {
+		return fmt.Errorf("create subscriptions_new: %w", err)
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO subscriptions_new (owner_pubkey, pubkey, followed_at, sync_completed)
+		SELECT
+			COALESCE(
+				(SELECT pubkey FROM identities WHERE is_active = 1 LIMIT 1),
+				(SELECT pubkey FROM identities ORDER BY created_at ASC LIMIT 1),
+				x''
+			),
+			pubkey,
+			followed_at,
+			sync_completed
+		FROM subscriptions
+	`); err != nil {
+		return fmt.Errorf("copy subscriptions: %w", err)
+	}
+
+	if _, err := tx.Exec(`DROP TABLE subscriptions`); err != nil {
+		return fmt.Errorf("drop old subscriptions: %w", err)
+	}
+	if _, err := tx.Exec(`ALTER TABLE subscriptions_new RENAME TO subscriptions`); err != nil {
+		return fmt.Errorf("rename subscriptions_new: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit subscriptions migration: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) tableHasColumn(tableName, columnName string) (bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + tableName + `)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
+			return false, err
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // WithTransaction executes fn within a database transaction. If fn returns

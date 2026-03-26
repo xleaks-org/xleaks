@@ -104,11 +104,11 @@ func (s *FollowService) changeFollowState(ctx context.Context, kp *identity.KeyP
 	timestamp := int64(event.Timestamp)
 	switch action {
 	case "follow":
-		if err := s.feed.Follow(ctx, target, timestamp); err != nil {
+		if err := s.feed.Follow(ctx, kp.PublicKeyBytes(), target, timestamp); err != nil {
 			return nil, err
 		}
 	case "unfollow":
-		if err := s.feed.Unfollow(target); err != nil {
+		if err := s.feed.Unfollow(kp.PublicKeyBytes(), target); err != nil {
 			return nil, err
 		}
 	default:

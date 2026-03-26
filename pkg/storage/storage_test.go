@@ -36,6 +36,55 @@ func TestMigrate_Idempotent(t *testing.T) {
 	}
 }
 
+func TestMigrate_LegacySubscriptionsAndNotifications(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "legacy.db")
+	db, err := NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	if _, err := db.Exec(`
+		CREATE TABLE subscriptions (
+			pubkey BLOB NOT NULL PRIMARY KEY,
+			followed_at INTEGER NOT NULL,
+			sync_completed INTEGER DEFAULT 0
+		);
+		CREATE TABLE notifications (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL,
+			actor BLOB NOT NULL,
+			target_cid BLOB,
+			related_cid BLOB,
+			timestamp INTEGER NOT NULL,
+			read INTEGER DEFAULT 0
+		);
+	`); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Migrate legacy schema: %v", err)
+	}
+
+	hasSubOwner, err := db.tableHasColumn("subscriptions", "owner_pubkey")
+	if err != nil {
+		t.Fatalf("tableHasColumn subscriptions.owner_pubkey: %v", err)
+	}
+	if !hasSubOwner {
+		t.Fatal("expected subscriptions.owner_pubkey after migration")
+	}
+
+	hasNotifOwner, err := db.tableHasColumn("notifications", "owner_pubkey")
+	if err != nil {
+		t.Fatalf("tableHasColumn notifications.owner_pubkey: %v", err)
+	}
+	if !hasNotifOwner {
+		t.Fatal("expected notifications.owner_pubkey after migration")
+	}
+}
+
 func TestNewDB_WALMode(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "wal_test.db")
@@ -332,13 +381,14 @@ func TestUpdateReactionCount(t *testing.T) {
 
 func TestAddAndGetSubscriptions(t *testing.T) {
 	db := setupTestDB(t)
+	owner := []byte("sub_owner_1_xxxxxxxxxxxxxxxxxxxxxxx")
 	pubkey := []byte("sub_pubkey_1_xxxxxxxxxxxxxxxxxxxxxx")
-	err := db.AddSubscription(pubkey, 1000)
+	err := db.AddSubscription(owner, pubkey, 1000)
 	if err != nil {
 		t.Fatalf("AddSubscription: %v", err)
 	}
 
-	subs, err := db.GetSubscriptions()
+	subs, err := db.GetSubscriptions(owner)
 	if err != nil {
 		t.Fatalf("GetSubscriptions: %v", err)
 	}
@@ -346,18 +396,19 @@ func TestAddAndGetSubscriptions(t *testing.T) {
 		t.Fatalf("expected 1 subscription, got %d", len(subs))
 	}
 
-	if !db.IsSubscribed(pubkey) {
+	if !db.IsSubscribed(owner, pubkey) {
 		t.Error("IsSubscribed returned false")
 	}
 }
 
 func TestRemoveSubscription(t *testing.T) {
 	db := setupTestDB(t)
+	owner := []byte("sub_rm_owner_1_xxxxxxxxxxxxxxxxx")
 	pubkey := []byte("sub_rm_pubkey_1_xxxxxxxxxxxxxxxxxxx")
-	_ = db.AddSubscription(pubkey, 1000)
-	_ = db.RemoveSubscription(pubkey)
+	_ = db.AddSubscription(owner, pubkey, 1000)
+	_ = db.RemoveSubscription(owner, pubkey)
 
-	if db.IsSubscribed(pubkey) {
+	if db.IsSubscribed(owner, pubkey) {
 		t.Error("IsSubscribed returned true after removal")
 	}
 }

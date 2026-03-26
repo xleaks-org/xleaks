@@ -38,6 +38,7 @@ type Handler struct {
 	onIdentityChange IdentityChangeFunc
 	indexerClient    *indexer.IndexerClient
 	ensureTopic      func(string) error
+	enableWebSocket  bool
 }
 
 // SetRepost sets the repost callback.
@@ -76,6 +77,11 @@ func (h *Handler) SetIndexerClient(ic *indexer.IndexerClient) {
 // SetTopicSubscriber sets the best-effort runtime topic subscription callback.
 func (h *Handler) SetTopicSubscriber(fn func(string) error) {
 	h.ensureTopic = fn
+}
+
+// SetWebSocketEnabled controls whether the web UI should connect to /ws.
+func (h *Handler) SetWebSocketEnabled(enabled bool) {
+	h.enableWebSocket = enabled
 }
 
 // SetOnIdentityChange sets the callback invoked when the user creates, imports, or unlocks an identity.
@@ -267,9 +273,10 @@ func (h *Handler) currentUser(r *http.Request) *UserInfo {
 // pageData returns the base template data for a page.
 func (h *Handler) pageData(r *http.Request, active, title string) map[string]interface{} {
 	return map[string]interface{}{
-		"Active": active,
-		"Title":  title,
-		"User":   h.currentUser(r),
+		"Active":           active,
+		"Title":            title,
+		"User":             h.currentUser(r),
+		"WebSocketEnabled": h.enableWebSocket,
 	}
 }
 

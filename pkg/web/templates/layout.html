@@ -100,10 +100,12 @@
                 <a href="/notifications" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "notifications"}}bg-gray-800 font-semibold{{end}}">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
                     Notifications
+                    <span id="notifications-badge" class="hidden min-w-[1.25rem] rounded-full bg-blue-500 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white"></span>
                 </a>
                 <a href="/messages" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "messages"}}bg-gray-800 font-semibold{{end}}">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                     Messages
+                    <span id="messages-badge" class="hidden min-w-[1.25rem] rounded-full bg-blue-500 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white">New</span>
                 </a>
                 {{if .User}}
                 <a href="/user/{{.User.Pubkey}}" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-900 {{if eq .Active "profile"}}bg-gray-800 font-semibold{{end}}">
@@ -177,8 +179,18 @@
             <span class="text-[10px] mt-0.5">Trending</span>
         </a>
         <a href="/notifications" class="flex-1 flex flex-col items-center justify-center py-2 {{if eq .Active "notifications"}}text-blue-500{{else}}text-gray-400{{end}}">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+            <div class="relative">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                <span id="notifications-badge-mobile" class="hidden absolute -right-2 -top-1 min-w-[1rem] rounded-full bg-blue-500 px-1 py-0.5 text-center text-[9px] font-bold leading-none text-white"></span>
+            </div>
             <span class="text-[10px] mt-0.5">Alerts</span>
+        </a>
+        <a href="/messages" class="flex-1 flex flex-col items-center justify-center py-2 {{if eq .Active "messages"}}text-blue-500{{else}}text-gray-400{{end}}">
+            <div class="relative">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                <span id="messages-badge-mobile" class="hidden absolute -right-2 -top-1 min-w-[1rem] rounded-full bg-blue-500 px-1 py-0.5 text-center text-[9px] font-bold leading-none text-white">New</span>
+            </div>
+            <span class="text-[10px] mt-0.5">Messages</span>
         </a>
         <a href="/settings" class="flex-1 flex flex-col items-center justify-center py-2 {{if eq .Active "settings"}}text-blue-500{{else}}text-gray-400{{end}}">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
@@ -186,19 +198,182 @@
         </a>
     </nav>
 
-    <!-- WebSocket for live updates -->
+    {{if .WebSocketEnabled}}
     <script>
     (function() {
+        var currentUser = '{{if .User}}{{.User.Pubkey}}{{end}}';
+        var notificationKeys = {
+            desktop: document.getElementById('notifications-badge'),
+            mobile: document.getElementById('notifications-badge-mobile')
+        };
+        var messagesBadges = [
+            document.getElementById('messages-badge'),
+            document.getElementById('messages-badge-mobile')
+        ];
+
+        function setNotificationBadge(count) {
+            Object.keys(notificationKeys).forEach(function(key) {
+                var el = notificationKeys[key];
+                if (!el) {
+                    return;
+                }
+                if (count > 0) {
+                    el.classList.remove('hidden');
+                    el.textContent = count > 99 ? '99+' : String(count);
+                } else {
+                    el.classList.add('hidden');
+                    el.textContent = '';
+                }
+            });
+            try {
+                localStorage.setItem('xleaksNotificationsUnreadCount', String(count));
+            } catch (err) {
+            }
+        }
+
+        function setMessagesBadge(visible) {
+            messagesBadges.forEach(function(el) {
+                if (!el) {
+                    return;
+                }
+                el.classList.toggle('hidden', !visible);
+            });
+        }
+
+        function loadStoredBadges() {
+            try {
+                var notifCount = parseInt(localStorage.getItem('xleaksNotificationsUnreadCount') || '0', 10);
+                if (!isNaN(notifCount)) {
+                    setNotificationBadge(notifCount);
+                }
+                if (localStorage.getItem('xleaksMessagesUnreadHint') === '1') {
+                    setMessagesBadge(true);
+                }
+            } catch (err) {
+            }
+            if (location.pathname === '/messages' || location.pathname.indexOf('/messages/') === 0) {
+                setMessagesBadge(false);
+                try {
+                    localStorage.removeItem('xleaksMessagesUnreadHint');
+                } catch (err) {
+                }
+            }
+        }
+
+        function refreshNotificationBadge() {
+            if (!currentUser) {
+                return;
+            }
+            fetch('/api/notifications/unread-count', { credentials: 'same-origin' })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('notification count request failed');
+                    }
+                    return response.json();
+                })
+                .then(function(payload) {
+                    setNotificationBadge(payload.unread_count || 0);
+                })
+                .catch(function() {
+                });
+        }
+
+        function markFeedStale(message) {
+            var badge = document.getElementById('new-posts-badge');
+            if (!badge) {
+                return;
+            }
+            badge.style.display = 'block';
+            badge.textContent = message || 'New posts available - click to refresh';
+        }
+
+        function refreshFeedIfVisible() {
+            var feed = document.getElementById('feed');
+            if (!feed || !window.htmx || location.pathname !== '/') {
+                return false;
+            }
+            window.htmx.ajax('GET', '/web/feed' + location.search, {
+                target: '#feed',
+                swap: 'innerHTML'
+            });
+            return true;
+        }
+
+        function handleRealtimeEvent(event) {
+            var data = event.data || {};
+
+            switch (event.type) {
+            case 'new_post':
+                if (!refreshFeedIfVisible()) {
+                    markFeedStale('New posts available - click to refresh');
+                }
+                break;
+            case 'new_reaction':
+            case 'new_repost':
+                var feedRefreshed = refreshFeedIfVisible();
+                if (!feedRefreshed && location.pathname.indexOf('/post/') === 0) {
+                    location.reload();
+                    return;
+                }
+                if (!feedRefreshed) {
+                    markFeedStale('Post activity updated - click to refresh');
+                }
+                break;
+            case 'new_notification':
+                if (!currentUser || data.owner !== currentUser) {
+                    return;
+                }
+                refreshNotificationBadge();
+                if (location.pathname === '/notifications') {
+                    location.reload();
+                    return;
+                }
+                break;
+            case 'new_dm':
+                if (!currentUser || (data.recipient !== currentUser && data.author !== currentUser)) {
+                    return;
+                }
+                if (data.recipient === currentUser) {
+                    setMessagesBadge(true);
+                    try {
+                        localStorage.setItem('xleaksMessagesUnreadHint', '1');
+                    } catch (err) {
+                    }
+                }
+                if (location.pathname === '/messages') {
+                    location.reload();
+                    return;
+                }
+                if (location.pathname.indexOf('/messages/') === 0) {
+                    var activePeer = location.pathname.split('/').pop();
+                    if (data.author === activePeer && data.recipient === currentUser) {
+                        location.reload();
+                    }
+                    return;
+                }
+                break;
+            }
+        }
+
+        loadStoredBadges();
+        refreshNotificationBadge();
+
         var ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws');
         ws.onmessage = function(e) {
-            var data = JSON.parse(e.data);
-            if (data.type === 'new_post') {
-                var badge = document.getElementById('new-posts-badge');
-                if (badge) { badge.style.display = 'block'; badge.textContent = 'New posts available \u2014 click to refresh'; }
+            try {
+                handleRealtimeEvent(JSON.parse(e.data));
+            } catch (err) {
             }
         };
-        ws.onclose = function() { setTimeout(function() { location.reload(); }, 30000); };
+        ws.onclose = function() {
+            setTimeout(function() {
+                if (!document.hidden) {
+                    location.reload();
+                }
+            }, 30000);
+        };
     })();
     </script>
+    {{end}}
 </body>
 </html>

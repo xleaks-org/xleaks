@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 
@@ -21,10 +22,11 @@ type PostIndexer interface {
 // MessageProcessor handles incoming P2P messages by deserializing,
 // validating, and storing them.
 type MessageProcessor struct {
-	db       StorageWriter
-	cas      ContentWriter
-	notifier Notifier
-	indexer  PostIndexer
+	db        StorageWriter
+	cas       ContentWriter
+	notifier  Notifier
+	indexer   PostIndexer
+	broadcast func(eventType string, data interface{})
 }
 
 // StorageWriter defines the storage operations needed for message processing.
@@ -65,6 +67,12 @@ func NewMessageProcessor(db StorageWriter, cas ContentWriter, notifier Notifier)
 // post or profile is stored.
 func (mp *MessageProcessor) SetIndexer(idx PostIndexer) {
 	mp.indexer = idx
+}
+
+// SetBroadcaster registers a callback for real-time events emitted from
+// inbound network traffic.
+func (mp *MessageProcessor) SetBroadcaster(fn func(eventType string, data interface{})) {
+	mp.broadcast = fn
 }
 
 // HandleMessage deserializes an Envelope and routes to the appropriate handler.
@@ -142,6 +150,12 @@ func (mp *MessageProcessor) handlePost(_ context.Context, post *pb.Post) error {
 			log.Printf("update reaction count (reply): %v", err)
 		}
 	}
+	mp.emit("new_post", map[string]interface{}{
+		"id":        hex.EncodeToString(post.Id),
+		"author":    hex.EncodeToString(post.Author),
+		"reply_to":  hex.EncodeToString(post.ReplyTo),
+		"repost_of": hex.EncodeToString(post.RepostOf),
+	})
 	return nil
 }
 
@@ -179,6 +193,11 @@ func (mp *MessageProcessor) handleReaction(_ context.Context, reaction *pb.React
 	if err := mp.notifier.NotifyLike(reaction.Author, reaction.Target, reaction.Id); err != nil {
 		log.Printf("notify like error: %v", err)
 	}
+	mp.emit("new_reaction", map[string]interface{}{
+		"id":     hex.EncodeToString(reaction.Id),
+		"target": hex.EncodeToString(reaction.Target),
+		"author": hex.EncodeToString(reaction.Author),
+	})
 	return nil
 }
 
@@ -276,6 +295,11 @@ func (mp *MessageProcessor) handleDM(_ context.Context, dm *pb.DirectMessage) er
 	if err := mp.notifier.NotifyDM(dm.Author, dm.Recipient); err != nil {
 		log.Printf("notify dm error: %v", err)
 	}
+	mp.emit("new_dm", map[string]interface{}{
+		"id":        hex.EncodeToString(dm.Id),
+		"author":    hex.EncodeToString(dm.Author),
+		"recipient": hex.EncodeToString(dm.Recipient),
+	})
 	return nil
 }
 
@@ -313,4 +337,10 @@ func (mp *MessageProcessor) handleMediaChunk(_ context.Context, chunk *pb.MediaC
 // verifySignature is the signature verification function passed to validators.
 func verifySignature(pubkey, message, signature []byte) bool {
 	return identity.Verify(pubkey, message, signature)
+}
+
+func (mp *MessageProcessor) emit(eventType string, data interface{}) {
+	if mp.broadcast != nil {
+		mp.broadcast(eventType, data)
+	}
 }

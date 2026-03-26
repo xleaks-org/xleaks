@@ -10,13 +10,13 @@ import (
 
 // TimelineEntry represents a single entry in the feed timeline.
 type TimelineEntry struct {
-	Post         storage.PostRow
-	AuthorName   string
-	LikeCount    int
-	ReplyCount   int
-	RepostCount  int
-	IsLiked      bool // Whether the current user has liked this post
-	IsReposted   bool // Whether the current user has reposted this post
+	Post        storage.PostRow
+	AuthorName  string
+	LikeCount   int
+	ReplyCount  int
+	RepostCount int
+	IsLiked     bool // Whether the current user has liked this post
+	IsReposted  bool // Whether the current user has reposted this post
 }
 
 // Timeline assembles the chronological feed from local database.
@@ -42,7 +42,12 @@ func (t *Timeline) GetFeed(before int64, limit int) ([]TimelineEntry, error) {
 		limit = 100
 	}
 
-	subs, err := t.db.GetSubscriptions()
+	var ownerPubkey []byte
+	if kp := t.identity.Get(); kp != nil {
+		ownerPubkey = kp.PublicKeyBytes()
+	}
+
+	subs, err := t.db.GetSubscriptions(ownerPubkey)
 	if err != nil {
 		return nil, fmt.Errorf("get subscriptions: %w", err)
 	}

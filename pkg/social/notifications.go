@@ -22,7 +22,8 @@ type NotificationView struct {
 
 // NotificationService handles notification generation and retrieval.
 type NotificationService struct {
-	storage *storage.DB
+	storage   *storage.DB
+	broadcast func(eventType string, data interface{})
 }
 
 // NewNotificationService creates a new NotificationService.
@@ -30,6 +31,11 @@ func NewNotificationService(db *storage.DB) *NotificationService {
 	return &NotificationService{
 		storage: db,
 	}
+}
+
+// SetBroadcaster registers a callback for real-time notification events.
+func (s *NotificationService) SetBroadcaster(fn func(eventType string, data interface{})) {
+	s.broadcast = fn
 }
 
 // NotifyLike creates a notification for a like reaction.
@@ -44,6 +50,7 @@ func (s *NotificationService) NotifyLike(actor, targetCID, reactionCID []byte) e
 	if err := s.storage.InsertNotification(owner, "like", actor, targetCID, reactionCID, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify like: %w", err)
 	}
+	s.emit("like", owner, actor, targetCID, reactionCID)
 	return nil
 }
 
@@ -59,6 +66,7 @@ func (s *NotificationService) NotifyReply(actor, targetCID, replyCID []byte) err
 	if err := s.storage.InsertNotification(owner, "reply", actor, targetCID, replyCID, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify reply: %w", err)
 	}
+	s.emit("reply", owner, actor, targetCID, replyCID)
 	return nil
 }
 
@@ -74,6 +82,7 @@ func (s *NotificationService) NotifyRepost(actor, targetCID, repostCID []byte) e
 	if err := s.storage.InsertNotification(owner, "repost", actor, targetCID, repostCID, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify repost: %w", err)
 	}
+	s.emit("repost", owner, actor, targetCID, repostCID)
 	return nil
 }
 
@@ -85,6 +94,7 @@ func (s *NotificationService) NotifyFollow(actor, target []byte) error {
 	if err := s.storage.InsertNotification(target, "follow", actor, nil, nil, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify follow: %w", err)
 	}
+	s.emit("follow", target, actor, nil, nil)
 	return nil
 }
 
@@ -96,6 +106,7 @@ func (s *NotificationService) NotifyDM(actor, recipient []byte) error {
 	if err := s.storage.InsertNotification(recipient, "dm", actor, nil, nil, time.Now().UnixMilli()); err != nil {
 		return fmt.Errorf("notify dm: %w", err)
 	}
+	s.emit("dm", recipient, actor, nil, nil)
 	return nil
 }
 
@@ -151,4 +162,17 @@ func (s *NotificationService) ownerForPost(targetCID []byte) ([]byte, error) {
 		return nil, nil
 	}
 	return post.Author, nil
+}
+
+func (s *NotificationService) emit(notifType string, owner, actor, targetCID, relatedCID []byte) {
+	if s.broadcast == nil {
+		return
+	}
+	s.broadcast("new_notification", map[string]interface{}{
+		"type":        notifType,
+		"owner":       fmt.Sprintf("%x", owner),
+		"actor":       fmt.Sprintf("%x", actor),
+		"target_cid":  fmt.Sprintf("%x", targetCID),
+		"related_cid": fmt.Sprintf("%x", relatedCID),
+	})
 }

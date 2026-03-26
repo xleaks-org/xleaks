@@ -129,7 +129,7 @@ type WordSlot struct {
 
 // CreatePostFunc is a callback to create a post, avoiding direct dependency on social package.
 // The replyTo parameter is the hex-encoded CID of the parent post (empty for top-level posts).
-type CreatePostFunc func(ctx context.Context, content string, replyTo string) (id string, err error)
+type CreatePostFunc func(ctx context.Context, content string, mediaCIDs []string, replyTo string) (id string, err error)
 
 // RepostFunc is a callback to create a repost (a post with repost_of set).
 type RepostFunc func(ctx context.Context, targetCIDHex string) (id string, err error)

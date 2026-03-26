@@ -14,7 +14,7 @@ import (
 type Manager struct {
 	db          *storage.DB
 	mu          sync.RWMutex
-	subscribers map[string]bool // pubkey hex -> subscribed
+	subscribers map[string]bool // pubkey hex -> subscribed for the active identity
 
 	// Callbacks for P2P integration.
 	OnSubscribe   func(ctx context.Context, pubkeyHex string) error
@@ -29,40 +29,68 @@ func NewManager(db *storage.DB) *Manager {
 	}
 }
 
-// LoadSubscriptions loads existing subscriptions from the database into memory.
-func (m *Manager) LoadSubscriptions() error {
-	subs, err := m.db.GetSubscriptions()
+// ReloadSubscriptions reloads the current owner's subscriptions from the database
+// and reconciles runtime topic subscriptions.
+func (m *Manager) ReloadSubscriptions(ctx context.Context, ownerPubkey []byte) error {
+	subs, err := m.db.GetSubscriptions(ownerPubkey)
 	if err != nil {
 		return fmt.Errorf("load subscriptions: %w", err)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	next := make(map[string]bool, len(subs))
 	for _, sub := range subs {
-		hexKey := hex.EncodeToString(sub.Pubkey)
-		m.subscribers[hexKey] = true
+		next[hex.EncodeToString(sub.Pubkey)] = true
+	}
+
+	m.mu.Lock()
+	current := make(map[string]bool, len(m.subscribers))
+	for k, v := range m.subscribers {
+		current[k] = v
+	}
+	m.subscribers = next
+	m.mu.Unlock()
+
+	for pubkeyHex := range current {
+		if next[pubkeyHex] {
+			continue
+		}
+		if m.OnUnsubscribe != nil {
+			if err := m.OnUnsubscribe(pubkeyHex); err != nil {
+				return fmt.Errorf("unsubscribe from topic: %w", err)
+			}
+		}
+	}
+
+	for pubkeyHex := range next {
+		if current[pubkeyHex] {
+			continue
+		}
+		if m.OnSubscribe != nil {
+			if err := m.OnSubscribe(ctx, pubkeyHex); err != nil {
+				return fmt.Errorf("subscribe to topic: %w", err)
+			}
+		}
 	}
 
 	return nil
 }
 
-// Follow subscribes to a publisher's content.
-func (m *Manager) Follow(ctx context.Context, pubkey []byte, timestamp int64) error {
+// Follow subscribes the given owner to a publisher's content.
+func (m *Manager) Follow(ctx context.Context, ownerPubkey, pubkey []byte, timestamp int64) error {
 	hexKey := hex.EncodeToString(pubkey)
 
-	m.mu.Lock()
-	if m.subscribers[hexKey] {
-		m.mu.Unlock()
-		return nil // Already following
+	m.mu.RLock()
+	alreadyFollowing := m.subscribers[hexKey]
+	m.mu.RUnlock()
+	if alreadyFollowing {
+		return nil
 	}
 
-	// Write to DB first while holding the lock to avoid a race window
-	// where another goroutine could observe an inconsistent state.
-	if err := m.db.AddSubscription(pubkey, timestamp); err != nil {
-		m.mu.Unlock()
+	if err := m.db.AddSubscription(ownerPubkey, pubkey, timestamp); err != nil {
 		return fmt.Errorf("add subscription: %w", err)
 	}
+
+	m.mu.Lock()
 	m.subscribers[hexKey] = true
 	m.mu.Unlock()
 
@@ -75,21 +103,22 @@ func (m *Manager) Follow(ctx context.Context, pubkey []byte, timestamp int64) er
 	return nil
 }
 
-// Unfollow removes a subscription to a publisher.
-func (m *Manager) Unfollow(pubkey []byte) error {
+// Unfollow removes a subscription to a publisher for the given owner.
+func (m *Manager) Unfollow(ownerPubkey, pubkey []byte) error {
 	hexKey := hex.EncodeToString(pubkey)
 
-	m.mu.Lock()
-	if !m.subscribers[hexKey] {
-		m.mu.Unlock()
-		return nil // Not following
+	m.mu.RLock()
+	isFollowing := m.subscribers[hexKey]
+	m.mu.RUnlock()
+	if !isFollowing {
+		return nil
 	}
 
-	// Write to DB first while holding the lock to avoid a race window.
-	if err := m.db.RemoveSubscription(pubkey); err != nil {
-		m.mu.Unlock()
+	if err := m.db.RemoveSubscription(ownerPubkey, pubkey); err != nil {
 		return fmt.Errorf("remove subscription: %w", err)
 	}
+
+	m.mu.Lock()
 	delete(m.subscribers, hexKey)
 	m.mu.Unlock()
 
@@ -102,7 +131,7 @@ func (m *Manager) Unfollow(pubkey []byte) error {
 	return nil
 }
 
-// IsFollowing checks if a publisher is currently followed.
+// IsFollowing checks if a publisher is currently followed by the active runtime identity.
 func (m *Manager) IsFollowing(pubkey []byte) bool {
 	hexKey := hex.EncodeToString(pubkey)
 	m.mu.RLock()
