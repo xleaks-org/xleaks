@@ -16,6 +16,7 @@ import (
 // ProfileService handles profile creation, updates, and retrieval.
 type ProfileService struct {
 	storage   *storage.DB
+	cas       *content.ContentStore
 	identity  *identity.KeyPair
 	publisher Publisher
 }
@@ -29,6 +30,9 @@ func NewProfileService(db *storage.DB, kp *identity.KeyPair) *ProfileService {
 }
 
 func (s *ProfileService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+
+// SetContentStore configures optional CAS persistence for locally created profiles.
+func (s *ProfileService) SetContentStore(cas *content.ContentStore) { s.cas = cas }
 
 // SetPublisher configures the optional outbound P2P publisher.
 func (s *ProfileService) SetPublisher(publisher Publisher) { s.publisher = publisher }
@@ -84,6 +88,16 @@ func (s *ProfileService) createProfileWith(ctx context.Context, kp *identity.Key
 		return nil, fmt.Errorf("validate profile: %w", err)
 	}
 
+	if s.cas != nil {
+		raw, err := proto.Marshal(profile)
+		if err != nil {
+			return nil, fmt.Errorf("marshal profile for CAS: %w", err)
+		}
+		if err := s.cas.Put(profile.Author, raw); err != nil {
+			return nil, fmt.Errorf("store profile in CAS: %w", err)
+		}
+	}
+
 	// Store in DB.
 	if err := s.storage.UpsertProfile(
 		profile.Author,
@@ -96,6 +110,9 @@ func (s *ProfileService) createProfileWith(ctx context.Context, kp *identity.Key
 		int64(profile.Timestamp),
 	); err != nil {
 		return nil, fmt.Errorf("store profile: %w", err)
+	}
+	if err := s.storage.TrackContentForAuthor(profile.Author, profile.Author); err != nil {
+		return nil, fmt.Errorf("track profile content: %w", err)
 	}
 
 	if err := publishProfile(ctx, s.publisher, profile); err != nil {
@@ -168,6 +185,16 @@ func (s *ProfileService) updateProfileWith(ctx context.Context, kp *identity.Key
 		return nil, fmt.Errorf("validate profile: %w", err)
 	}
 
+	if s.cas != nil {
+		raw, err := proto.Marshal(profile)
+		if err != nil {
+			return nil, fmt.Errorf("marshal profile for CAS: %w", err)
+		}
+		if err := s.cas.Put(profile.Author, raw); err != nil {
+			return nil, fmt.Errorf("store profile in CAS: %w", err)
+		}
+	}
+
 	// Store in DB (UpsertProfile only updates if version is greater).
 	if err := s.storage.UpsertProfile(
 		profile.Author,
@@ -180,6 +207,9 @@ func (s *ProfileService) updateProfileWith(ctx context.Context, kp *identity.Key
 		int64(profile.Timestamp),
 	); err != nil {
 		return nil, fmt.Errorf("store profile: %w", err)
+	}
+	if err := s.storage.TrackContentForAuthor(profile.Author, profile.Author); err != nil {
+		return nil, fmt.Errorf("track profile content: %w", err)
 	}
 
 	if err := publishProfile(ctx, s.publisher, profile); err != nil {

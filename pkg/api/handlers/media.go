@@ -22,8 +22,13 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit upload size to MaxMediaSize.
-	r.Body = http.MaxBytesReader(w, r.Body, content.MaxMediaSize)
+	maxUploadBytes := int64(content.MaxMediaSize)
+	if h.cfg != nil {
+		if configured := h.cfg.MaxUploadBytes(); configured > 0 && configured < maxUploadBytes {
+			maxUploadBytes = configured
+		}
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -41,6 +46,13 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 
 	if len(data) == 0 {
 		respondError(w, http.StatusBadRequest, "empty file")
+		return
+	}
+
+	// Detect mime type.
+	mimeType := http.DetectContentType(data)
+	if err := content.ValidateMediaType(mimeType); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -72,13 +84,6 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Detect mime type.
-	mimeType := http.DetectContentType(data)
-	if err := content.ValidateMediaType(mimeType); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
 	// Extract media metadata (width, height, duration).
 	var width, height, duration uint32
 	if meta := content.ExtractMediaMetadata(data, mimeType); meta != nil {
@@ -87,13 +92,21 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		duration = meta.Duration
 	}
 
-	// Try to generate a thumbnail for images.
+	thumbnailQuality := content.ThumbnailJPEGQuality
+	if h.cfg != nil {
+		thumbnailQuality = h.cfg.ThumbnailJPEGQuality()
+	}
+
+	// Try to generate a thumbnail for images and videos.
 	var thumbnailCID []byte
-	if isImageMime(mimeType) {
-		thumbData, thumbCID, err := content.GenerateThumbnail(data)
+	if isImageMime(mimeType) || isVideoMime(mimeType) {
+		thumbData, thumbCID, err := content.GenerateMediaThumbnail(data, mimeType, thumbnailQuality)
 		if err == nil {
-			h.cas.Put(thumbCID, thumbData)
-			thumbnailCID = thumbCID
+			if err := h.cas.Put(thumbCID, thumbData); err != nil {
+				log.Printf("store thumbnail in CAS: %v", err)
+			} else {
+				thumbnailCID = thumbCID
+			}
 		}
 	}
 
@@ -114,7 +127,26 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mark as fully fetched since we have all chunks locally.
-	h.db.SetMediaFetched(fileCID)
+	if err := h.db.SetMediaFetched(fileCID); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to update media fetch state")
+		return
+	}
+	if err := h.db.TrackContentForMedia(fileCID, fileCID); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to track media content")
+		return
+	}
+	if len(thumbnailCID) > 0 {
+		if err := h.db.TrackContentForMedia(thumbnailCID, fileCID); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to track media thumbnail")
+			return
+		}
+	}
+	for _, chunk := range chunks {
+		if err := h.db.TrackContentForMedia(chunk.CID, fileCID); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to track media chunk")
+			return
+		}
+	}
 
 	mediaObj, err := signMediaObject(kp, fileCID, mimeType, chunks, thumbnailCID, width, height, duration, timestamp, uint64(len(data)))
 	if err != nil {
@@ -155,6 +187,11 @@ func (h *Handler) GetMedia(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "media data not available")
 		return
 	}
+	if media != nil {
+		if err := h.db.TrackContentForMedia(cidBytes, cidBytes); err != nil {
+			log.Printf("track media access %x: %v", cidBytes, err)
+		}
+	}
 
 	mimeType := http.DetectContentType(data)
 	if media != nil && media.MimeType != "" {
@@ -178,6 +215,9 @@ func (h *Handler) GetMediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	if media != nil && len(media.ThumbnailCID) > 0 {
 		data, err := h.loadContent(r.Context(), media.ThumbnailCID)
 		if err == nil {
+			if err := h.db.TrackContentForMedia(media.ThumbnailCID, media.CID); err != nil {
+				log.Printf("track thumbnail access %x: %v", media.ThumbnailCID, err)
+			}
 			w.Header().Set("Content-Type", "image/jpeg")
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			w.WriteHeader(http.StatusOK)
@@ -191,11 +231,16 @@ func (h *Handler) GetMediaThumbnail(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "thumbnail data not available")
 		return
 	}
-	if !isImageMime(http.DetectContentType(raw)) {
+	mimeType := http.DetectContentType(raw)
+	if !isImageMime(mimeType) && !isVideoMime(mimeType) {
 		respondError(w, http.StatusNotFound, "no thumbnail available")
 		return
 	}
-	thumbData, _, err := content.GenerateThumbnail(raw)
+	thumbnailQuality := content.ThumbnailJPEGQuality
+	if h.cfg != nil {
+		thumbnailQuality = h.cfg.ThumbnailJPEGQuality()
+	}
+	thumbData, _, err := content.GenerateMediaThumbnail(raw, mimeType, thumbnailQuality)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "no thumbnail available")
 		return
@@ -264,6 +309,14 @@ func isImageMime(mime string) bool {
 	return false
 }
 
+func isVideoMime(mime string) bool {
+	switch mime {
+	case "video/mp4", "video/webm":
+		return true
+	}
+	return false
+}
+
 func signMediaObject(kp *identity.KeyPair, cid []byte, mimeType string, chunks []content.Chunk, thumbnailCID []byte, width, height, duration uint32, timestamp int64, size uint64) (*pb.MediaObject, error) {
 	chunkCIDs := make([][]byte, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -305,6 +358,9 @@ func signMediaObject(kp *identity.KeyPair, cid []byte, mimeType string, chunks [
 func (h *Handler) loadContent(ctx context.Context, cidBytes []byte) ([]byte, error) {
 	data, err := h.cas.Get(cidBytes)
 	if err == nil {
+		if trackErr := h.db.TrackContentAccess(cidBytes, false); trackErr != nil {
+			log.Printf("track content access %x: %v", cidBytes, trackErr)
+		}
 		return data, nil
 	}
 	if h.p2pHost == nil {
@@ -327,6 +383,9 @@ func (h *Handler) loadContent(ctx context.Context, cidBytes []byte) ([]byte, err
 	}
 	if putErr := h.cas.Put(cidBytes, data); putErr != nil {
 		log.Printf("cache fetched media %s: %v", cidHex, putErr)
+	}
+	if trackErr := h.db.TrackContentAccess(cidBytes, false); trackErr != nil {
+		log.Printf("track fetched content %s: %v", cidHex, trackErr)
 	}
 	return data, nil
 }

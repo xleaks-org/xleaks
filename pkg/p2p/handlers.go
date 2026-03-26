@@ -22,11 +22,13 @@ type PostIndexer interface {
 // MessageProcessor handles incoming P2P messages by deserializing,
 // validating, and storing them.
 type MessageProcessor struct {
-	db        StorageWriter
-	cas       ContentWriter
-	notifier  Notifier
-	indexer   PostIndexer
-	broadcast func(eventType string, data interface{})
+	db             StorageWriter
+	cas            ContentWriter
+	notifier       Notifier
+	indexer        PostIndexer
+	broadcast      func(eventType string, data interface{})
+	autoFetchMedia bool
+	fetchContent   func(ctx context.Context, cidHex string) ([]byte, error)
 }
 
 // StorageWriter defines the storage operations needed for message processing.
@@ -42,6 +44,12 @@ type StorageWriter interface {
 	GetProfileVersion(pubkey []byte) (version uint64, found bool, err error)
 	UpdateReactionCount(postCID []byte) error
 	UpdateFollowerCount(pubkey []byte) error
+	SetMediaFetched(cid []byte) error
+	ShouldPinAuthor(author []byte) (bool, error)
+	TrackContentForAuthor(cid, author []byte) error
+	TrackReactionContent(cid, author, target []byte) error
+	TrackContentForDM(cid, author, recipient []byte) error
+	TrackContentForMedia(cid, mediaObjectCID []byte) error
 }
 
 // ContentWriter defines content-addressed storage operations.
@@ -73,6 +81,16 @@ func (mp *MessageProcessor) SetIndexer(idx PostIndexer) {
 // inbound network traffic.
 func (mp *MessageProcessor) SetBroadcaster(fn func(eventType string, data interface{})) {
 	mp.broadcast = fn
+}
+
+// SetAutoFetchMedia toggles eager media fetching for followed/local publishers.
+func (mp *MessageProcessor) SetAutoFetchMedia(enabled bool) {
+	mp.autoFetchMedia = enabled
+}
+
+// SetMediaFetcher registers the content fetch callback used by eager media fetching.
+func (mp *MessageProcessor) SetMediaFetcher(fn func(ctx context.Context, cidHex string) ([]byte, error)) {
+	mp.fetchContent = fn
 }
 
 // HandleMessage deserializes an Envelope and routes to the appropriate handler.
@@ -133,6 +151,9 @@ func (mp *MessageProcessor) handlePost(_ context.Context, post *pb.Post) error {
 			return fmt.Errorf("insert post media: %w", err)
 		}
 	}
+	if err := mp.db.TrackContentForAuthor(post.Id, post.Author); err != nil {
+		return fmt.Errorf("track post content: %w", err)
+	}
 
 	// Feed into indexer if available.
 	if mp.indexer != nil {
@@ -183,6 +204,9 @@ func (mp *MessageProcessor) handleReaction(_ context.Context, reaction *pb.React
 	); err != nil {
 		return fmt.Errorf("insert reaction: %w", err)
 	}
+	if err := mp.db.TrackReactionContent(reaction.Id, reaction.Author, reaction.Target); err != nil {
+		return fmt.Errorf("track reaction content: %w", err)
+	}
 
 	// Update materialized counts on the target post.
 	if err := mp.db.UpdateReactionCount(reaction.Target); err != nil {
@@ -230,6 +254,9 @@ func (mp *MessageProcessor) handleProfile(_ context.Context, profile *pb.Profile
 		profile.Version, int64(profile.Timestamp),
 	); err != nil {
 		return fmt.Errorf("upsert profile: %w", err)
+	}
+	if err := mp.db.TrackContentForAuthor(profile.Author, profile.Author); err != nil {
+		return fmt.Errorf("track profile content: %w", err)
 	}
 
 	// Feed into indexer if available.
@@ -291,6 +318,9 @@ func (mp *MessageProcessor) handleDM(_ context.Context, dm *pb.DirectMessage) er
 	); err != nil {
 		return fmt.Errorf("insert dm: %w", err)
 	}
+	if err := mp.db.TrackContentForDM(dm.Id, dm.Author, dm.Recipient); err != nil {
+		return fmt.Errorf("track dm content: %w", err)
+	}
 
 	if err := mp.notifier.NotifyDM(dm.Author, dm.Recipient); err != nil {
 		log.Printf("notify dm error: %v", err)
@@ -303,7 +333,7 @@ func (mp *MessageProcessor) handleDM(_ context.Context, dm *pb.DirectMessage) er
 	return nil
 }
 
-func (mp *MessageProcessor) handleMediaObject(_ context.Context, obj *pb.MediaObject) error {
+func (mp *MessageProcessor) handleMediaObject(ctx context.Context, obj *pb.MediaObject) error {
 	if err := content.ValidateMediaObject(obj, verifySignature); err != nil {
 		return fmt.Errorf("validate media object: %w", err)
 	}
@@ -321,6 +351,17 @@ func (mp *MessageProcessor) handleMediaObject(_ context.Context, obj *pb.MediaOb
 	); err != nil {
 		return fmt.Errorf("insert media object: %w", err)
 	}
+	if mp.autoFetchMedia && mp.fetchContent != nil {
+		shouldPin, err := mp.db.ShouldPinAuthor(obj.Author)
+		if err != nil {
+			return fmt.Errorf("resolve media pin policy: %w", err)
+		}
+		if shouldPin {
+			if err := mp.prefetchMediaContent(ctx, obj); err != nil {
+				log.Printf("prefetch media %x: %v", obj.Cid, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -330,6 +371,9 @@ func (mp *MessageProcessor) handleMediaChunk(_ context.Context, chunk *pb.MediaC
 	}
 	if err := mp.cas.Put(chunk.Cid, chunk.Data); err != nil {
 		return fmt.Errorf("CAS put media chunk: %w", err)
+	}
+	if err := mp.db.TrackContentForMedia(chunk.Cid, chunk.ParentCid); err != nil {
+		return fmt.Errorf("track media chunk: %w", err)
 	}
 	return nil
 }
@@ -343,4 +387,35 @@ func (mp *MessageProcessor) emit(eventType string, data interface{}) {
 	if mp.broadcast != nil {
 		mp.broadcast(eventType, data)
 	}
+}
+
+func (mp *MessageProcessor) prefetchMediaContent(ctx context.Context, obj *pb.MediaObject) error {
+	items := []struct {
+		cid    []byte
+		parent []byte
+	}{
+		{cid: obj.Cid, parent: obj.Cid},
+		{cid: obj.ThumbnailCid, parent: obj.Cid},
+	}
+
+	for _, item := range items {
+		if len(item.cid) == 0 {
+			continue
+		}
+		data, err := mp.fetchContent(ctx, hex.EncodeToString(item.cid))
+		if err != nil {
+			return fmt.Errorf("fetch %x: %w", item.cid, err)
+		}
+		if err := mp.cas.Put(item.cid, data); err != nil {
+			return fmt.Errorf("store %x: %w", item.cid, err)
+		}
+		if err := mp.db.TrackContentForMedia(item.cid, item.parent); err != nil {
+			return fmt.Errorf("track %x: %w", item.cid, err)
+		}
+	}
+
+	if err := mp.db.SetMediaFetched(obj.Cid); err != nil {
+		return fmt.Errorf("mark media fetched: %w", err)
+	}
+	return nil
 }

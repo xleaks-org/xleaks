@@ -19,6 +19,7 @@ import (
 // DMService handles encrypted direct message sending and receiving.
 type DMService struct {
 	storage   *storage.DB
+	cas       *content.ContentStore
 	identity  *identity.KeyPair
 	publisher Publisher
 }
@@ -32,6 +33,9 @@ func NewDMService(db *storage.DB, kp *identity.KeyPair) *DMService {
 }
 
 func (s *DMService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+
+// SetContentStore configures optional CAS persistence for locally created direct messages.
+func (s *DMService) SetContentStore(cas *content.ContentStore) { s.cas = cas }
 
 // SetPublisher configures the optional outbound P2P publisher.
 func (s *DMService) SetPublisher(publisher Publisher) { s.publisher = publisher }
@@ -95,9 +99,22 @@ func (s *DMService) sendDMWith(ctx context.Context, kp *identity.KeyPair, recipi
 	}
 	dm.Id = cid
 
+	if s.cas != nil {
+		raw, err := proto.Marshal(dm)
+		if err != nil {
+			return nil, fmt.Errorf("marshal DM for CAS: %w", err)
+		}
+		if err := s.cas.Put(cid, raw); err != nil {
+			return nil, fmt.Errorf("store DM in CAS: %w", err)
+		}
+	}
+
 	// Store in DB.
 	if err := s.storage.InsertDM(cid, dm.Author, dm.Recipient, dm.EncryptedContent, dm.Nonce, int64(dm.Timestamp)); err != nil {
 		return nil, fmt.Errorf("store DM: %w", err)
+	}
+	if err := s.storage.TrackContentForDM(dm.Id, dm.Author, dm.Recipient); err != nil {
+		return nil, fmt.Errorf("track DM content: %w", err)
 	}
 
 	if err := publishDirectMessage(ctx, s.publisher, dm); err != nil {

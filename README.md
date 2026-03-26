@@ -31,5 +31,7 @@ make proto
 
 The node listens on `127.0.0.1:7470` for the local API/web UI and `7460` for P2P networking by default. Configuration is loaded from `~/.xleaks/config.toml`.
 
-If you want automatic wide-area peer discovery, set `network.bootstrap_peers`
-to full libp2p multiaddrs that include `/p2p/<peer-id>`.
+Default configs now ship with a working public bootstrap peer on `xleaks.org`,
+so clean installs can discover the wider network without manual edits. You can
+override or clear `network.bootstrap_peers` in your config or from the settings
+page if you want to use a different bootstrap set.

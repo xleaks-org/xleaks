@@ -17,6 +17,7 @@ import (
 // ReactionService handles like creation and queries.
 type ReactionService struct {
 	storage   *storage.DB
+	cas       *content.ContentStore
 	identity  *identity.KeyPair
 	publisher Publisher
 }
@@ -30,6 +31,9 @@ func NewReactionService(db *storage.DB, kp *identity.KeyPair) *ReactionService {
 }
 
 func (s *ReactionService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+
+// SetContentStore configures optional CAS persistence for locally created reactions.
+func (s *ReactionService) SetContentStore(cas *content.ContentStore) { s.cas = cas }
 
 // SetPublisher configures the optional outbound P2P publisher.
 func (s *ReactionService) SetPublisher(publisher Publisher) { s.publisher = publisher }
@@ -82,6 +86,16 @@ func (s *ReactionService) createReactionWith(ctx context.Context, kp *identity.K
 	}
 	reaction.Id = cid
 
+	if s.cas != nil {
+		raw, err := proto.Marshal(reaction)
+		if err != nil {
+			return nil, fmt.Errorf("marshal reaction for CAS: %w", err)
+		}
+		if err := s.cas.Put(cid, raw); err != nil {
+			return nil, fmt.Errorf("store reaction in CAS: %w", err)
+		}
+	}
+
 	// Store in DB and update reaction count in a single transaction.
 	err = s.storage.WithTransaction(func(tx *sql.Tx) error {
 		if err := s.storage.InsertReactionTx(tx, cid, reaction.Author, reaction.Target, reaction.ReactionType, int64(reaction.Timestamp)); err != nil {
@@ -94,6 +108,9 @@ func (s *ReactionService) createReactionWith(ctx context.Context, kp *identity.K
 	})
 	if err != nil {
 		return nil, err
+	}
+	if err := s.storage.TrackReactionContent(reaction.Id, reaction.Author, reaction.Target); err != nil {
+		return nil, fmt.Errorf("track reaction content: %w", err)
 	}
 
 	if err := publishReaction(ctx, s.publisher, reaction); err != nil {

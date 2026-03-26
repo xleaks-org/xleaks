@@ -4,5 +4,8 @@
 # [[peers]]
 # address = "/dnsaddr/bootstrap.example.org/tcp/7460/p2p/12D3KooW..."
 #
-# This file intentionally ships without active defaults until valid peer IDs
-# are known.
+[[peers]]
+address = "/dns4/xleaks.org/tcp/7460/p2p/12D3KooWSy7rrdGY2AbGPHgHMgJkuuDxiZp88TSsiFGNnpSgiSto"
+
+[[peers]]
+address = "/dns4/xleaks.org/udp/7460/quic-v1/p2p/12D3KooWSy7rrdGY2AbGPHgHMgJkuuDxiZp88TSsiFGNnpSgiSto"

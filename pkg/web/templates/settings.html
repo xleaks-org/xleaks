@@ -62,16 +62,28 @@
             <div class="grid gap-3 sm:grid-cols-2">
                 <div>
                     <label class="text-xs text-gray-400 block mb-1">Avatar CID</label>
-                    <input type="text" name="avatar_cid" value="{{.AvatarCID}}"
+                    <input id="avatar-cid-input" type="text" name="avatar_cid" value="{{.AvatarCID}}"
                         class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-xs font-mono focus:border-blue-500 focus:outline-none">
                 </div>
                 <div>
                     <label class="text-xs text-gray-400 block mb-1">Banner CID</label>
-                    <input type="text" name="banner_cid" value="{{.BannerCID}}"
+                    <input id="banner-cid-input" type="text" name="banner_cid" value="{{.BannerCID}}"
                         class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-xs font-mono focus:border-blue-500 focus:outline-none">
                 </div>
             </div>
-            <p class="text-xs text-gray-500">Upload media through the API, then paste the returned CIDs here to publish avatar and banner metadata.</p>
+            <div class="grid gap-3 sm:grid-cols-2">
+                <label class="rounded-lg border border-dashed border-gray-700 px-3 py-3 text-sm text-gray-300 hover:border-blue-500 hover:text-white transition-colors">
+                    <span class="block font-semibold">Upload avatar</span>
+                    <span class="mt-1 block text-xs text-gray-500">Uploaded image CIDs are filled in automatically after the media API stores them.</span>
+                    <input id="avatar-upload-input" type="file" accept="image/*" class="hidden">
+                </label>
+                <label class="rounded-lg border border-dashed border-gray-700 px-3 py-3 text-sm text-gray-300 hover:border-blue-500 hover:text-white transition-colors">
+                    <span class="block font-semibold">Upload banner</span>
+                    <span class="mt-1 block text-xs text-gray-500">The uploaded CID is filled in automatically when the upload completes.</span>
+                    <input id="banner-upload-input" type="file" accept="image/*" class="hidden">
+                </label>
+            </div>
+            <div id="profile-upload-status" class="hidden rounded-lg border border-gray-800 bg-gray-950/70 px-3 py-2 text-xs text-gray-300"></div>
             <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-2.5 rounded-full">Save Profile</button>
         </form>
     </section>
@@ -140,6 +152,75 @@
     </section>
 
     <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <h2 class="font-semibold">Node Configuration</h2>
+                <p class="mt-1 text-xs text-gray-500">Network, storage, and media settings are saved to the node config file. Connection-oriented changes usually require a restart.</p>
+            </div>
+            <button type="button" id="bootstrap-defaults-button" class="rounded-full border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:border-gray-600 hover:text-white transition-colors">Use Default Bootstrap</button>
+        </div>
+        <form id="node-config-form" class="mt-4 space-y-4">
+            <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Max Connections</label>
+                    <input id="node-max-connections" type="number" min="1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Storage Limit (GB)</label>
+                    <input id="node-storage-limit" type="number" min="1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Bandwidth Limit (Mbps)</label>
+                    <input id="node-bandwidth-limit" type="number" min="0" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Max Upload Size (MB)</label>
+                    <input id="node-max-upload-size" type="number" min="1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Thumbnail JPEG Quality</label>
+                    <input id="node-thumbnail-quality" type="number" min="10" max="100" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+                </div>
+            </div>
+            <div>
+                <label class="text-xs text-gray-400 block mb-1">Bootstrap Peers</label>
+                <textarea id="node-bootstrap-peers" rows="4" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-xs font-mono focus:border-blue-500 focus:outline-none resize-y" placeholder="/dns4/example.org/tcp/7460/p2p/...&#10;/dns4/example.org/udp/7460/quic-v1/p2p/..."></textarea>
+                <p class="mt-1 text-xs text-gray-500">One multiaddr per line.</p>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+                <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300">
+                    <span>Enable relay</span>
+                    <input id="node-enable-relay" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
+                </label>
+                <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300">
+                    <span>Enable mDNS</span>
+                    <input id="node-enable-mdns" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
+                </label>
+                <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300">
+                    <span>Enable hole punching</span>
+                    <input id="node-enable-hole-punching" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
+                </label>
+                <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300">
+                    <span>Enable WebSocket</span>
+                    <input id="node-enable-websocket" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
+                </label>
+                <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300 sm:col-span-2">
+                    <div>
+                        <span class="block">Auto-fetch media</span>
+                        <span class="block text-xs text-gray-500">Immediately fetch media for followed or local publishers when metadata arrives.</span>
+                    </div>
+                    <input id="node-auto-fetch-media" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
+                </label>
+            </div>
+            <div id="node-config-status" class="hidden rounded-lg border border-gray-800 bg-gray-950/70 px-3 py-2 text-sm text-gray-300"></div>
+            <div class="flex flex-wrap items-center gap-3">
+                <button type="submit" class="rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-white transition-colors">Save Node Config</button>
+                <span class="text-xs text-gray-500">Saved values take effect on the next restart when required by the setting.</span>
+            </div>
+        </form>
+    </section>
+
+    <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
         <h2 class="font-semibold mb-3">Display</h2>
         <div class="flex items-center justify-between">
             <span class="text-sm text-gray-400">Theme</span>
@@ -172,4 +253,170 @@
         </div>
     </section>
 </div>
+<script>
+(function() {
+    var profileStatus = document.getElementById('profile-upload-status');
+    var avatarInput = document.getElementById('avatar-upload-input');
+    var bannerInput = document.getElementById('banner-upload-input');
+    var avatarCIDInput = document.getElementById('avatar-cid-input');
+    var bannerCIDInput = document.getElementById('banner-cid-input');
+
+    function setStatus(target, message, isError) {
+        if (!target) {
+            return;
+        }
+        if (!message) {
+            target.textContent = '';
+            target.classList.add('hidden');
+            target.classList.remove('border-red-500/50', 'text-red-300', 'border-green-500/40', 'text-green-300');
+            target.classList.add('border-gray-800', 'text-gray-300');
+            return;
+        }
+        target.textContent = message;
+        target.classList.remove('hidden');
+        target.classList.toggle('border-red-500/50', !!isError);
+        target.classList.toggle('text-red-300', !!isError);
+        target.classList.toggle('border-green-500/40', !isError);
+        target.classList.toggle('text-green-300', !isError);
+        target.classList.toggle('border-gray-800', false);
+        target.classList.toggle('text-gray-300', false);
+    }
+
+    async function uploadProfileMedia(file, targetInput, label) {
+        if (!file || !targetInput) {
+            return;
+        }
+        setStatus(profileStatus, 'Uploading ' + label + '...');
+
+        var body = new FormData();
+        body.append('file', file, file.name);
+
+        var response = await fetch('/api/media', {
+            method: 'POST',
+            body: body,
+            credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+            var message = 'Upload failed';
+            try {
+                var payload = await response.json();
+                if (payload && payload.error) {
+                    message = payload.error;
+                }
+            } catch (err) {
+            }
+            setStatus(profileStatus, message, true);
+            return;
+        }
+
+        var payload = await response.json();
+        targetInput.value = payload.cid || '';
+        setStatus(profileStatus, label + ' ready. Save profile to publish the new CID.', false);
+    }
+
+    if (avatarInput) {
+        avatarInput.addEventListener('change', function() {
+            if (avatarInput.files && avatarInput.files[0]) {
+                uploadProfileMedia(avatarInput.files[0], avatarCIDInput, 'Avatar').catch(function() {
+                    setStatus(profileStatus, 'Avatar upload failed', true);
+                });
+            }
+        });
+    }
+    if (bannerInput) {
+        bannerInput.addEventListener('change', function() {
+            if (bannerInput.files && bannerInput.files[0]) {
+                uploadProfileMedia(bannerInput.files[0], bannerCIDInput, 'Banner').catch(function() {
+                    setStatus(profileStatus, 'Banner upload failed', true);
+                });
+            }
+        });
+    }
+
+    var nodeForm = document.getElementById('node-config-form');
+    if (!nodeForm) {
+        return;
+    }
+
+    var nodeStatus = document.getElementById('node-config-status');
+    var bootstrapDefaultsButton = document.getElementById('bootstrap-defaults-button');
+    var state = { defaultBootstrapPeers: [] };
+
+    function fillNodeConfig(cfg) {
+        document.getElementById('node-max-connections').value = cfg.max_connections || 0;
+        document.getElementById('node-storage-limit').value = cfg.storage_limit_gb || 0;
+        document.getElementById('node-bandwidth-limit').value = cfg.bandwidth_limit_mbps || 0;
+        document.getElementById('node-max-upload-size').value = cfg.max_upload_size_mb || 0;
+        document.getElementById('node-thumbnail-quality').value = cfg.thumbnail_quality || 80;
+        document.getElementById('node-bootstrap-peers').value = (cfg.bootstrap_peers || []).join('\n');
+        document.getElementById('node-enable-relay').checked = !!cfg.enable_relay;
+        document.getElementById('node-enable-mdns').checked = !!cfg.enable_mdns;
+        document.getElementById('node-enable-hole-punching').checked = !!cfg.enable_hole_punching;
+        document.getElementById('node-enable-websocket').checked = !!cfg.enable_websocket;
+        document.getElementById('node-auto-fetch-media').checked = !!cfg.auto_fetch_media;
+        state.defaultBootstrapPeers = cfg.default_bootstrap_peers || [];
+    }
+
+    async function loadNodeConfig() {
+        var response = await fetch('/api/node/config', { credentials: 'same-origin' });
+        if (!response.ok) {
+            throw new Error('Failed to load node config');
+        }
+        fillNodeConfig(await response.json());
+    }
+
+    nodeForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+
+        var payload = {
+            max_connections: Number(document.getElementById('node-max-connections').value || 0),
+            storage_limit_gb: Number(document.getElementById('node-storage-limit').value || 0),
+            bandwidth_limit_mbps: Number(document.getElementById('node-bandwidth-limit').value || 0),
+            max_upload_size_mb: Number(document.getElementById('node-max-upload-size').value || 0),
+            thumbnail_quality: Number(document.getElementById('node-thumbnail-quality').value || 80),
+            bootstrap_peers: document.getElementById('node-bootstrap-peers').value.split('\n').map(function(item) {
+                return item.trim();
+            }).filter(Boolean),
+            enable_relay: document.getElementById('node-enable-relay').checked,
+            enable_mdns: document.getElementById('node-enable-mdns').checked,
+            enable_hole_punching: document.getElementById('node-enable-hole-punching').checked,
+            enable_websocket: document.getElementById('node-enable-websocket').checked,
+            auto_fetch_media: document.getElementById('node-auto-fetch-media').checked
+        };
+
+        fetch('/api/node/config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload)
+        }).then(async function(response) {
+            if (!response.ok) {
+                var message = 'Failed to save node config';
+                try {
+                    var data = await response.json();
+                    if (data && data.error) {
+                        message = data.error;
+                    }
+                } catch (err) {
+                }
+                throw new Error(message);
+            }
+            setStatus(nodeStatus, 'Node config saved. Restart the node if connection behavior or WebSocket settings changed.', false);
+        }).catch(function(err) {
+            setStatus(nodeStatus, err.message || 'Failed to save node config', true);
+        });
+    });
+
+    if (bootstrapDefaultsButton) {
+        bootstrapDefaultsButton.addEventListener('click', function() {
+            document.getElementById('node-bootstrap-peers').value = (state.defaultBootstrapPeers || []).join('\n');
+        });
+    }
+
+    loadNodeConfig().catch(function(err) {
+        setStatus(nodeStatus, err.message || 'Failed to load node config', true);
+    });
+})();
+</script>
 {{end}}
