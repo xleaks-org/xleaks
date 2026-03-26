@@ -8,6 +8,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -23,18 +24,19 @@ var hashtagRe = regexp.MustCompile(`#(\w+)`)
 type PostService struct {
 	storage       *storage.DB
 	cas           *content.ContentStore
-	identity      *identity.KeyPair
+	identity      atomic.Pointer[identity.KeyPair]
 	notifications *NotificationService
 	publisher     Publisher
 }
 
 // NewPostService creates a new PostService with the given dependencies.
 func NewPostService(db *storage.DB, cas *content.ContentStore, kp *identity.KeyPair) *PostService {
-	return &PostService{
-		storage:  db,
-		cas:      cas,
-		identity: kp,
+	svc := &PostService{
+		storage: db,
+		cas:     cas,
 	}
+	svc.identity.Store(kp)
+	return svc
 }
 
 // SetNotifications sets the notification service for reply notifications.
@@ -44,7 +46,7 @@ func (s *PostService) SetNotifications(ns *NotificationService) {
 
 // SetIdentity updates the active key pair used for signing.
 func (s *PostService) SetIdentity(kp *identity.KeyPair) {
-	s.identity = kp
+	s.identity.Store(kp)
 }
 
 // SetPublisher configures the optional outbound P2P publisher.
@@ -54,7 +56,7 @@ func (s *PostService) SetPublisher(publisher Publisher) {
 
 // CreatePost creates, signs, and stores a new post.
 func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][]byte, replyTo []byte) (*pb.Post, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +162,7 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 
 // CreateRepost creates a repost of an existing post.
 func (s *PostService) CreateRepost(ctx context.Context, originalCID []byte) (*pb.Post, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return nil, err
 	}

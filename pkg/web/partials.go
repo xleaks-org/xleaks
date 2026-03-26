@@ -143,7 +143,9 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.partials.ExecuteTemplate(w, "feed_items.html", struct{ Posts []PostView }{Posts: []PostView{post}})
+	if err := h.partials.ExecuteTemplate(w, "feed_items.html", struct{ Posts []PostView }{Posts: []PostView{post}}); err != nil {
+		log.Printf("web: failed to render feed item: %v", err)
+	}
 }
 
 // nodeStatusPartial returns the node status as an htmx partial.
@@ -308,6 +310,12 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	targetBytes, err := hex.DecodeString(target)
+	if err != nil {
+		http.Error(w, "Invalid target", http.StatusBadRequest)
+		return
+	}
+
 	kp := h.getKeyPair(r)
 	if kp == nil || h.createPost == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
@@ -315,9 +323,9 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if already reposted (immutable -- can't undo)
-	if h.db.HasReacted(kp.PublicKeyBytes(), mustDecodeHex(target), "repost") {
+	if h.db.HasReacted(kp.PublicKeyBytes(), targetBytes, "repost") {
 		// Already reposted -- just return the current state
-		_, _, reposts, _ := h.db.GetFullReactionCounts(mustDecodeHex(target))
+		_, _, reposts, _ := h.db.GetFullReactionCounts(targetBytes)
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `<span class="text-green-400 flex items-center gap-1">`+
 			`<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>`+
@@ -333,10 +341,15 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Also track as a "repost" reaction for HasReacted checks
-	targetBytes := mustDecodeHex(target)
-	repostData := append([]byte("repost:"), append(kp.PublicKeyBytes(), targetBytes...)...)
+	pubkey := kp.PublicKeyBytes()
+	repostData := make([]byte, 0, 7+len(pubkey)+len(targetBytes))
+	repostData = append(repostData, []byte("repost:")...)
+	repostData = append(repostData, pubkey...)
+	repostData = append(repostData, targetBytes...)
 	cid, _ := content.ComputeCID(repostData)
-	h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "repost", time.Now().UnixMilli())
+	if err := h.db.InsertReaction(cid, kp.PublicKeyBytes(), targetBytes, "repost", time.Now().UnixMilli()); err != nil {
+		log.Printf("web: failed to insert repost reaction: %v", err)
+	}
 
 	_, _, reposts, _ := h.db.GetFullReactionCounts(targetBytes)
 

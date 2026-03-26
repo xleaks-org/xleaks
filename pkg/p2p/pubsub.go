@@ -147,14 +147,6 @@ func (h *Host) readLoop(ctx context.Context, sub *pubsub.Subscription, handler M
 	}
 }
 
-// computeMessageCID computes a SHA-256 hash of the message data and returns
-// it as a hex string. This is used as a fallback CID for replay protection
-// when the message doesn't contain an explicit CID.
-func computeMessageCID(data []byte) string {
-	hash := sha256.Sum256(data)
-	return hex.EncodeToString(hash[:])
-}
-
 // Unsubscribe cancels the subscription for the given topic and closes it.
 func (h *Host) Unsubscribe(topic string) error {
 	h.mu.Lock()

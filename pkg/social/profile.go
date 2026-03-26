@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -17,19 +18,20 @@ import (
 type ProfileService struct {
 	storage   *storage.DB
 	cas       *content.ContentStore
-	identity  *identity.KeyPair
+	identity  atomic.Pointer[identity.KeyPair]
 	publisher Publisher
 }
 
 // NewProfileService creates a new ProfileService.
 func NewProfileService(db *storage.DB, kp *identity.KeyPair) *ProfileService {
-	return &ProfileService{
-		storage:  db,
-		identity: kp,
+	svc := &ProfileService{
+		storage: db,
 	}
+	svc.identity.Store(kp)
+	return svc
 }
 
-func (s *ProfileService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+func (s *ProfileService) SetIdentity(kp *identity.KeyPair) { s.identity.Store(kp) }
 
 // SetContentStore configures optional CAS persistence for locally created profiles.
 func (s *ProfileService) SetContentStore(cas *content.ContentStore) { s.cas = cas }
@@ -39,7 +41,7 @@ func (s *ProfileService) SetPublisher(publisher Publisher) { s.publisher = publi
 
 // CreateProfile creates a new profile (version 1) using the service's stored identity.
 func (s *ProfileService) CreateProfile(ctx context.Context, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +127,7 @@ func (s *ProfileService) createProfileWith(ctx context.Context, kp *identity.Key
 // UpdateProfile updates the user's profile by incrementing the version number
 // using the service's stored identity.
 func (s *ProfileService) UpdateProfile(ctx context.Context, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return nil, err
 	}
@@ -230,38 +232,6 @@ func (s *ProfileService) GetProfile(pubkey []byte) (*pb.Profile, error) {
 	}
 
 	return profileRowToProto(row), nil
-}
-
-// HandleRemoteProfile validates and stores a remote profile if its version
-// is newer than the one we have stored locally.
-func (s *ProfileService) HandleRemoteProfile(profile *pb.Profile) error {
-	if profile == nil {
-		return fmt.Errorf("profile is nil")
-	}
-
-	// Validate the profile.
-	verifier := func(pubkey, message, signature []byte) bool {
-		return identity.Verify(pubkey, message, signature)
-	}
-	if err := content.ValidateProfile(profile, verifier); err != nil {
-		return fmt.Errorf("validate remote profile: %w", err)
-	}
-
-	// Store in DB (UpsertProfile handles the version check).
-	if err := s.storage.UpsertProfile(
-		profile.Author,
-		profile.DisplayName,
-		profile.Bio,
-		profile.AvatarCid,
-		profile.BannerCid,
-		profile.Website,
-		profile.Version,
-		int64(profile.Timestamp),
-	); err != nil {
-		return fmt.Errorf("store remote profile: %w", err)
-	}
-
-	return nil
 }
 
 // profileRowToProto converts a storage.ProfileRow to a pb.Profile.

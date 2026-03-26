@@ -128,12 +128,16 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 	// Try session key pair first, then fall back to global identity.
 	sess := h.sessions.GetFromRequest(r)
 	if sess != nil {
-		h.db.UpsertProfile(sess.KeyPair.PublicKeyBytes(), displayName, "", nil, nil, "", 2, time.Now().UnixMilli())
+		if err := h.db.UpsertProfile(sess.KeyPair.PublicKeyBytes(), displayName, "", nil, nil, "", 2, time.Now().UnixMilli()); err != nil {
+			log.Printf("web: failed to upsert profile: %v", err)
+		}
 	} else if h.identity.IsUnlocked() {
 		kp := h.identity.Get()
 		if kp != nil {
 			// Use version 2 to ensure it overwrites the default "Anonymous" profile (version 1)
-			h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, "", nil, nil, "", 2, time.Now().UnixMilli())
+			if err := h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, "", nil, nil, "", 2, time.Now().UnixMilli()); err != nil {
+				log.Printf("web: failed to upsert profile: %v", err)
+			}
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)

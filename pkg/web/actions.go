@@ -339,7 +339,7 @@ func (h *Handler) handleToggleTheme(w http.ResponseWriter, r *http.Request) {
 		MaxAge: 365 * 24 * 60 * 60, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 	referer := r.Header.Get("Referer")
-	if referer == "" {
+	if referer == "" || !strings.HasPrefix(referer, "/") {
 		referer = "/settings"
 	}
 	http.Redirect(w, r, referer, http.StatusSeeOther)

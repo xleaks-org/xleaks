@@ -29,11 +29,12 @@ type UserSession struct {
 type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*UserSession
+	done     chan struct{}
 }
 
 // NewSessionManager creates a new SessionManager and starts a background cleanup loop.
 func NewSessionManager() *SessionManager {
-	sm := &SessionManager{sessions: make(map[string]*UserSession)}
+	sm := &SessionManager{sessions: make(map[string]*UserSession), done: make(chan struct{})}
 	go sm.cleanupLoop()
 	return sm
 }
@@ -95,6 +96,7 @@ func (sm *SessionManager) SetCookie(w http.ResponseWriter, token string) {
 		Path:     "/",
 		MaxAge:   int(sessionMaxAge.Seconds()),
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -110,17 +112,26 @@ func (sm *SessionManager) ClearCookie(w http.ResponseWriter) {
 	})
 }
 
+// Stop signals the cleanup goroutine to exit.
+func (sm *SessionManager) Stop() { close(sm.done) }
+
 // cleanupLoop periodically removes expired sessions.
 func (sm *SessionManager) cleanupLoop() {
 	ticker := time.NewTicker(10 * time.Minute)
-	for range ticker.C {
-		sm.mu.Lock()
-		now := time.Now()
-		for token, sess := range sm.sessions {
-			if now.Sub(sess.LastSeen) > sessionMaxAge {
-				delete(sm.sessions, token)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			sm.mu.Lock()
+			now := time.Now()
+			for token, sess := range sm.sessions {
+				if now.Sub(sess.LastSeen) > sessionMaxAge {
+					delete(sm.sessions, token)
+				}
 			}
+			sm.mu.Unlock()
+		case <-sm.done:
+			return
 		}
-		sm.mu.Unlock()
 	}
 }

@@ -104,7 +104,9 @@ func (h *Handler) ensureProfile() {
 	}
 	profile, _ := h.db.GetProfile(kp.PublicKeyBytes())
 	if profile == nil {
-		h.db.UpsertProfile(kp.PublicKeyBytes(), "Anonymous", "", nil, nil, "", 1, time.Now().UnixMilli())
+		if err := h.db.UpsertProfile(kp.PublicKeyBytes(), "Anonymous", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+			log.Printf("web: failed to upsert profile: %v", err)
+		}
 	}
 }
 
