@@ -51,13 +51,15 @@ func fetchAndStore(ctx context.Context, cidHex string, fetcher func(context.Cont
 	if err := cas.Put(cidBytes, data); err != nil {
 		return fmt.Errorf("store %s: %w", cidHex, err)
 	}
-	db.TrackContentAccess(cidBytes, false)
+	if err := db.TrackContentAccess(cidBytes, false); err != nil {
+		return fmt.Errorf("track %s: %w", cidHex, err)
+	}
 	return nil
 }
 
 // PinContent marks content from a followed publisher as pinned (never evict).
 func (r *Replicator) PinContent(cid []byte) error {
-	if err := r.db.TrackContentAccess(cid, true); err != nil {
+	if err := r.db.SetContentPinned(cid, true); err != nil {
 		return fmt.Errorf("pin content: %w", err)
 	}
 	return nil
@@ -65,7 +67,7 @@ func (r *Replicator) PinContent(cid []byte) error {
 
 // UnpinContent removes the pin from content (eligible for eviction).
 func (r *Replicator) UnpinContent(cid []byte) error {
-	if err := r.db.TrackContentAccess(cid, false); err != nil {
+	if err := r.db.SetContentPinned(cid, false); err != nil {
 		return fmt.Errorf("unpin content: %w", err)
 	}
 	return nil
@@ -196,4 +198,3 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 
 	log.Printf("replicator: checkAndEvict: eviction complete — current=%d bytes", currentSize)
 }
-

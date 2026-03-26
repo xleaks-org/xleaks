@@ -66,6 +66,11 @@ type LoggingConfig struct {
 	MaxBackups int    `toml:"max_backups"`
 }
 
+var defaultBootstrapPeers = []string{
+	"/dns4/xleaks.org/tcp/7460/p2p/12D3KooWSy7rrdGY2AbGPHgHMgJkuuDxiZp88TSsiFGNnpSgiSto",
+	"/dns4/xleaks.org/udp/7460/quic-v1/p2p/12D3KooWSy7rrdGY2AbGPHgHMgJkuuDxiZp88TSsiFGNnpSgiSto",
+}
+
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
@@ -76,7 +81,7 @@ func DefaultConfig() *Config {
 		},
 		Network: NetworkConfig{
 			ListenAddresses:    []string{"/ip4/0.0.0.0/tcp/7460", "/ip4/0.0.0.0/udp/7460/quic-v1"},
-			BootstrapPeers:     []string{},
+			BootstrapPeers:     append([]string(nil), defaultBootstrapPeers...),
 			EnableRelay:        true,
 			EnableMDNS:         true,
 			EnableHolePunching: true,
@@ -159,6 +164,40 @@ func (c *Config) DataDir() string {
 // IsIndexer returns true if the node is running in indexer mode.
 func (c *Config) IsIndexer() bool {
 	return c.Node.Mode == "indexer"
+}
+
+// DefaultBootstrapPeers returns the built-in WAN bootstrap peers.
+func DefaultBootstrapPeers() []string {
+	return append([]string(nil), defaultBootstrapPeers...)
+}
+
+// MaxUploadBytes returns the effective upload cap in bytes, clamped to a sane minimum.
+func (c *Config) MaxUploadBytes() int64 {
+	sizeMB := c.Media.MaxUploadSizeMB
+	if sizeMB <= 0 {
+		sizeMB = DefaultConfig().Media.MaxUploadSizeMB
+	}
+	return int64(sizeMB) * 1024 * 1024
+}
+
+// ThumbnailJPEGQuality returns the configured JPEG quality, clamped into the valid range.
+func (c *Config) ThumbnailJPEGQuality() int {
+	quality := c.Media.ThumbnailQuality
+	if quality < 10 {
+		return 10
+	}
+	if quality > 100 {
+		return 100
+	}
+	return quality
+}
+
+// PassphraseMinLen returns the configured minimum passphrase length.
+func (c *Config) PassphraseMinLen() int {
+	if c.Identity.PassphraseMinLength <= 0 {
+		return DefaultConfig().Identity.PassphraseMinLength
+	}
+	return c.Identity.PassphraseMinLength
 }
 
 func expandHome(path string) string {

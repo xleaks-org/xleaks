@@ -38,12 +38,18 @@ func setupServices(
 	feedMgr := feed.NewManager(db)
 	posts := social.NewPostService(db, cas, kp)
 	posts.SetNotifications(notifs)
+	reactions := social.NewReactionService(db, kp)
+	reactions.SetContentStore(cas)
+	profiles := social.NewProfileService(db, kp)
+	profiles.SetContentStore(cas)
+	dms := social.NewDMService(db, kp)
+	dms.SetContentStore(cas)
 
 	return &ServiceBundle{
 		Posts:     posts,
-		Reactions: social.NewReactionService(db, kp),
-		Profiles:  social.NewProfileService(db, kp),
-		DMs:       social.NewDMService(db, kp),
+		Reactions: reactions,
+		Profiles:  profiles,
+		DMs:       dms,
 		Follows:   social.NewFollowService(db, feedMgr, kp),
 		Notifs:    notifs,
 		Feed:      feedMgr,

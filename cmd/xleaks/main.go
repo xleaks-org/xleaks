@@ -57,10 +57,23 @@ func run() error {
 
 	svc := setupServices(ctx, db, cas, kp, idHolder)
 	wireOutboundPublishers(p2pHost, svc)
+	if err := backfillPinnedContent(db); err != nil {
+		log.Printf("Warning: failed to backfill pinned content state: %v", err)
+	}
 
 	msgProcessor, messageHandler := wireP2PSubscriptions(ctx, p2pHost, kp, db, cas, svc)
 	ensureTopicSubscription := newTopicSubscriber(p2pHost, messageHandler)
 	wireContentExchange(p2pHost, cas)
+	if msgProcessor != nil {
+		msgProcessor.SetAutoFetchMedia(cfg.Media.AutoFetchMedia)
+		if p2pHost != nil {
+			if ce := p2pHost.ContentExchange(); ce != nil {
+				msgProcessor.SetMediaFetcher(func(ctx context.Context, cidHex string) ([]byte, error) {
+					return ce.FetchContent(ctx, cidHex, ce.FetchLocal)
+				})
+			}
+		}
+	}
 	wireIndexerDiscovery(ctx, cfg, p2pHost, svc)
 
 	identitySync := newIdentityRuntimeSyncer(p2pHost, messageHandler, ensureTopicSubscription, svc)
@@ -199,6 +212,37 @@ func wireIndexerDiscovery(
 		return
 	}
 	go discoverIndexersPeriodically(ctx, host, svc)
+}
+
+func backfillPinnedContent(db *storage.DB) error {
+	identities, err := db.GetIdentities()
+	if err != nil {
+		return err
+	}
+	for _, id := range identities {
+		if err := db.SetPinnedForAuthor(id.Pubkey, true); err != nil {
+			return err
+		}
+	}
+
+	subs, err := db.GetSubscriptions(nil)
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(subs))
+	for _, sub := range subs {
+		key := string(sub.Pubkey)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if pin, err := db.ShouldPinAuthor(sub.Pubkey); err != nil {
+			return err
+		} else if err := db.SetPinnedForAuthor(sub.Pubkey, pin); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // discoverIndexersPeriodically queries the DHT for indexers every 5 minutes.

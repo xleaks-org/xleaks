@@ -102,6 +102,104 @@ func TestNewDB_WALMode(t *testing.T) {
 	}
 }
 
+func TestTrackContentAccess_PreservesPinState(t *testing.T) {
+	db := setupTestDB(t)
+	cid := []byte("content-access-cid")
+
+	if err := db.TrackContentAccess(cid, true); err != nil {
+		t.Fatalf("TrackContentAccess pin: %v", err)
+	}
+	if err := db.TrackContentAccess(cid, false); err != nil {
+		t.Fatalf("TrackContentAccess unpinned access: %v", err)
+	}
+
+	var pinned int
+	if err := db.QueryRow(`SELECT is_pinned FROM content_access WHERE cid = ?`, cid).Scan(&pinned); err != nil {
+		t.Fatalf("QueryRow pinned: %v", err)
+	}
+	if pinned != 1 {
+		t.Fatalf("expected content to remain pinned, got %d", pinned)
+	}
+}
+
+func TestSetPinnedForAuthor_BackfillsStoredContent(t *testing.T) {
+	db := setupTestDB(t)
+	owner := []byte("owner-local-identity-xxxxxxxxxxxxx")
+	author := []byte("followed-author-xxxxxxxxxxxxxxxx")
+	postCID := []byte("post-cid-followed-author-xxxxxxx")
+	reactionCID := []byte("reaction-cid-followed-author")
+	mediaCID := []byte("media-cid-followed-author-xxxxxx")
+	thumbCID := []byte("thumb-cid-followed-author-xxxxxx")
+
+	if err := db.InsertIdentity(owner, "Owner", true, 1000); err != nil {
+		t.Fatalf("InsertIdentity: %v", err)
+	}
+	if err := db.UpsertProfile(author, "Author", "", nil, nil, "", 1, 1000); err != nil {
+		t.Fatalf("UpsertProfile author: %v", err)
+	}
+	if err := db.InsertPost(postCID, author, "hello", nil, nil, 2000, []byte("sig")); err != nil {
+		t.Fatalf("InsertPost: %v", err)
+	}
+	if err := db.InsertReaction(reactionCID, author, postCID, "like", 3000); err != nil {
+		t.Fatalf("InsertReaction: %v", err)
+	}
+	if err := db.InsertMediaObject(mediaCID, author, "image/png", 128, 1, 0, 0, 0, thumbCID, 4000); err != nil {
+		t.Fatalf("InsertMediaObject: %v", err)
+	}
+
+	if err := db.SetPinnedForAuthor(author, true); err != nil {
+		t.Fatalf("SetPinnedForAuthor true: %v", err)
+	}
+	for _, cid := range [][]byte{author, postCID, reactionCID, mediaCID, thumbCID} {
+		assertPinnedState(t, db, cid, 1)
+	}
+
+	if err := db.SetPinnedForAuthor(author, false); err != nil {
+		t.Fatalf("SetPinnedForAuthor false: %v", err)
+	}
+	for _, cid := range [][]byte{author, postCID, reactionCID, mediaCID, thumbCID} {
+		assertPinnedState(t, db, cid, 0)
+	}
+}
+
+func TestTrackReactionContent_PinsWhenTargetAuthorIsFollowed(t *testing.T) {
+	db := setupTestDB(t)
+	owner := []byte("owner-local-identity-2-xxxxxxxx")
+	targetAuthor := []byte("target-author-followed-xxxxxxxx")
+	reactionAuthor := []byte("reaction-author-remote-xxxxxxx")
+	postCID := []byte("target-post-cid-followed-author")
+	reactionCID := []byte("reaction-cid-target-followed")
+
+	if err := db.InsertIdentity(owner, "Owner", true, 1000); err != nil {
+		t.Fatalf("InsertIdentity: %v", err)
+	}
+	if err := db.AddSubscription(owner, targetAuthor, 2000); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+	if err := db.UpsertProfile(targetAuthor, "Target", "", nil, nil, "", 1, 1000); err != nil {
+		t.Fatalf("UpsertProfile target: %v", err)
+	}
+	if err := db.InsertPost(postCID, targetAuthor, "post", nil, nil, 3000, []byte("sig")); err != nil {
+		t.Fatalf("InsertPost: %v", err)
+	}
+
+	if err := db.TrackReactionContent(reactionCID, reactionAuthor, postCID); err != nil {
+		t.Fatalf("TrackReactionContent: %v", err)
+	}
+	assertPinnedState(t, db, reactionCID, 1)
+}
+
+func assertPinnedState(t *testing.T, db *DB, cid []byte, want int) {
+	t.Helper()
+	var pinned int
+	if err := db.QueryRow(`SELECT is_pinned FROM content_access WHERE cid = ?`, cid).Scan(&pinned); err != nil {
+		t.Fatalf("QueryRow pinned %q: %v", string(cid), err)
+	}
+	if pinned != want {
+		t.Fatalf("pinned state for %q = %d, want %d", string(cid), pinned, want)
+	}
+}
+
 // --- Profiles ---
 
 func TestUpsertAndGetProfile(t *testing.T) {

@@ -134,6 +134,9 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 	if err != nil {
 		return nil, err
 	}
+	if err := s.storage.TrackContentForAuthor(post.Id, post.Author); err != nil {
+		return nil, fmt.Errorf("track post content: %w", err)
+	}
 
 	// Send reply notification to the parent post's author (if replying).
 	if len(replyTo) > 0 && s.notifications != nil {
@@ -222,6 +225,9 @@ func (s *PostService) CreateRepost(ctx context.Context, originalCID []byte) (*pb
 	})
 	if err != nil {
 		return nil, err
+	}
+	if err := s.storage.TrackContentForAuthor(post.Id, post.Author); err != nil {
+		return nil, fmt.Errorf("track repost content: %w", err)
 	}
 
 	if err := publishPost(ctx, s.publisher, post); err != nil {

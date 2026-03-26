@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/version"
 )
@@ -162,26 +163,41 @@ func (h *Handler) GetNodePeers(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetNodeConfig(w http.ResponseWriter, r *http.Request) {
 	if h.cfg == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"listen_addresses": []string{},
-			"max_connections":  50,
-			"storage_limit":    0,
+			"listen_addresses":        []string{},
+			"bootstrap_peers":         []string{},
+			"default_bootstrap_peers": config.DefaultBootstrapPeers(),
+			"max_connections":         50,
+			"storage_limit_gb":        0,
+			"bandwidth_limit_mbps":    0,
+			"enable_relay":            true,
+			"enable_mdns":             true,
+			"enable_hole_punching":    true,
+			"enable_websocket":        true,
+			"auto_fetch_media":        false,
+			"max_upload_size_mb":      config.DefaultConfig().Media.MaxUploadSizeMB,
+			"thumbnail_quality":       config.DefaultConfig().Media.ThumbnailQuality,
 		})
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"listen_addresses":     h.cfg.Network.ListenAddresses,
-		"bootstrap_peers":      h.cfg.Network.BootstrapPeers,
-		"max_connections":      h.cfg.Network.MaxPeers,
-		"enable_relay":         h.cfg.Network.EnableRelay,
-		"enable_mdns":          h.cfg.Network.EnableMDNS,
-		"enable_hole_punching": h.cfg.Network.EnableHolePunching,
-		"bandwidth_limit_mbps": h.cfg.Network.BandwidthLimitMbps,
-		"storage_limit_gb":     h.cfg.Node.MaxStorageGB,
-		"data_dir":             h.cfg.Node.DataDir,
-		"mode":                 h.cfg.Node.Mode,
-		"api_address":          h.cfg.API.ListenAddress,
-		"log_level":            h.cfg.Logging.Level,
+		"listen_addresses":        h.cfg.Network.ListenAddresses,
+		"bootstrap_peers":         h.cfg.Network.BootstrapPeers,
+		"default_bootstrap_peers": config.DefaultBootstrapPeers(),
+		"max_connections":         h.cfg.Network.MaxPeers,
+		"enable_relay":            h.cfg.Network.EnableRelay,
+		"enable_mdns":             h.cfg.Network.EnableMDNS,
+		"enable_hole_punching":    h.cfg.Network.EnableHolePunching,
+		"bandwidth_limit_mbps":    h.cfg.Network.BandwidthLimitMbps,
+		"storage_limit_gb":        h.cfg.Node.MaxStorageGB,
+		"enable_websocket":        h.cfg.API.EnableWebSocket,
+		"auto_fetch_media":        h.cfg.Media.AutoFetchMedia,
+		"max_upload_size_mb":      h.cfg.Media.MaxUploadSizeMB,
+		"thumbnail_quality":       h.cfg.Media.ThumbnailQuality,
+		"data_dir":                h.cfg.Node.DataDir,
+		"mode":                    h.cfg.Node.Mode,
+		"api_address":             h.cfg.API.ListenAddress,
+		"log_level":               h.cfg.Logging.Level,
 	})
 }
 
@@ -229,6 +245,31 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 			h.cfg.Network.BandwidthLimitMbps = int(n)
 		}
 	}
+	if v, ok := updates["bootstrap_peers"]; ok {
+		if peers, ok := toStringSlice(v); ok {
+			h.cfg.Network.BootstrapPeers = peers
+		}
+	}
+	if v, ok := updates["enable_websocket"]; ok {
+		if b, ok := v.(bool); ok {
+			h.cfg.API.EnableWebSocket = b
+		}
+	}
+	if v, ok := updates["auto_fetch_media"]; ok {
+		if b, ok := v.(bool); ok {
+			h.cfg.Media.AutoFetchMedia = b
+		}
+	}
+	if v, ok := updates["max_upload_size_mb"]; ok {
+		if n, ok := v.(float64); ok && int(n) > 0 {
+			h.cfg.Media.MaxUploadSizeMB = int(n)
+		}
+	}
+	if v, ok := updates["thumbnail_quality"]; ok {
+		if n, ok := v.(float64); ok {
+			h.cfg.Media.ThumbnailQuality = int(n)
+		}
+	}
 	if v, ok := updates["log_level"]; ok {
 		if s, ok := v.(string); ok {
 			h.cfg.Logging.Level = s
@@ -246,4 +287,20 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "updated",
 	})
+}
+
+func toStringSlice(v interface{}) ([]string, bool) {
+	items, ok := v.([]interface{})
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, s)
+	}
+	return out, true
 }

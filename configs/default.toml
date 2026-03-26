@@ -6,7 +6,10 @@ max_storage_gb = 5                  # Max disk space for content store
 
 [network]
 listen_addresses = ["/ip4/0.0.0.0/tcp/7460", "/ip4/0.0.0.0/udp/7460/quic-v1"]
-bootstrap_peers = []                # Add full multiaddrs with /p2p/<peer-id> when known
+bootstrap_peers = [
+  "/dns4/xleaks.org/tcp/7460/p2p/12D3KooWSy7rrdGY2AbGPHgHMgJkuuDxiZp88TSsiFGNnpSgiSto",
+  "/dns4/xleaks.org/udp/7460/quic-v1/p2p/12D3KooWSy7rrdGY2AbGPHgHMgJkuuDxiZp88TSsiFGNnpSgiSto",
+]                                   # Built-in WAN bootstrap peers
 enable_relay = true                 # Use relay circuits if direct connection fails
 enable_mdns = true                  # Local network discovery
 enable_hole_punching = true         # NAT traversal

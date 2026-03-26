@@ -2,6 +2,8 @@ package p2p
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,15 +18,18 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockStorage struct {
-	posts       map[string]bool
-	reactions   map[string]bool
-	follows     []followRecord
-	dms         []dmRecord
-	postMedia   map[string][]string
-	media       map[string]bool
-	profiles    map[string]profileRecord
-	insertErr   error
-	profilesMap map[string]profileRecord
+	posts        map[string]bool
+	reactions    map[string]bool
+	follows      []followRecord
+	dms          []dmRecord
+	postMedia    map[string][]string
+	media        map[string]bool
+	mediaFetched map[string]bool
+	profiles     map[string]profileRecord
+	insertErr    error
+	profilesMap  map[string]profileRecord
+	tracked      map[string]bool
+	shouldPin    map[string]bool
 }
 
 type followRecord struct {
@@ -44,12 +49,15 @@ type profileRecord struct {
 
 func newMockStorage() *mockStorage {
 	return &mockStorage{
-		posts:       make(map[string]bool),
-		reactions:   make(map[string]bool),
-		postMedia:   make(map[string][]string),
-		media:       make(map[string]bool),
-		profiles:    make(map[string]profileRecord),
-		profilesMap: make(map[string]profileRecord),
+		posts:        make(map[string]bool),
+		reactions:    make(map[string]bool),
+		postMedia:    make(map[string][]string),
+		media:        make(map[string]bool),
+		mediaFetched: make(map[string]bool),
+		profiles:     make(map[string]profileRecord),
+		profilesMap:  make(map[string]profileRecord),
+		tracked:      make(map[string]bool),
+		shouldPin:    make(map[string]bool),
 	}
 }
 
@@ -108,6 +116,35 @@ func (m *mockStorage) UpdateReactionCount(_ []byte) error {
 }
 
 func (m *mockStorage) UpdateFollowerCount(_ []byte) error {
+	return nil
+}
+
+func (m *mockStorage) SetMediaFetched(cid []byte) error {
+	m.mediaFetched[string(cid)] = true
+	return nil
+}
+
+func (m *mockStorage) ShouldPinAuthor(author []byte) (bool, error) {
+	return m.shouldPin[string(author)], nil
+}
+
+func (m *mockStorage) TrackContentForAuthor(cid, author []byte) error {
+	m.tracked[string(cid)] = true
+	return nil
+}
+
+func (m *mockStorage) TrackReactionContent(cid, author, target []byte) error {
+	m.tracked[string(cid)] = true
+	return nil
+}
+
+func (m *mockStorage) TrackContentForDM(cid, author, recipient []byte) error {
+	m.tracked[string(cid)] = true
+	return nil
+}
+
+func (m *mockStorage) TrackContentForMedia(cid, mediaObjectCID []byte) error {
+	m.tracked[string(cid)] = true
 	return nil
 }
 
@@ -293,6 +330,48 @@ func signedProfile(t *testing.T, kp *identity.KeyPair, displayName string, versi
 		t.Fatalf("marshal envelope: %v", err)
 	}
 	return data, profile
+}
+
+func signedMediaObject(t *testing.T, kp *identity.KeyPair, fileCID, chunkCID, thumbnailCID []byte, size int) ([]byte, *pb.MediaObject) {
+	t.Helper()
+
+	obj := &pb.MediaObject{
+		Cid:          fileCID,
+		Author:       kp.PublicKeyBytes(),
+		MimeType:     "image/png",
+		Size:         uint64(size),
+		ChunkCount:   1,
+		ChunkCids:    [][]byte{chunkCID},
+		ThumbnailCid: thumbnailCID,
+		Timestamp:    nowMillis(),
+	}
+
+	payload, err := proto.Marshal(&pb.MediaObject{
+		Cid:          obj.Cid,
+		Author:       obj.Author,
+		MimeType:     obj.MimeType,
+		Size:         obj.Size,
+		ChunkCount:   obj.ChunkCount,
+		ChunkCids:    obj.ChunkCids,
+		ThumbnailCid: obj.ThumbnailCid,
+		Timestamp:    obj.Timestamp,
+	})
+	if err != nil {
+		t.Fatalf("marshal media object payload: %v", err)
+	}
+
+	sig, err := identity.SignProtoMessage(kp, payload)
+	if err != nil {
+		t.Fatalf("sign media object: %v", err)
+	}
+	obj.Signature = sig
+
+	env := &pb.Envelope{Payload: &pb.Envelope_MediaObject{MediaObject: obj}}
+	data, err := proto.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal media object envelope: %v", err)
+	}
+	return data, obj
 }
 
 func newProcessor() (*MessageProcessor, *mockStorage, *mockCAS, *mockNotifier) {
@@ -525,5 +604,54 @@ func TestHandleMessage_UnknownPayload_Ignored(t *testing.T) {
 
 	if err := mp.HandleMessage(context.Background(), data); err != nil {
 		t.Fatalf("expected nil for unknown payload, got: %v", err)
+	}
+}
+
+func TestHandleMessage_MediaObject_AutoFetchesPinnedAuthorContent(t *testing.T) {
+	mp, db, cas, _ := newProcessor()
+	kp := makeKeyPair(t)
+
+	fileData := []byte("fetched media bytes")
+	fileCID, err := content.ComputeCID(fileData)
+	if err != nil {
+		t.Fatalf("ComputeCID file: %v", err)
+	}
+	chunkCID, err := content.ComputeCID([]byte("chunk"))
+	if err != nil {
+		t.Fatalf("ComputeCID chunk: %v", err)
+	}
+	thumbData := []byte("thumbnail bytes")
+	thumbCID, err := content.ComputeCID(thumbData)
+	if err != nil {
+		t.Fatalf("ComputeCID thumb: %v", err)
+	}
+
+	data, obj := signedMediaObject(t, kp, fileCID, chunkCID, thumbCID, len(fileData))
+	db.shouldPin[string(kp.PublicKeyBytes())] = true
+
+	mp.SetAutoFetchMedia(true)
+	mp.SetMediaFetcher(func(ctx context.Context, cidHex string) ([]byte, error) {
+		switch cidHex {
+		case hex.EncodeToString(fileCID):
+			return fileData, nil
+		case hex.EncodeToString(thumbCID):
+			return thumbData, nil
+		default:
+			return nil, fmt.Errorf("unexpected fetch %s", cidHex)
+		}
+	})
+
+	if err := mp.HandleMessage(context.Background(), data); err != nil {
+		t.Fatalf("HandleMessage media object: %v", err)
+	}
+
+	if !cas.Has(obj.Cid) {
+		t.Fatal("expected fetched media file in CAS")
+	}
+	if !cas.Has(obj.ThumbnailCid) {
+		t.Fatal("expected fetched thumbnail in CAS")
+	}
+	if !db.mediaFetched[string(obj.Cid)] {
+		t.Fatal("expected media object to be marked fetched")
 	}
 }

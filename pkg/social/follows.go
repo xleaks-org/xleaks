@@ -124,6 +124,11 @@ func (s *FollowService) changeFollowState(ctx context.Context, kp *identity.KeyP
 	if err := s.storage.UpdateFollowerCount(event.Target); err != nil {
 		log.Printf("update target follow counts: %v", err)
 	}
+	if pin, err := s.storage.ShouldPinAuthor(event.Target); err != nil {
+		log.Printf("recompute follow pin state: %v", err)
+	} else if err := s.storage.SetPinnedForAuthor(event.Target, pin); err != nil {
+		log.Printf("apply follow pin state: %v", err)
+	}
 
 	if err := publishFollowEvent(ctx, s.publisher, event); err != nil {
 		log.Printf("publish follow event: %v", err)
