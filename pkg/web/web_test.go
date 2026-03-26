@@ -26,6 +26,8 @@ func TestTemplatesParse(t *testing.T) {
 		"notifications.html",
 		"messages.html",
 		"search.html",
+		"explore.html",
+		"trending.html",
 	}
 
 	for _, pf := range pageFiles {

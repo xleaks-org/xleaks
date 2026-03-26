@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -41,8 +42,9 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Passphrase) < 8 {
-		respondError(w, http.StatusBadRequest, "passphrase must be at least 8 characters")
+	minLen := h.passphraseMinLen()
+	if len(req.Passphrase) < minLen {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("passphrase must be at least %d characters", minLen))
 		return
 	}
 
@@ -96,6 +98,12 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 
 	if req.Passphrase == "" {
 		respondError(w, http.StatusBadRequest, "passphrase is required")
+		return
+	}
+
+	minLen := h.passphraseMinLen()
+	if len(req.Passphrase) < minLen {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("passphrase must be at least %d characters", minLen))
 		return
 	}
 

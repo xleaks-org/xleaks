@@ -21,10 +21,11 @@ listen_address = "127.0.0.1:7470"  # Local API (localhost only!)
 enable_websocket = true
 
 [indexer]
-# Only used when mode = "indexer"
+# Public indexer settings. `public_api_address` is only used when mode = "indexer".
 public_api_address = "0.0.0.0:7471"
 max_indexed_publishers = 100000
 trending_windows = ["1h", "6h", "24h", "7d"]
+known_indexers = ["http://xleaks.org:7471"]
 
 [media]
 max_upload_size_mb = 100

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +21,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const defaultConfigPath = "~/.xleaks/config.toml"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -30,7 +31,7 @@ func main() {
 }
 
 func run() error {
-	cfg, err := config.Load("~/.xleaks/config.toml")
+	cfg, err := config.Load(defaultConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -91,7 +92,7 @@ func run() error {
 	maxStorage := int64(cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
 	replicator.StartStorageManager(ctx, maxStorage, 5*time.Minute)
 
-	cfgPath := filepath.Join(dataDir, "config.toml")
+	cfgPath := defaultConfigPath
 	webRoutes := setupWebHandler(db, idHolder, svc, cfg, p2pHost, dataDir, idx, identitySync, ensureTopicSubscription)
 	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes, identitySync, ensureTopicSubscription)
 

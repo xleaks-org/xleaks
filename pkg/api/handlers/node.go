@@ -166,6 +166,8 @@ func (h *Handler) GetNodeConfig(w http.ResponseWriter, r *http.Request) {
 			"listen_addresses":        []string{},
 			"bootstrap_peers":         []string{},
 			"default_bootstrap_peers": config.DefaultBootstrapPeers(),
+			"known_indexers":          config.DefaultKnownIndexers(),
+			"default_known_indexers":  config.DefaultKnownIndexers(),
 			"max_connections":         50,
 			"storage_limit_gb":        0,
 			"bandwidth_limit_mbps":    0,
@@ -184,6 +186,8 @@ func (h *Handler) GetNodeConfig(w http.ResponseWriter, r *http.Request) {
 		"listen_addresses":        h.cfg.Network.ListenAddresses,
 		"bootstrap_peers":         h.cfg.Network.BootstrapPeers,
 		"default_bootstrap_peers": config.DefaultBootstrapPeers(),
+		"known_indexers":          h.cfg.Indexer.KnownIndexers,
+		"default_known_indexers":  config.DefaultKnownIndexers(),
 		"max_connections":         h.cfg.Network.MaxPeers,
 		"enable_relay":            h.cfg.Network.EnableRelay,
 		"enable_mdns":             h.cfg.Network.EnableMDNS,
@@ -248,6 +252,11 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := updates["bootstrap_peers"]; ok {
 		if peers, ok := toStringSlice(v); ok {
 			h.cfg.Network.BootstrapPeers = peers
+		}
+	}
+	if v, ok := updates["known_indexers"]; ok {
+		if indexers, ok := toStringSlice(v); ok {
+			h.cfg.Indexer.KnownIndexers = indexers
 		}
 	}
 	if v, ok := updates["enable_websocket"]; ok {

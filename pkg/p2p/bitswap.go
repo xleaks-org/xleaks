@@ -10,14 +10,17 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	mh "github.com/multiformats/go-multihash"
+	"github.com/xleaks-org/xleaks/pkg/content"
 )
 
 const (
 	// contentProtocol is the libp2p protocol ID for content exchange.
 	contentProtocol = protocol.ID("/xleaks/content/1.0.0")
 
-	// maxContentSize is the maximum content size we will read from a stream (16 MiB).
-	maxContentSize = 16 << 20
+	// maxContentSize is the maximum content size we will read from a stream.
+	// It matches the protocol-level media limit so remote media fetches can
+	// retrieve any valid attachment published by the network.
+	maxContentSize = content.MaxMediaSize
 
 	// findProvidersTimeout is the default timeout for DHT provider queries.
 	findProvidersTimeout = 10 * time.Second

@@ -293,12 +293,43 @@ type TagCount struct {
 	Count int
 }
 
-// GetTrendingTags returns the most frequently used hashtags, ordered by
-// occurrence count descending.
-func (db *DB) GetTrendingTags(limit int) ([]TagCount, error) {
+// GetTrendingPosts returns the most engaged posts since the provided timestamp.
+// The sort favors higher aggregate engagement, then newer posts as a tie-breaker.
+func (db *DB) GetTrendingPosts(since int64, limit int) ([]PostRow, error) {
 	rows, err := db.Query(
-		`SELECT tag, COUNT(*) AS cnt FROM post_tags GROUP BY tag ORDER BY cnt DESC LIMIT ?`,
-		limit,
+		`SELECT p.cid, p.author, p.content, p.reply_to, p.repost_of, p.timestamp, p.signature, p.received_at
+		 FROM posts p
+		 LEFT JOIN reaction_counts rc ON rc.post_cid = p.cid
+		 WHERE p.timestamp >= ?
+		 ORDER BY
+		     (COALESCE(rc.like_count, 0) + (COALESCE(rc.reply_count, 0) * 2) + (COALESCE(rc.repost_count, 0) * 3)) DESC,
+		     p.timestamp DESC
+		 LIMIT ?`,
+		since, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get trending posts: %w", err)
+	}
+	defer rows.Close()
+	return scanPostRows(rows)
+}
+
+// GetTrendingTags returns the most frequently used hashtags across all stored posts.
+func (db *DB) GetTrendingTags(limit int) ([]TagCount, error) {
+	return db.GetTrendingTagsSince(0, limit)
+}
+
+// GetTrendingTagsSince returns the most frequently used hashtags since the provided timestamp.
+func (db *DB) GetTrendingTagsSince(since int64, limit int) ([]TagCount, error) {
+	rows, err := db.Query(
+		`SELECT pt.tag, COUNT(*) AS cnt
+		 FROM post_tags pt
+		 INNER JOIN posts p ON p.cid = pt.post_cid
+		 WHERE p.timestamp >= ?
+		 GROUP BY pt.tag
+		 ORDER BY cnt DESC
+		 LIMIT ?`,
+		since, limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get trending tags: %w", err)

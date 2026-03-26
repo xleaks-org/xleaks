@@ -237,30 +237,71 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	profiles, err := h.db.GetAllProfiles()
-	if err != nil {
-		log.Printf("web: failed to get all profiles: %v", err)
-	}
+
 	// Get current user's pubkey to exclude from explore list
 	var ownPubkey string
 	if user := h.currentUser(r); user != nil {
 		ownPubkey = user.Pubkey
 	}
 
-	var users []ExploreUser
+	users := make([]ExploreUser, 0, 32)
+	seen := make(map[string]struct{}, 32)
+
+	if h.indexerClient != nil && h.indexerClient.Available() {
+		publishers, err := h.indexerClient.GetExplorePublishers(32)
+		if err != nil {
+			log.Printf("web: failed to get explore publishers: %v", err)
+		} else {
+			for _, publisher := range publishers {
+				if publisher.Pubkey == "" || publisher.Pubkey == ownPubkey {
+					continue
+				}
+				if _, ok := seen[publisher.Pubkey]; ok {
+					continue
+				}
+
+				displayName := publisher.DisplayName
+				if displayName == "" {
+					displayName = shortenHex(publisher.Pubkey)
+				}
+
+				users = append(users, ExploreUser{
+					Pubkey:      publisher.Pubkey,
+					DisplayName: displayName,
+					ShortPubkey: shortenHex(publisher.Pubkey),
+					Initial:     getInitial(displayName),
+					Bio:         publisher.Bio,
+				})
+				seen[publisher.Pubkey] = struct{}{}
+			}
+		}
+	}
+
+	profiles, err := h.db.GetAllProfiles()
+	if err != nil {
+		log.Printf("web: failed to get all profiles: %v", err)
+	}
 	for _, p := range profiles {
 		pubkeyHex := hex.EncodeToString(p.Pubkey)
-		// Don't show yourself in the explore list
 		if pubkeyHex == ownPubkey {
 			continue
 		}
+		if _, ok := seen[pubkeyHex]; ok {
+			continue
+		}
+
+		displayName := p.DisplayName
+		if displayName == "" {
+			displayName = shortenHex(pubkeyHex)
+		}
 		users = append(users, ExploreUser{
 			Pubkey:      pubkeyHex,
-			DisplayName: p.DisplayName,
+			DisplayName: displayName,
 			ShortPubkey: shortenHex(pubkeyHex),
-			Initial:     getInitial(p.DisplayName),
+			Initial:     getInitial(displayName),
 			Bio:         p.Bio,
 		})
+		seen[pubkeyHex] = struct{}{}
 	}
 	data := h.pageData(r, "explore", "Explore")
 	data["Users"] = users

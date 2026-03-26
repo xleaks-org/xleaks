@@ -235,7 +235,8 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) trendingTagsPartial(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	tags, err := h.db.GetTrendingTags(10)
+	since := time.Now().Add(-24 * time.Hour).UnixMilli()
+	tags, err := h.db.GetTrendingTagsSince(since, 10)
 	if err != nil {
 		log.Printf("web: failed to get trending tags: %v", err)
 		fmt.Fprint(w, `<p class="text-gray-400 text-sm">Could not load trending topics.</p>`)
@@ -251,6 +252,46 @@ func (h *Handler) trendingTagsPartial(w http.ResponseWriter, r *http.Request) {
 			`<span class="font-semibold text-sm">#%s</span>`+
 			`<span class="text-xs text-gray-500 ml-2">%d posts</span></a>`,
 			template.HTMLEscapeString(tag.Tag), template.HTMLEscapeString(tag.Tag), tag.Count)
+	}
+}
+
+// trendingPostsPartial returns trending posts as an htmx partial.
+func (h *Handler) trendingPostsPartial(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	posts := make([]PostView, 0, 20)
+	if h.indexerClient != nil && h.indexerClient.Available() {
+		resp, err := h.indexerClient.GetTrending("24h", 20)
+		if err == nil && resp != nil {
+			for _, hit := range resp.Posts {
+				if hit.CID == "" {
+					continue
+				}
+				posts = append(posts, h.trendingHitToView(hit))
+			}
+		}
+	}
+
+	if len(posts) == 0 {
+		since := time.Now().Add(-24 * time.Hour).UnixMilli()
+		localPosts, err := h.db.GetTrendingPosts(since, 20)
+		if err != nil {
+			log.Printf("web: failed to get trending posts: %v", err)
+			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Could not load trending posts.</p></div>`)
+			return
+		}
+		for i := range localPosts {
+			posts = append(posts, h.postRowToView(&localPosts[i]))
+		}
+	}
+
+	if len(posts) == 0 {
+		fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>No trending posts yet.</p></div>`)
+		return
+	}
+
+	if err := h.partials.ExecuteTemplate(w, "feed_items.html", map[string]interface{}{"Posts": posts}); err != nil {
+		log.Printf("web: template error rendering trending posts: %v", err)
 	}
 }
 
