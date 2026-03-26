@@ -339,27 +339,30 @@ func ComputeCID(msg proto.Message) []byte {
 ### 4.2 Signing Process
 
 Messages are signed using Ed25519 with the author's private key. The signature
-covers the full serialized payload minus the signature field itself.
+covers the same canonical payload used for CID computation: the serialized
+message with both `id` and `signature` fields zeroed.
 
 **Algorithm:**
 
 ```
 1. Take the protobuf message.
-2. Zero out the `signature` field (set to empty bytes).
-3. Serialize the message to protobuf wire format (including the `id` field).
-4. Sign the serialized bytes using Ed25519 with the author's private key.
-5. Set the `signature` field to the resulting 64-byte signature.
+2. Zero out the `id` field (set to empty bytes).
+3. Zero out the `signature` field (set to empty bytes).
+4. Serialize the message to protobuf wire format.
+5. Sign the serialized bytes using Ed25519 with the author's private key.
+6. Set the `signature` field to the resulting 64-byte signature.
 ```
 
 **Verification (performed by every receiving node):**
 
 ```
 1. Extract the `signature` field and save it.
-2. Zero out the `signature` field.
-3. Serialize the message to protobuf wire format.
-4. Verify the saved signature against the serialized bytes using the
+2. Zero out the `id` field.
+3. Zero out the `signature` field.
+4. Serialize the message to protobuf wire format.
+5. Verify the saved signature against the serialized bytes using the
    `author` public key and Ed25519 verify.
-5. If verification fails, drop the message silently.
+6. If verification fails, drop the message silently.
 ```
 
 ### 4.3 Message Construction Order
@@ -368,9 +371,10 @@ When creating a new message, the fields MUST be populated in this order:
 
 ```
 1. Populate all content fields (author, timestamp, content, etc.).
-2. Compute the CID and set the `id` field.
-3. Compute the signature (over the message with `id` set but `signature` zeroed).
-4. Set the `signature` field.
+2. Clone the message, zero `id` and `signature`, and serialize it.
+3. Compute the CID from that canonical byte sequence and set the `id` field.
+4. Sign the same canonical byte sequence.
+5. Set the `signature` field.
 ```
 
 ### 4.4 Public Key Encoding
@@ -418,7 +422,10 @@ characters).
 | User closes a post detail view | Unsubscribe from `/xleaks/reactions/<post-cid-hex>` |
 | Node starts | Subscribe to `/xleaks/dm/<own-pubkey-hex>` |
 | Node starts | Subscribe to `/xleaks/global` |
+| Node starts | Subscribe to `/xleaks/profiles` |
 | Node starts | Subscribe to `/xleaks/posts/<pubkey-hex>` for every followed publisher |
+| Node sees a profile or post author | Subscribe to `/xleaks/follows/<author-pubkey-hex>` |
+| Node sees a post for the first time | Subscribe to `/xleaks/reactions/<post-cid-hex>` |
 
 ### 5.3 Publishing Behavior
 
@@ -429,6 +436,7 @@ characters).
 | User updates profile | Publish to `/xleaks/profiles` |
 | User follows/unfollows | Publish to `/xleaks/follows/<own-pubkey-hex>` |
 | User sends a DM | Publish to `/xleaks/dm/<recipient-pubkey-hex>` |
+| User uploads media metadata | Publish `MediaObject` to `/xleaks/global` |
 
 ---
 
@@ -487,14 +495,16 @@ SQLite table.
 
 ## 7. Media Chunking Protocol
 
-Media files are split into fixed-size chunks for efficient transfer and storage
-across the peer-to-peer network.
+Media files are split into fixed-size chunks for efficient transfer and storage.
+The signed `MediaObject` metadata is announced over GossipSub; the raw file,
+thumbnail, and chunk bytes are then fetched on demand through the content
+exchange layer.
 
 ### 7.1 Chunking Process
 
 ```
 Input:  Raw media file bytes
-Output: MediaObject descriptor + N MediaChunk objects
+Output: MediaObject descriptor + ordered chunk CID list
 
 1. Validate file size <= 100 MB.
 2. Validate MIME type is in the supported set.
@@ -502,7 +512,7 @@ Output: MediaObject descriptor + N MediaChunk objects
    - Last chunk may be smaller than 256 KB.
 4. For each chunk:
    a. Compute chunk CID = SHA-256 multihash of the chunk data.
-   b. Create a MediaChunk { cid, parent_cid, index, data }.
+   b. Store the raw chunk bytes in local content-addressed storage.
 5. Compute overall file CID = SHA-256 multihash of the entire original file.
 6. Generate thumbnail:
    - Images: resize to 320px wide, maintain aspect ratio, JPEG quality 80.
@@ -512,6 +522,8 @@ Output: MediaObject descriptor + N MediaChunk objects
 7. Store thumbnail as a separate chunk with its own CID.
 8. Create MediaObject with all metadata and ordered chunk CID list.
 9. Sign the MediaObject.
+10. Publish the MediaObject envelope on `/xleaks/global`.
+11. Announce the file CID, thumbnail CID, and chunk CIDs to the content exchange.
 ```
 
 ### 7.2 Chunk Parameters
@@ -528,19 +540,19 @@ Output: MediaObject descriptor + N MediaChunk objects
 
 ### 7.3 Chunk Transfer
 
-Chunks are exchanged between peers using Bitswap (content exchange protocol):
+Chunks are exchanged between peers using the node's content exchange service:
 
 ```
-1. Node A wants a media file with CID X.
-2. Node A looks up the MediaObject for CID X to get the chunk list.
-3. For each chunk CID in the list:
-   a. Check local storage -- skip if already present.
-   b. Query DHT for providers of this chunk CID.
-   c. Request chunk via Bitswap from available providers.
-   d. On receipt, verify chunk CID matches SHA-256 of received data.
-   e. Verify chunk CID matches the expected entry in chunk_cids[index].
-   f. Store chunk locally.
-4. Once all chunks are fetched, mark MediaObject as `fully_fetched`.
+1. Node A wants media CID X.
+2. Node A loads the MediaObject metadata for CID X to get the chunk list.
+3. Node A first checks local CAS for the assembled file or thumbnail.
+4. If the bytes are missing locally, Node A asks peers advertising that CID via
+   the content exchange.
+5. On receipt, Node A verifies:
+   a. the advertised CID matches SHA-256 of the received bytes
+   b. chunk CIDs match the expected `chunk_cids[index]`
+6. Node A stores the fetched bytes locally.
+7. Once all chunks are fetched, the media object may be marked `fully_fetched`.
 ```
 
 ### 7.4 Reassembly

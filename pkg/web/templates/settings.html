@@ -3,22 +3,41 @@
     <h1 class="text-xl font-bold">Settings</h1>
 </header>
 <div class="p-4 space-y-6">
+    {{if .Error}}
+    <div class="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{{.Error}}</div>
+    {{end}}
+    {{if .Success}}
+    <div class="rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-200">{{.Success}}</div>
+    {{end}}
+
     {{if .User}}
-    <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
-        <h2 class="font-semibold mb-3">Identity</h2>
-        <div class="space-y-3 text-sm">
-            <div class="flex justify-between items-center">
-                <span class="text-gray-400">Display Name</span>
-                <span class="font-medium">{{.User.DisplayName}}</span>
+    <section class="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+        <div class="h-28 bg-gradient-to-r from-blue-900 via-gray-900 to-gray-950">
+            {{if .User.AvatarURL}}
+            <img src="{{.User.AvatarURL}}" alt="{{.User.DisplayName}}" class="h-full w-full object-cover opacity-20">
+            {{end}}
+        </div>
+        <div class="p-4">
+            <h2 class="font-semibold mb-3">Identity</h2>
+            <div class="space-y-3 text-sm">
+                <div class="flex justify-between items-center gap-4">
+                    <span class="text-gray-400">Display Name</span>
+                    <span class="font-medium text-right">{{.User.DisplayName}}</span>
+                </div>
+                <div class="flex justify-between items-center gap-4">
+                    <span class="text-gray-400">Address</span>
+                    <span class="font-mono text-xs bg-gray-800 px-2 py-1 rounded text-right">{{.User.Address}}</span>
+                </div>
+                <div class="flex justify-between items-center gap-4">
+                    <span class="text-gray-400">Public Key</span>
+                    <span class="font-mono text-xs bg-gray-800 px-2 py-1 rounded text-right">{{.User.ShortPubkey}}</span>
+                </div>
             </div>
-            <div class="flex justify-between items-center">
-                <span class="text-gray-400">Address</span>
-                <span class="font-mono text-xs bg-gray-800 px-2 py-1 rounded">{{.User.Address}}</span>
+            <div class="mt-4 flex flex-wrap gap-3">
+                <a href="/api/identity/export" class="inline-flex items-center justify-center rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 transition-colors">Export Encrypted Key</a>
+                <a href="/logout" class="inline-flex items-center justify-center rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-300 hover:bg-red-500/10 transition-colors">Lock Identity</a>
             </div>
-            <div class="flex justify-between items-center">
-                <span class="text-gray-400">Public Key</span>
-                <span class="font-mono text-xs bg-gray-800 px-2 py-1 rounded">{{.User.ShortPubkey}}</span>
-            </div>
+            <p class="mt-3 text-xs text-gray-500">Seed phrases are only shown during onboarding. Export the encrypted key file here for recoverable backups.</p>
         </div>
     </section>
 
@@ -27,7 +46,7 @@
         <form method="POST" action="/settings/profile" class="space-y-3">
             <div>
                 <label class="text-xs text-gray-400 block mb-1">Display Name</label>
-                <input type="text" name="display_name" value="{{.User.DisplayName}}" maxlength="50"
+                <input type="text" name="display_name" value="{{.DisplayName}}" maxlength="50"
                     class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
             </div>
             <div>
@@ -35,8 +54,89 @@
                 <textarea name="bio" rows="3" maxlength="500"
                     class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none resize-none">{{.Bio}}</textarea>
             </div>
+            <div>
+                <label class="text-xs text-gray-400 block mb-1">Website</label>
+                <input type="url" name="website" value="{{.Website}}" maxlength="200"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Avatar CID</label>
+                    <input type="text" name="avatar_cid" value="{{.AvatarCID}}"
+                        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-xs font-mono focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Banner CID</label>
+                    <input type="text" name="banner_cid" value="{{.BannerCID}}"
+                        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-xs font-mono focus:border-blue-500 focus:outline-none">
+                </div>
+            </div>
+            <p class="text-xs text-gray-500">Upload media through the API, then paste the returned CIDs here to publish avatar and banner metadata.</p>
             <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-2.5 rounded-full">Save Profile</button>
         </form>
+    </section>
+
+    <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
+        <h2 class="font-semibold mb-3">Switch Identity</h2>
+        {{if .Identities}}
+        <div class="space-y-3">
+            {{range .Identities}}
+            <form method="POST" action="/settings/switch" class="rounded-lg border border-gray-800 p-3 space-y-3">
+                <input type="hidden" name="pubkey" value="{{.Pubkey}}">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="font-semibold">{{.DisplayName}}</p>
+                        <p class="text-xs text-gray-500 font-mono">{{.ShortPubkey}}</p>
+                        <p class="text-xs text-gray-500">{{.Address}}</p>
+                    </div>
+                    {{if .IsActive}}
+                    <span class="rounded-full bg-blue-500/20 px-2 py-1 text-xs font-semibold text-blue-300">Active</span>
+                    {{end}}
+                </div>
+                {{if not .IsActive}}
+                <div class="flex flex-col gap-2 sm:flex-row">
+                    <input type="password" name="passphrase" placeholder="Passphrase" autocomplete="current-password"
+                        class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+                    <button type="submit" class="rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-white transition-colors">Switch</button>
+                </div>
+                {{end}}
+            </form>
+            {{end}}
+        </div>
+        {{else}}
+        <p class="text-sm text-gray-400">No local identities available.</p>
+        {{end}}
+    </section>
+
+    <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
+        <h2 class="font-semibold mb-3">Node</h2>
+        {{with .NodeStatus}}
+        <div class="space-y-3 text-sm">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">Connected Peers</span>
+                <span class="font-medium">{{.Peers}}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">Uptime</span>
+                <span class="font-medium">{{.Uptime}}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">Subscriptions</span>
+                <span class="font-medium">{{.Subscriptions}}</span>
+            </div>
+            <div>
+                <div class="mb-2 flex justify-between items-center">
+                    <span class="text-gray-400">Storage</span>
+                    <span class="font-medium">{{.StorageUsed}} / {{.StorageMax}}</span>
+                </div>
+                <div class="h-2 rounded-full bg-gray-800 overflow-hidden">
+                    <div class="h-full bg-blue-500" style="width: {{$.StoragePct}}%;"></div>
+                </div>
+            </div>
+        </div>
+        {{else}}
+        <p class="text-sm text-gray-400">Node metrics are unavailable in this session.</p>
+        {{end}}
     </section>
 
     <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
@@ -48,13 +148,6 @@
             </a>
         </div>
     </section>
-
-    <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
-        <h2 class="font-semibold mb-3">Actions</h2>
-        <div class="space-y-3">
-            <a href="/logout" class="block text-center bg-red-500/20 hover:bg-red-500/30 text-red-400 font-medium py-3 rounded-lg transition-colors border border-red-500/30">Lock Identity</a>
-        </div>
-    </section>
     {{end}}
 
     <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
@@ -63,6 +156,10 @@
             <div class="flex justify-between items-center">
                 <span class="text-gray-400">Version</span>
                 <span>1.0.0</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-400">Protocol</span>
+                <span>1.0</span>
             </div>
             <div class="flex justify-between items-center">
                 <span class="text-gray-400">License</span>

@@ -14,5 +14,5 @@ func (h *Handler) GetFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, timelineEntriesToJSON(entries))
+	respondJSON(w, http.StatusOK, timelineEntriesToJSON(h.db, entries))
 }

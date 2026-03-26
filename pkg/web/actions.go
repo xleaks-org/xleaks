@@ -1,10 +1,12 @@
 package web
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -29,18 +31,76 @@ func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
 
 	data := h.pageData(r, "settings", "Settings")
 
+	displayName := ""
 	bio := ""
+	website := ""
+	avatarCID := ""
+	bannerCID := ""
 	kp := h.getKeyPair(r)
 	if kp != nil {
 		profile, err := h.db.GetProfile(kp.PublicKeyBytes())
 		if err == nil && profile != nil {
+			displayName = profile.DisplayName
 			bio = profile.Bio
+			website = profile.Website
+			avatarCID = hex.EncodeToString(profile.AvatarCID)
+			bannerCID = hex.EncodeToString(profile.BannerCID)
 		}
 	}
+	if displayName == "" && data["User"] != nil {
+		if user, ok := data["User"].(*UserInfo); ok {
+			displayName = user.DisplayName
+		}
+	}
+	if displayName == "" {
+		displayName = "Anonymous"
+	}
+	data["DisplayName"] = displayName
 	data["Bio"] = bio
+	data["Website"] = website
+	data["AvatarCID"] = avatarCID
+	data["BannerCID"] = bannerCID
+	data["Error"] = r.URL.Query().Get("error")
+	data["Success"] = r.URL.Query().Get("success")
 
 	cookie, err := r.Cookie("theme")
 	data["DarkMode"] = err != nil || cookie.Value != "light"
+
+	if h.identity != nil {
+		if ids, listErr := h.identity.ListIdentities(); listErr == nil {
+			views := make([]IdentityView, 0, len(ids))
+			for _, id := range ids {
+				display := id.DisplayName
+				if display == "" {
+					display = "Anonymous"
+				}
+				views = append(views, IdentityView{
+					Pubkey:      id.PubkeyHex,
+					ShortPubkey: shortenHex(id.PubkeyHex),
+					Address:     id.Address,
+					DisplayName: display,
+					IsActive:    id.IsActive,
+				})
+			}
+			data["Identities"] = views
+		}
+	}
+
+	if h.nodeStatus != nil {
+		peers, uptimeSecs, storageUsed, storageLimit, subscriptions := h.nodeStatus()
+		storagePct := 0
+		if storageLimit > 0 {
+			storagePct = int((storageUsed * 100) / storageLimit)
+		}
+		data["NodeStatus"] = StatusData{
+			Peers:         peers,
+			Uptime:        formatDuration(uptimeSecs),
+			StorageUsed:   formatBytes(storageUsed),
+			StorageMax:    formatBytes(storageLimit),
+			Subscriptions: subscriptions,
+		}
+		data["StoragePct"] = storagePct
+	}
 
 	h.renderPage(w, "settings.html", data)
 }
@@ -69,11 +129,21 @@ func (h *Handler) messagesPage(w http.ResponseWriter, r *http.Request) {
 		if err == nil && peerProfile != nil && peerProfile.DisplayName != "" {
 			peerName = peerProfile.DisplayName
 		}
+		preview := ""
+		if c.LastTimestamp > 0 {
+			msgs, convErr := h.db.GetConversation(kp.PublicKeyBytes(), c.PeerPubkey, 0, 1)
+			if convErr == nil && len(msgs) > 0 {
+				preview = decryptDMContent(kp, msgs[0])
+			}
+		}
+		if preview == "" {
+			preview = "(encrypted)"
+		}
 		views = append(views, ConversationView{
 			PeerPubkey:   peerHex,
 			PeerName:     peerName,
 			PeerInitial:  getInitial(peerName),
-			Preview:      "(encrypted)",
+			Preview:      preview,
 			RelativeTime: formatRelativeTime(c.LastTimestamp),
 			UnreadCount:  c.UnreadCount,
 		})
@@ -104,6 +174,13 @@ func (h *Handler) conversationPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("web: failed to get conversation: %v", err)
 	}
+	for _, msg := range msgs {
+		if bytes.Equal(msg.Recipient, ownPubkey) && !msg.Read {
+			if err := h.db.MarkDMRead(msg.CID); err != nil {
+				log.Printf("web: failed to mark message read: %v", err)
+			}
+		}
+	}
 
 	peerName := peerHex
 	if len(peerName) > 16 {
@@ -118,7 +195,7 @@ func (h *Handler) conversationPage(w http.ResponseWriter, r *http.Request) {
 	data["PeerPubkey"] = peerHex
 	data["PeerName"] = peerName
 	data["PeerShortPubkey"] = shortenHex(peerHex)
-	data["Messages"] = buildMessageViews(msgs, ownPubkey)
+	data["Messages"] = buildMessageViews(kp, msgs)
 	h.renderPage(w, "conversation.html", data)
 }
 
@@ -154,8 +231,9 @@ func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	escaped := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(content)
 	fmt.Fprint(w, `<div class="flex justify-end"><div class="max-w-[75%] rounded-2xl px-4 py-2 bg-blue-600 text-white">`+
-		`<p class="text-sm">(encrypted)</p><p class="text-xs text-blue-200 mt-1">just now</p></div></div>`)
+		`<p class="text-sm">`+escaped+`</p><p class="text-xs text-blue-200 mt-1">just now</p></div></div>`)
 }
 
 // handleUpdateProfile handles the POST /settings/profile form submission.
@@ -175,16 +253,78 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
 	bio := strings.TrimSpace(r.FormValue("bio"))
+	website := strings.TrimSpace(r.FormValue("website"))
+	avatarHex := strings.TrimSpace(r.FormValue("avatar_cid"))
+	bannerHex := strings.TrimSpace(r.FormValue("banner_cid"))
 	if displayName == "" {
 		displayName = "Anonymous"
 	}
 
-	if err := h.updateProfile(r.Context(), kp, displayName, bio, "", nil, nil); err != nil {
+	var avatarCID, bannerCID []byte
+	var err error
+	if avatarHex != "" {
+		avatarCID, err = hex.DecodeString(avatarHex)
+		if err != nil {
+			http.Error(w, "Invalid avatar CID", http.StatusBadRequest)
+			return
+		}
+	}
+	if bannerHex != "" {
+		bannerCID, err = hex.DecodeString(bannerHex)
+		if err != nil {
+			http.Error(w, "Invalid banner CID", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if err := h.updateProfile(r.Context(), kp, displayName, bio, website, avatarCID, bannerCID); err != nil {
 		log.Printf("web: failed to update profile: %v", err)
 		http.Error(w, "Failed to update profile", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+}
+
+// handleSwitchIdentity switches the active identity and replaces the current web session.
+func (h *Handler) handleSwitchIdentity(w http.ResponseWriter, r *http.Request) {
+	if h.currentUser(r) == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if h.identity == nil {
+		http.Redirect(w, r, "/settings?error=identity+system+not+available", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/settings?error=invalid+form+data", http.StatusSeeOther)
+		return
+	}
+
+	pubkeyHex := strings.TrimSpace(r.FormValue("pubkey"))
+	passphrase := r.FormValue("passphrase")
+	if pubkeyHex == "" || passphrase == "" {
+		http.Redirect(w, r, "/settings?error=pubkey+and+passphrase+are+required", http.StatusSeeOther)
+		return
+	}
+
+	if err := h.identity.SwitchIdentity(pubkeyHex, passphrase); err != nil {
+		http.Redirect(w, r, "/settings?error="+url.QueryEscape("failed to switch identity"), http.StatusSeeOther)
+		return
+	}
+	h.notifyIdentityChange()
+	h.ensureProfile()
+
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		h.sessions.Destroy(cookie.Value)
+	}
+	token, err := h.sessions.Create(h.identity.Get())
+	if err != nil {
+		log.Printf("web: failed to create session after switch: %v", err)
+		http.Redirect(w, r, "/settings?error=failed+to+create+session", http.StatusSeeOther)
+		return
+	}
+	h.sessions.SetCookie(w, token)
+	http.Redirect(w, r, "/settings?success=identity+switched", http.StatusSeeOther)
 }
 
 // handleToggleTheme toggles the theme cookie between dark and light.

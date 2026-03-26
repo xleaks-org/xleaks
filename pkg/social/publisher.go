@@ -60,6 +60,17 @@ func publishDirectMessage(ctx context.Context, publisher Publisher, dm *pb.Direc
 	})
 }
 
+// PublishMediaObject broadcasts media metadata on the global topic so peers can
+// discover attachment descriptors before fetching the raw content by CID.
+func PublishMediaObject(ctx context.Context, publisher Publisher, obj *pb.MediaObject) error {
+	if obj == nil {
+		return fmt.Errorf("media object is nil")
+	}
+	return publishEnvelope(ctx, publisher, p2p.GlobalTopic(), &pb.Envelope{
+		Payload: &pb.Envelope_MediaObject{MediaObject: obj},
+	})
+}
+
 func publishEnvelope(ctx context.Context, publisher Publisher, topic string, env *pb.Envelope) error {
 	if publisher == nil {
 		return nil

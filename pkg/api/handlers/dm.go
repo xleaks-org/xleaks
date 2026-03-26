@@ -1,8 +1,12 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/hex"
 	"net/http"
+
+	"github.com/xleaks-org/xleaks/pkg/social"
+	pb "github.com/xleaks-org/xleaks/proto/gen"
 )
 
 // sendDMRequest is the JSON body for POST /api/dm/{pubkey}.
@@ -25,10 +29,24 @@ func (h *Handler) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 	result := make([]map[string]interface{}, 0, len(conversations))
 	for _, conv := range conversations {
+		preview := ""
+		if h.dms != nil && len(conv.EncryptedContent) > 0 {
+			recipient := kp.PublicKeyBytes()
+			if bytes.Equal(conv.LastAuthor, kp.PublicKeyBytes()) {
+				recipient = conv.PeerPubkey
+			}
+			preview = decryptDMPreview(h.dms, &pb.DirectMessage{
+				Author:           conv.LastAuthor,
+				Recipient:        recipient,
+				EncryptedContent: conv.EncryptedContent,
+				Nonce:            conv.Nonce,
+			})
+		}
 		result = append(result, map[string]interface{}{
 			"peer":           hex.EncodeToString(conv.PeerPubkey),
 			"last_timestamp": conv.LastTimestamp,
 			"last_author":    hex.EncodeToString(conv.LastAuthor),
+			"preview":        preview,
 			"unread_count":   conv.UnreadCount,
 		})
 	}
@@ -59,16 +77,45 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 
 	result := make([]map[string]interface{}, 0, len(messages))
 	for _, msg := range messages {
+		if bytes.Equal(msg.Recipient, kp.PublicKeyBytes()) && !msg.Read {
+			if err := h.db.MarkDMRead(msg.CID); err != nil {
+				respondError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			msg.Read = true
+		}
+		content := ""
+		if h.dms != nil {
+			content = decryptDMPreview(h.dms, &pb.DirectMessage{
+				Id:               msg.CID,
+				Author:           msg.Author,
+				Recipient:        msg.Recipient,
+				EncryptedContent: msg.EncryptedContent,
+				Nonce:            msg.Nonce,
+			})
+		}
 		result = append(result, map[string]interface{}{
 			"id":        hex.EncodeToString(msg.CID),
 			"author":    hex.EncodeToString(msg.Author),
 			"recipient": hex.EncodeToString(msg.Recipient),
+			"content":   content,
 			"timestamp": msg.Timestamp,
 			"read":      msg.Read,
 		})
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+func decryptDMPreview(service *social.DMService, dm *pb.DirectMessage) string {
+	if service == nil || dm == nil {
+		return ""
+	}
+	plaintext, err := service.DecryptDM(dm)
+	if err != nil {
+		return ""
+	}
+	return plaintext
 }
 
 // SendDM handles POST /api/dm/{pubkey}.

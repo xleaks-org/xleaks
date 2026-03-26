@@ -118,9 +118,14 @@ func (s *DMService) DecryptDM(dm *pb.DirectMessage) (string, error) {
 		return "", fmt.Errorf("direct message is nil")
 	}
 
-	// Verify this message is for us.
-	if !bytes.Equal(dm.Recipient, kp.PublicKeyBytes()) {
-		return "", fmt.Errorf("message is not addressed to us")
+	peerPubkey := dm.Author
+	switch {
+	case bytes.Equal(dm.Recipient, kp.PublicKeyBytes()):
+		peerPubkey = dm.Author
+	case bytes.Equal(dm.Author, kp.PublicKeyBytes()):
+		peerPubkey = dm.Recipient
+	default:
+		return "", fmt.Errorf("message is not associated with the active identity")
 	}
 
 	// Convert the nonce slice to a fixed-size array.
@@ -133,7 +138,7 @@ func (s *DMService) DecryptDM(dm *pb.DirectMessage) (string, error) {
 	// Decrypt.
 	plaintext, err := identity.DecryptDM(
 		kp.PrivateKey,
-		ed25519.PublicKey(dm.Author),
+		ed25519.PublicKey(peerPubkey),
 		dm.EncryptedContent,
 		nonce,
 	)
@@ -165,7 +170,7 @@ func (s *DMService) HandleIncomingDM(dm *pb.DirectMessage) error {
 		}
 		// Create notification if the DM is addressed to us.
 		if hasIdentity(s.identity) && bytes.Equal(dm.Recipient, s.identity.PublicKeyBytes()) {
-			if err := s.storage.InsertNotificationTx(tx, "dm", dm.Author, nil, dm.Id, time.Now().UnixMilli()); err != nil {
+			if err := s.storage.InsertNotificationTx(tx, dm.Recipient, "dm", dm.Author, nil, dm.Id, time.Now().UnixMilli()); err != nil {
 				return fmt.Errorf("create DM notification: %w", err)
 			}
 		}

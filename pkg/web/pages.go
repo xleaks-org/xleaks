@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/xleaks-org/xleaks/pkg/p2p"
 )
 
 // ExploreUser holds data for a single user card on the explore page.
@@ -52,6 +53,9 @@ func (h *Handler) postPage(w http.ResponseWriter, r *http.Request) {
 		h.renderPage(w, "post.html", data)
 		return
 	}
+	if h.ensureTopic != nil {
+		_ = h.ensureTopic(p2p.ReactionsTopic(cidHex))
+	}
 
 	pv := h.postRowToView(post)
 
@@ -88,15 +92,28 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid public key", http.StatusBadRequest)
 		return
 	}
+	if h.ensureTopic != nil {
+		_ = h.ensureTopic(p2p.FollowsTopic(pubkeyHex))
+	}
 
 	displayName := pubkeyHex[:16] + "..."
 	bio := ""
+	website := ""
+	avatarURL := ""
+	bannerURL := ""
 	profile, err := h.db.GetProfile(pubkeyBytes)
 	if err == nil && profile != nil {
 		if profile.DisplayName != "" {
 			displayName = profile.DisplayName
 		}
 		bio = profile.Bio
+		website = profile.Website
+		if len(profile.AvatarCID) > 0 {
+			avatarURL = "/api/media/" + hex.EncodeToString(profile.AvatarCID)
+		}
+		if len(profile.BannerCID) > 0 {
+			bannerURL = "/api/media/" + hex.EncodeToString(profile.BannerCID)
+		}
 	}
 
 	isOwn := user.Pubkey == pubkeyHex
@@ -108,6 +125,9 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 		ShortPubkey: shortenHex(pubkeyHex),
 		Initial:     getInitial(displayName),
 		Bio:         bio,
+		Website:     website,
+		AvatarURL:   avatarURL,
+		BannerURL:   bannerURL,
 	}
 	data["IsOwnProfile"] = isOwn
 	postCount, _ := h.db.CountPostsByAuthor(pubkeyBytes)
@@ -142,7 +162,13 @@ func (h *Handler) notificationsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notifs, err := h.db.GetNotifications(0, 50)
+	kp := h.getKeyPair(r)
+	if kp == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	notifs, err := h.db.GetNotifications(kp.PublicKeyBytes(), 0, 50)
 	if err != nil {
 		log.Printf("web: failed to get notifications: %v", err)
 	}
@@ -190,11 +216,14 @@ func (h *Handler) searchPage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	data["Query"] = q
 
-	var results []PostView
 	if q != "" {
-		results = h.performSearch(q, 20)
+		results := h.performSearch(q, 20)
+		data["PostResults"] = results.Posts
+		data["UserResults"] = results.Users
+		data["HasResults"] = len(results.Posts) > 0 || len(results.Users) > 0
+	} else {
+		data["HasResults"] = false
 	}
-	data["Results"] = results
 	h.renderPage(w, "search.html", data)
 }
 

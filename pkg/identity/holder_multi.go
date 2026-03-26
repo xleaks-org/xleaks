@@ -197,3 +197,26 @@ func (h *Holder) SwitchIdentity(pubkeyHex, passphrase string) error {
 
 	return nil
 }
+
+// ExportIdentity loads the encrypted key material for the given identity.
+func (h *Holder) ExportIdentity(pubkeyHex string) (*EncryptedKey, error) {
+	keyPath := h.keyFilePath(pubkeyHex)
+	enc, err := LoadEncryptedKey(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("load key for %s: %w", pubkeyHex, err)
+	}
+	return enc, nil
+}
+
+// ExportActiveIdentity loads the encrypted key material for the current active identity.
+func (h *Holder) ExportActiveIdentity() (*EncryptedKey, string, error) {
+	pubkeyHex, err := h.resolveActivePubkey()
+	if err != nil {
+		return nil, "", err
+	}
+	enc, err := h.ExportIdentity(pubkeyHex)
+	if err != nil {
+		return nil, "", err
+	}
+	return enc, pubkeyHex, nil
+}

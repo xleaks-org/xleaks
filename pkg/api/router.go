@@ -37,6 +37,7 @@ type HandlerDeps struct {
 	ConfigPath     string
 	IndexerClient  *indexer.IndexerClient
 	IdentityChange func(*identity.KeyPair)
+	EnsureTopic    func(string) error
 	WebHandler     chi.Router // optional: Go-based web UI routes
 }
 
@@ -81,6 +82,9 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 	}
 	if deps.IdentityChange != nil {
 		h.SetIdentityChangeFunc(deps.IdentityChange)
+	}
+	if deps.EnsureTopic != nil {
+		h.SetTopicSubscriber(deps.EnsureTopic)
 	}
 
 	r.Route("/api", func(r chi.Router) {

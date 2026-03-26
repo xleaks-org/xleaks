@@ -11,9 +11,14 @@ import (
 
 // GetNotifications handles GET /api/notifications?before=TIMESTAMP.
 func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
 	before, limit := parsePagination(r, 20)
 
-	notifs, err := h.notifs.GetNotifications(before, limit)
+	notifs, err := h.notifs.GetNotifications(kp.PublicKeyBytes(), before, limit)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -97,7 +102,12 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 
 // MarkAllNotificationsRead handles PUT /api/notifications/read.
 func (h *Handler) MarkAllNotificationsRead(w http.ResponseWriter, r *http.Request) {
-	if err := h.db.MarkAllRead(); err != nil {
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
+	if err := h.db.MarkAllRead(kp.PublicKeyBytes()); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -107,6 +117,11 @@ func (h *Handler) MarkAllNotificationsRead(w http.ResponseWriter, r *http.Reques
 
 // MarkNotificationRead handles PUT /api/notifications/{id}/read.
 func (h *Handler) MarkNotificationRead(w http.ResponseWriter, r *http.Request) {
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	if idStr == "" {
 		respondError(w, http.StatusBadRequest, "missing notification id")
@@ -119,7 +134,7 @@ func (h *Handler) MarkNotificationRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.MarkRead(id); err != nil {
+	if err := h.db.MarkRead(kp.PublicKeyBytes(), id); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -129,7 +144,12 @@ func (h *Handler) MarkNotificationRead(w http.ResponseWriter, r *http.Request) {
 
 // GetUnreadCount handles GET /api/notifications/unread-count.
 func (h *Handler) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
-	count, err := h.db.UnreadCount()
+	kp, ok := h.requireIdentity(w)
+	if !ok {
+		return
+	}
+
+	count, err := h.db.UnreadCount(kp.PublicKeyBytes())
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

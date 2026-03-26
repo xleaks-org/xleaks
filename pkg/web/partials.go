@@ -178,9 +178,9 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	posts := h.performSearch(q, 20)
+	results := h.performSearch(q, 20)
 
-	if len(posts) == 0 {
+	if len(results.Posts) == 0 && len(results.Users) == 0 {
 		fmt.Fprintf(w, `<div class="text-center py-12 text-gray-400">`+
 			`<p class="text-lg mb-2">No results for "%s"</p>`+
 			`<p class="text-sm">Try a different search term.</p></div>`,
@@ -188,8 +188,34 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.partials.ExecuteTemplate(w, "feed_items.html", map[string]interface{}{"Posts": posts}); err != nil {
-		log.Printf("web: template error rendering search results: %v", err)
+	if len(results.Users) > 0 {
+		fmt.Fprint(w, `<section class="border-b border-gray-800"><div class="px-4 py-3 text-xs uppercase tracking-[0.2em] text-gray-500">Users</div>`)
+		for _, user := range results.Users {
+			fmt.Fprintf(w, `<a href="/user/%s" class="block border-t border-gray-800 px-4 py-3 hover:bg-gray-900/50 transition-colors">`+
+				`<div class="flex gap-3"><div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold">%s</div>`+
+				`<div class="min-w-0 flex-1"><div class="flex items-center gap-2"><span class="font-semibold">%s</span><span class="text-xs font-mono text-gray-500">%s</span></div>`,
+				template.HTMLEscapeString(user.Pubkey),
+				template.HTMLEscapeString(user.Initial),
+				template.HTMLEscapeString(user.DisplayName),
+				template.HTMLEscapeString(user.ShortPubkey),
+			)
+			if user.Bio != "" {
+				fmt.Fprintf(w, `<p class="mt-1 text-sm text-gray-400">%s</p>`, template.HTMLEscapeString(user.Bio))
+			}
+			if user.Website != "" {
+				fmt.Fprintf(w, `<p class="mt-1 text-xs text-blue-400">%s</p>`, template.HTMLEscapeString(user.Website))
+			}
+			fmt.Fprint(w, `</div></div></a>`)
+		}
+		fmt.Fprint(w, `</section>`)
+	}
+
+	if len(results.Posts) > 0 {
+		fmt.Fprint(w, `<section><div class="px-4 py-3 text-xs uppercase tracking-[0.2em] text-gray-500">Posts</div>`)
+		if err := h.partials.ExecuteTemplate(w, "feed_items.html", map[string]interface{}{"Posts": results.Posts}); err != nil {
+			log.Printf("web: template error rendering search results: %v", err)
+		}
+		fmt.Fprint(w, `</section>`)
 	}
 }
 

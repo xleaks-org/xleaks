@@ -30,6 +30,8 @@ type MessageProcessor struct {
 // StorageWriter defines the storage operations needed for message processing.
 type StorageWriter interface {
 	InsertPost(cid, author []byte, content string, replyTo, repostOf []byte, timestamp int64, signature []byte) error
+	InsertPostMedia(postCID, mediaCID []byte, position int) error
+	InsertMediaObject(cid, author []byte, mimeType string, size uint64, chunkCount uint32, width, height, duration uint32, thumbnailCID []byte, timestamp int64) error
 	UpsertProfile(pubkey []byte, displayName, bio string, avatarCID, bannerCID []byte, website string, version uint64, updatedAt int64) error
 	InsertReaction(cid, author, target []byte, reactionType string, timestamp int64) error
 	InsertFollowEvent(author, target []byte, action string, timestamp int64) error
@@ -50,8 +52,8 @@ type ContentWriter interface {
 type Notifier interface {
 	NotifyLike(actor, targetCID, reactionCID []byte) error
 	NotifyReply(actor, targetCID, replyCID []byte) error
-	NotifyFollow(actor []byte) error
-	NotifyDM(actor []byte) error
+	NotifyFollow(actor, target []byte) error
+	NotifyDM(actor, recipient []byte) error
 }
 
 // NewMessageProcessor creates a new MessageProcessor.
@@ -82,6 +84,10 @@ func (mp *MessageProcessor) HandleMessage(ctx context.Context, data []byte) erro
 		return mp.handleFollow(ctx, payload.FollowEvent)
 	case *pb.Envelope_DirectMessage:
 		return mp.handleDM(ctx, payload.DirectMessage)
+	case *pb.Envelope_MediaObject:
+		return mp.handleMediaObject(ctx, payload.MediaObject)
+	case *pb.Envelope_MediaChunk:
+		return mp.handleMediaChunk(ctx, payload.MediaChunk)
 	default:
 		return nil // Unknown payload type, ignore.
 	}
@@ -113,6 +119,11 @@ func (mp *MessageProcessor) handlePost(_ context.Context, post *pb.Post) error {
 		int64(post.Timestamp), post.Signature,
 	); err != nil {
 		return fmt.Errorf("insert post: %w", err)
+	}
+	for i, mediaCID := range post.MediaCids {
+		if err := mp.db.InsertPostMedia(post.Id, mediaCID, i); err != nil {
+			return fmt.Errorf("insert post media: %w", err)
+		}
 	}
 
 	// Feed into indexer if available.
@@ -224,7 +235,7 @@ func (mp *MessageProcessor) handleFollow(_ context.Context, event *pb.FollowEven
 	}
 
 	if event.Action == "follow" {
-		if err := mp.notifier.NotifyFollow(event.Author); err != nil {
+		if err := mp.notifier.NotifyFollow(event.Author, event.Target); err != nil {
 			log.Printf("notify follow error: %v", err)
 		}
 	}
@@ -262,8 +273,39 @@ func (mp *MessageProcessor) handleDM(_ context.Context, dm *pb.DirectMessage) er
 		return fmt.Errorf("insert dm: %w", err)
 	}
 
-	if err := mp.notifier.NotifyDM(dm.Author); err != nil {
+	if err := mp.notifier.NotifyDM(dm.Author, dm.Recipient); err != nil {
 		log.Printf("notify dm error: %v", err)
+	}
+	return nil
+}
+
+func (mp *MessageProcessor) handleMediaObject(_ context.Context, obj *pb.MediaObject) error {
+	if err := content.ValidateMediaObject(obj, verifySignature); err != nil {
+		return fmt.Errorf("validate media object: %w", err)
+	}
+	if err := mp.db.InsertMediaObject(
+		obj.Cid,
+		obj.Author,
+		obj.MimeType,
+		obj.Size,
+		obj.ChunkCount,
+		obj.Width,
+		obj.Height,
+		obj.Duration,
+		obj.ThumbnailCid,
+		int64(obj.Timestamp),
+	); err != nil {
+		return fmt.Errorf("insert media object: %w", err)
+	}
+	return nil
+}
+
+func (mp *MessageProcessor) handleMediaChunk(_ context.Context, chunk *pb.MediaChunk) error {
+	if err := content.ValidateMediaChunk(chunk); err != nil {
+		return fmt.Errorf("validate media chunk: %w", err)
+	}
+	if err := mp.cas.Put(chunk.Cid, chunk.Data); err != nil {
+		return fmt.Errorf("CAS put media chunk: %w", err)
 	}
 	return nil
 }

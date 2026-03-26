@@ -434,15 +434,16 @@ func TestUpdateFollowerCount(t *testing.T) {
 
 func TestInsertAndGetNotifications(t *testing.T) {
 	db := setupTestDB(t)
+	owner := []byte("notif_owner_1_xxxxxxxxxxxxxxxxxxxxx")
 	actor := []byte("notif_actor_1_xxxxxxxxxxxxxxxxxxxxx")
 	targetCID := []byte("notif_target_cid_xxxxxxxxxxxxxxxxxx")
 
-	err := db.InsertNotification("like", actor, targetCID, nil, 1000)
+	err := db.InsertNotification(owner, "like", actor, targetCID, nil, 1000)
 	if err != nil {
 		t.Fatalf("InsertNotification: %v", err)
 	}
 
-	notifs, err := db.GetNotifications(0, 10)
+	notifs, err := db.GetNotifications(owner, 0, 10)
 	if err != nil {
 		t.Fatalf("GetNotifications: %v", err)
 	}
@@ -459,15 +460,16 @@ func TestInsertAndGetNotifications(t *testing.T) {
 
 func TestMarkRead(t *testing.T) {
 	db := setupTestDB(t)
-	_ = db.InsertNotification("like", []byte("mr_actor_1_xxxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 1000)
+	owner := []byte("mr_owner_1_xxxxxxxxxxxxxxxxxxxxxxx")
+	_ = db.InsertNotification(owner, "like", []byte("mr_actor_1_xxxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 1000)
 
-	notifs, _ := db.GetNotifications(0, 10)
-	err := db.MarkRead(notifs[0].ID)
+	notifs, _ := db.GetNotifications(owner, 0, 10)
+	err := db.MarkRead(owner, notifs[0].ID)
 	if err != nil {
 		t.Fatalf("MarkRead: %v", err)
 	}
 
-	notifs, _ = db.GetNotifications(0, 10)
+	notifs, _ = db.GetNotifications(owner, 0, 10)
 	if !notifs[0].Read {
 		t.Error("notification should be read after MarkRead")
 	}
@@ -475,15 +477,16 @@ func TestMarkRead(t *testing.T) {
 
 func TestMarkAllRead(t *testing.T) {
 	db := setupTestDB(t)
-	_ = db.InsertNotification("like", []byte("mar_actor_1_xxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 1000)
-	_ = db.InsertNotification("reply", []byte("mar_actor_2_xxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 2000)
+	owner := []byte("mar_owner_1_xxxxxxxxxxxxxxxxxxxxxx")
+	_ = db.InsertNotification(owner, "like", []byte("mar_actor_1_xxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 1000)
+	_ = db.InsertNotification(owner, "reply", []byte("mar_actor_2_xxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 2000)
 
-	err := db.MarkAllRead()
+	err := db.MarkAllRead(owner)
 	if err != nil {
 		t.Fatalf("MarkAllRead: %v", err)
 	}
 
-	count, _ := db.UnreadCount()
+	count, _ := db.UnreadCount(owner)
 	if count != 0 {
 		t.Errorf("unread count = %d after MarkAllRead", count)
 	}
@@ -491,10 +494,11 @@ func TestMarkAllRead(t *testing.T) {
 
 func TestUnreadCount(t *testing.T) {
 	db := setupTestDB(t)
-	_ = db.InsertNotification("like", []byte("uc_actor_1_xxxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 1000)
-	_ = db.InsertNotification("reply", []byte("uc_actor_2_xxxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 2000)
+	owner := []byte("uc_owner_1_xxxxxxxxxxxxxxxxxxxxxxx")
+	_ = db.InsertNotification(owner, "like", []byte("uc_actor_1_xxxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 1000)
+	_ = db.InsertNotification(owner, "reply", []byte("uc_actor_2_xxxxxxxxxxxxxxxxxxxxxxx"), nil, nil, 2000)
 
-	count, err := db.UnreadCount()
+	count, err := db.UnreadCount(owner)
 	if err != nil {
 		t.Fatalf("UnreadCount: %v", err)
 	}

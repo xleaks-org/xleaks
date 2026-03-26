@@ -53,6 +53,7 @@ type Handler struct {
 	cfgPath          string
 	broadcast        EventBroadcaster
 	onIdentityChange func(*identity.KeyPair)
+	ensureTopic      func(string) error
 }
 
 // SetBroadcaster sets the WebSocket event broadcaster.
@@ -117,6 +118,12 @@ func (h *Handler) SetConfig(cfg *config.Config, cfgPath string) {
 // switch, and lock transitions.
 func (h *Handler) SetIdentityChangeFunc(fn func(*identity.KeyPair)) {
 	h.onIdentityChange = fn
+}
+
+// SetTopicSubscriber registers a best-effort callback for joining runtime
+// subscriptions needed by API-driven views.
+func (h *Handler) SetTopicSubscriber(fn func(string) error) {
+	h.ensureTopic = fn
 }
 
 func (h *Handler) currentKeyPair() *identity.KeyPair {
