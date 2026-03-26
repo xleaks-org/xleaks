@@ -9,6 +9,7 @@ import (
 
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/indexer"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -110,6 +111,28 @@ func (h *Handler) postRowToView(p *storage.PostRow) PostView {
 	pv.Media = h.postMediaViews(p.CID)
 
 	return pv
+}
+
+func (h *Handler) trendingHitToView(hit indexer.ClientTrendingPost) PostView {
+	authorName := shortenHex(hit.Author)
+	if authorBytes, err := hex.DecodeString(hit.Author); err == nil {
+		if profile, err := h.db.GetProfile(authorBytes); err == nil && profile != nil && profile.DisplayName != "" {
+			authorName = profile.DisplayName
+		}
+	}
+
+	return PostView{
+		ID:            hit.CID,
+		AuthorName:    authorName,
+		AuthorInitial: getInitial(authorName),
+		AuthorPubkey:  hit.Author,
+		ShortPubkey:   shortenHex(hit.Author),
+		Content:       hit.Content,
+		RelativeTime:  formatRelativeTime(hit.Timestamp),
+		LikeCount:     hit.LikeCount,
+		ReplyCount:    hit.ReplyCount,
+		RepostCount:   hit.RepostCount,
+	}
 }
 
 // buildNewPostView creates a PostView for a freshly created post.

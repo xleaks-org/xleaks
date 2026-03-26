@@ -155,9 +155,12 @@
         <div class="flex items-start justify-between gap-4">
             <div>
                 <h2 class="font-semibold">Node Configuration</h2>
-                <p class="mt-1 text-xs text-gray-500">Network, storage, and media settings are saved to the node config file. Connection-oriented changes usually require a restart.</p>
+                <p class="mt-1 text-xs text-gray-500">Network, discovery, storage, and media settings are saved to the node config file. Connection-oriented changes usually require a restart.</p>
             </div>
-            <button type="button" id="bootstrap-defaults-button" class="rounded-full border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:border-gray-600 hover:text-white transition-colors">Use Default Bootstrap</button>
+            <div class="flex flex-wrap gap-2">
+                <button type="button" id="bootstrap-defaults-button" class="rounded-full border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:border-gray-600 hover:text-white transition-colors">Use Default Bootstrap</button>
+                <button type="button" id="indexer-defaults-button" class="rounded-full border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:border-gray-600 hover:text-white transition-colors">Use Default Indexers</button>
+            </div>
         </div>
         <form id="node-config-form" class="mt-4 space-y-4">
             <div class="grid gap-3 sm:grid-cols-2">
@@ -186,6 +189,11 @@
                 <label class="text-xs text-gray-400 block mb-1">Bootstrap Peers</label>
                 <textarea id="node-bootstrap-peers" rows="4" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-xs font-mono focus:border-blue-500 focus:outline-none resize-y" placeholder="/dns4/example.org/tcp/7460/p2p/...&#10;/dns4/example.org/udp/7460/quic-v1/p2p/..."></textarea>
                 <p class="mt-1 text-xs text-gray-500">One multiaddr per line.</p>
+            </div>
+            <div>
+                <label class="text-xs text-gray-400 block mb-1">Known Indexers</label>
+                <textarea id="node-known-indexers" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-xs font-mono focus:border-blue-500 focus:outline-none resize-y" placeholder="http://indexer.example.org:7471"></textarea>
+                <p class="mt-1 text-xs text-gray-500">Used for search, trending, explore, and as a bootstrap-discovery fallback.</p>
             </div>
             <div class="grid gap-3 sm:grid-cols-2">
                 <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300">
@@ -341,7 +349,8 @@
 
     var nodeStatus = document.getElementById('node-config-status');
     var bootstrapDefaultsButton = document.getElementById('bootstrap-defaults-button');
-    var state = { defaultBootstrapPeers: [] };
+    var indexerDefaultsButton = document.getElementById('indexer-defaults-button');
+    var state = { defaultBootstrapPeers: [], defaultKnownIndexers: [] };
 
     function fillNodeConfig(cfg) {
         document.getElementById('node-max-connections').value = cfg.max_connections || 0;
@@ -350,12 +359,14 @@
         document.getElementById('node-max-upload-size').value = cfg.max_upload_size_mb || 0;
         document.getElementById('node-thumbnail-quality').value = cfg.thumbnail_quality || 80;
         document.getElementById('node-bootstrap-peers').value = (cfg.bootstrap_peers || []).join('\n');
+        document.getElementById('node-known-indexers').value = (cfg.known_indexers || []).join('\n');
         document.getElementById('node-enable-relay').checked = !!cfg.enable_relay;
         document.getElementById('node-enable-mdns').checked = !!cfg.enable_mdns;
         document.getElementById('node-enable-hole-punching').checked = !!cfg.enable_hole_punching;
         document.getElementById('node-enable-websocket').checked = !!cfg.enable_websocket;
         document.getElementById('node-auto-fetch-media').checked = !!cfg.auto_fetch_media;
         state.defaultBootstrapPeers = cfg.default_bootstrap_peers || [];
+        state.defaultKnownIndexers = cfg.default_known_indexers || [];
     }
 
     async function loadNodeConfig() {
@@ -376,6 +387,9 @@
             max_upload_size_mb: Number(document.getElementById('node-max-upload-size').value || 0),
             thumbnail_quality: Number(document.getElementById('node-thumbnail-quality').value || 80),
             bootstrap_peers: document.getElementById('node-bootstrap-peers').value.split('\n').map(function(item) {
+                return item.trim();
+            }).filter(Boolean),
+            known_indexers: document.getElementById('node-known-indexers').value.split('\n').map(function(item) {
                 return item.trim();
             }).filter(Boolean),
             enable_relay: document.getElementById('node-enable-relay').checked,
@@ -411,6 +425,11 @@
     if (bootstrapDefaultsButton) {
         bootstrapDefaultsButton.addEventListener('click', function() {
             document.getElementById('node-bootstrap-peers').value = (state.defaultBootstrapPeers || []).join('\n');
+        });
+    }
+    if (indexerDefaultsButton) {
+        indexerDefaultsButton.addEventListener('click', function() {
+            document.getElementById('node-known-indexers').value = (state.defaultKnownIndexers || []).join('\n');
         });
     }
 

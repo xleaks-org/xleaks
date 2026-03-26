@@ -45,6 +45,7 @@ func setupWebHandler(
 	webHandler.SetOnIdentityChange(identitySync)
 	webHandler.SetTopicSubscriber(ensureTopic)
 	webHandler.SetWebSocketEnabled(cfg.API.EnableWebSocket)
+	webHandler.SetPassphraseMinLength(cfg.PassphraseMinLen())
 
 	webHandler.SetCreatePost(func(ctx context.Context, text string, mediaCIDHexes []string, replyTo string) (string, error) {
 		mediaCIDs := make([][]byte, 0, len(mediaCIDHexes))

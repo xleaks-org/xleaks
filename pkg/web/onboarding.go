@@ -36,8 +36,9 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	passphrase := r.FormValue("passphrase")
 	confirm := r.FormValue("confirm")
-	if len(passphrase) < 8 {
-		h.renderOnboardingError(w, r, "Passphrase must be at least 8 characters", true)
+	minLen := h.passphraseMinLen()
+	if len(passphrase) < minLen {
+		h.renderOnboardingError(w, r, fmt.Sprintf("Passphrase must be at least %d characters", minLen), true)
 		return
 	}
 	if passphrase != confirm {
@@ -155,8 +156,9 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 		h.renderOnboardingError(w, r, "Seed phrase is required", true)
 		return
 	}
-	if len(passphrase) < 8 {
-		h.renderOnboardingError(w, r, "Passphrase must be at least 8 characters", true)
+	minLen := h.passphraseMinLen()
+	if len(passphrase) < minLen {
+		h.renderOnboardingError(w, r, fmt.Sprintf("Passphrase must be at least %d characters", minLen), true)
 		return
 	}
 	kp, err := h.identity.ImportAndSave(mnemonic, passphrase)

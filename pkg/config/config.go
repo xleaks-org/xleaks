@@ -71,6 +71,10 @@ var defaultBootstrapPeers = []string{
 	"/dns4/xleaks.org/udp/7460/quic-v1/p2p/12D3KooWSy7rrdGY2AbGPHgHMgJkuuDxiZp88TSsiFGNnpSgiSto",
 }
 
+var defaultKnownIndexers = []string{
+	"http://xleaks.org:7471",
+}
+
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
@@ -81,7 +85,7 @@ func DefaultConfig() *Config {
 		},
 		Network: NetworkConfig{
 			ListenAddresses:    []string{"/ip4/0.0.0.0/tcp/7460", "/ip4/0.0.0.0/udp/7460/quic-v1"},
-			BootstrapPeers:     append([]string(nil), defaultBootstrapPeers...),
+			BootstrapPeers:     DefaultBootstrapPeers(),
 			EnableRelay:        true,
 			EnableMDNS:         true,
 			EnableHolePunching: true,
@@ -96,6 +100,7 @@ func DefaultConfig() *Config {
 			PublicAPIAddress:     "0.0.0.0:7471",
 			MaxIndexedPublishers: 100000,
 			TrendingWindows:      []string{"1h", "6h", "24h", "7d"},
+			KnownIndexers:        DefaultKnownIndexers(),
 		},
 		Media: MediaConfig{
 			MaxUploadSizeMB:  100,
@@ -168,7 +173,16 @@ func (c *Config) IsIndexer() bool {
 
 // DefaultBootstrapPeers returns the built-in WAN bootstrap peers.
 func DefaultBootstrapPeers() []string {
-	return append([]string(nil), defaultBootstrapPeers...)
+	peers := append([]string(nil), defaultBootstrapPeers...)
+	if filePeers, err := loadBootstrapPeersFromFile(); err == nil {
+		peers = append(peers, filePeers...)
+	}
+	return dedupeStrings(peers)
+}
+
+// DefaultKnownIndexers returns the built-in public indexer endpoints.
+func DefaultKnownIndexers() []string {
+	return append([]string(nil), defaultKnownIndexers...)
 }
 
 // MaxUploadBytes returns the effective upload cap in bytes, clamped to a sane minimum.

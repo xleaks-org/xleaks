@@ -189,6 +189,86 @@ func TestTrackReactionContent_PinsWhenTargetAuthorIsFollowed(t *testing.T) {
 	assertPinnedState(t, db, reactionCID, 1)
 }
 
+func TestGetTrendingPosts_OrdersByEngagement(t *testing.T) {
+	db := setupTestDB(t)
+	authorA := []byte("author-trending-a-xxxxxxxxxxxxxx")
+	authorB := []byte("author-trending-b-xxxxxxxxxxxxxx")
+	postA := []byte("post-trending-a-xxxxxxxxxxxxxxxx")
+	postB := []byte("post-trending-b-xxxxxxxxxxxxxxxx")
+
+	if err := db.UpsertProfile(authorA, "Author A", "", nil, nil, "", 1, 1000); err != nil {
+		t.Fatalf("UpsertProfile authorA: %v", err)
+	}
+	if err := db.UpsertProfile(authorB, "Author B", "", nil, nil, "", 1, 1000); err != nil {
+		t.Fatalf("UpsertProfile authorB: %v", err)
+	}
+	if err := db.InsertPost(postA, authorA, "post a", nil, nil, 2000, []byte("sig")); err != nil {
+		t.Fatalf("InsertPost postA: %v", err)
+	}
+	if err := db.InsertPost(postB, authorB, "post b", nil, nil, 3000, []byte("sig")); err != nil {
+		t.Fatalf("InsertPost postB: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		reactAuthor := []byte{byte('a' + i)}
+		if err := db.InsertReaction([]byte{byte('r' + i)}, reactAuthor, postA, "like", int64(4000+i)); err != nil {
+			t.Fatalf("InsertReaction postA #%d: %v", i, err)
+		}
+	}
+	if err := db.UpdateReactionCount(postA); err != nil {
+		t.Fatalf("UpdateReactionCount postA: %v", err)
+	}
+
+	if err := db.InsertReaction([]byte("r-post-b"), []byte("z"), postB, "like", 5000); err != nil {
+		t.Fatalf("InsertReaction postB: %v", err)
+	}
+	if err := db.UpdateReactionCount(postB); err != nil {
+		t.Fatalf("UpdateReactionCount postB: %v", err)
+	}
+
+	posts, err := db.GetTrendingPosts(0, 10)
+	if err != nil {
+		t.Fatalf("GetTrendingPosts: %v", err)
+	}
+	if len(posts) < 2 {
+		t.Fatalf("expected at least 2 posts, got %d", len(posts))
+	}
+	if string(posts[0].CID) != string(postA) {
+		t.Fatalf("expected postA first, got %q", string(posts[0].CID))
+	}
+}
+
+func TestGetTrendingTagsSince_FiltersByTimestamp(t *testing.T) {
+	db := setupTestDB(t)
+	author := []byte("author-tags-window-xxxxxxxxxxxx")
+	postOld := []byte("post-old-tags-window-xxxxxxxx")
+	postNew := []byte("post-new-tags-window-xxxxxxxx")
+
+	if err := db.UpsertProfile(author, "Author", "", nil, nil, "", 1, 1000); err != nil {
+		t.Fatalf("UpsertProfile: %v", err)
+	}
+	if err := db.InsertPost(postOld, author, "old", nil, nil, 1000, []byte("sig")); err != nil {
+		t.Fatalf("InsertPost old: %v", err)
+	}
+	if err := db.InsertPost(postNew, author, "new", nil, nil, 5000, []byte("sig")); err != nil {
+		t.Fatalf("InsertPost new: %v", err)
+	}
+	if err := db.InsertPostTags(postOld, []string{"legacy"}); err != nil {
+		t.Fatalf("InsertPostTags old: %v", err)
+	}
+	if err := db.InsertPostTags(postNew, []string{"fresh"}); err != nil {
+		t.Fatalf("InsertPostTags new: %v", err)
+	}
+
+	tags, err := db.GetTrendingTagsSince(2000, 10)
+	if err != nil {
+		t.Fatalf("GetTrendingTagsSince: %v", err)
+	}
+	if len(tags) != 1 || tags[0].Tag != "fresh" {
+		t.Fatalf("expected only fresh tag, got %+v", tags)
+	}
+}
+
 func assertPinnedState(t *testing.T, db *DB, cid []byte, want int) {
 	t.Helper()
 	var pinned int

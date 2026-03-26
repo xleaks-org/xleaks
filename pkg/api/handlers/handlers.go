@@ -147,6 +147,13 @@ func (h *Handler) requireIdentity(w http.ResponseWriter) (*identity.KeyPair, boo
 	return kp, true
 }
 
+func (h *Handler) passphraseMinLen() int {
+	if h.cfg != nil {
+		return h.cfg.PassphraseMinLen()
+	}
+	return config.DefaultConfig().PassphraseMinLen()
+}
+
 func isUsableKeyPair(kp *identity.KeyPair) bool {
 	if kp == nil {
 		return false

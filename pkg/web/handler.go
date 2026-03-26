@@ -39,6 +39,7 @@ type Handler struct {
 	indexerClient    *indexer.IndexerClient
 	ensureTopic      func(string) error
 	enableWebSocket  bool
+	minPassphraseLen int
 }
 
 // SetRepost sets the repost callback.
@@ -82,6 +83,18 @@ func (h *Handler) SetTopicSubscriber(fn func(string) error) {
 // SetWebSocketEnabled controls whether the web UI should connect to /ws.
 func (h *Handler) SetWebSocketEnabled(enabled bool) {
 	h.enableWebSocket = enabled
+}
+
+// SetPassphraseMinLength controls validation for onboarding/import flows.
+func (h *Handler) SetPassphraseMinLength(length int) {
+	h.minPassphraseLen = length
+}
+
+func (h *Handler) passphraseMinLen() int {
+	if h.minPassphraseLen > 0 {
+		return h.minPassphraseLen
+	}
+	return 8
 }
 
 // SetOnIdentityChange sets the callback invoked when the user creates, imports, or unlocks an identity.
@@ -174,13 +187,14 @@ func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline, sm
 	}
 
 	return &Handler{
-		pages:    pages,
-		landing:  landing,
-		partials: partials,
-		db:       db,
-		identity: idHolder,
-		sessions: sm,
-		timeline: tl,
+		pages:            pages,
+		landing:          landing,
+		partials:         partials,
+		db:               db,
+		identity:         idHolder,
+		sessions:         sm,
+		timeline:         tl,
+		minPassphraseLen: 8,
 	}, nil
 }
 
@@ -219,6 +233,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/web/search-results", h.searchResultsPartial)
 	r.Get("/web/node-status", h.nodeStatusPartial)
 	r.Get("/web/trending-tags", h.trendingTagsPartial)
+	r.Get("/web/trending-posts", h.trendingPostsPartial)
 	r.Post("/web/send-dm", h.handleSendDM)
 	r.Post("/web/like", h.handleLike)
 	r.Post("/web/repost", h.handleRepost)

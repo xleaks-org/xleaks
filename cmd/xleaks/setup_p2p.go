@@ -47,6 +47,15 @@ func setupP2P(ctx context.Context, cfg *config.Config) (*p2p.Host, error) {
 
 	go func() {
 		if err := host.Bootstrap(ctx, cfg.Network.BootstrapPeers); err != nil {
+			fallbackPeers := discoverBootstrapFallbackPeers(ctx, cfg)
+			if len(fallbackPeers) > 0 {
+				log.Printf("Bootstrap retry: loaded %d peer(s) from remote discovery sources", len(fallbackPeers))
+				if retryErr := host.Bootstrap(ctx, dedupeStrings(append(cfg.Network.BootstrapPeers, fallbackPeers...))); retryErr == nil {
+					return
+				} else {
+					log.Printf("Warning: DHT bootstrap retry failed: %v", retryErr)
+				}
+			}
 			log.Printf("Warning: DHT bootstrap failed: %v", err)
 		}
 	}()
