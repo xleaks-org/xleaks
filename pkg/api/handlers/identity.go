@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -63,7 +64,9 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
 	// Create a default profile in the database.
-	h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis())
+	if err := h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis()); err != nil {
+		log.Printf("api: failed to upsert profile: %v", err)
+	}
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"pubkey":   pubkeyHex,
@@ -113,7 +116,9 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
 
-	h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis())
+	if err := h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis()); err != nil {
+		log.Printf("api: failed to upsert profile: %v", err)
+	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"pubkey":  pubkeyHex,

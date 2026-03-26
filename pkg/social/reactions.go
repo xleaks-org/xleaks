@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -18,19 +19,20 @@ import (
 type ReactionService struct {
 	storage   *storage.DB
 	cas       *content.ContentStore
-	identity  *identity.KeyPair
+	identity  atomic.Pointer[identity.KeyPair]
 	publisher Publisher
 }
 
 // NewReactionService creates a new ReactionService.
 func NewReactionService(db *storage.DB, kp *identity.KeyPair) *ReactionService {
-	return &ReactionService{
-		storage:  db,
-		identity: kp,
+	svc := &ReactionService{
+		storage: db,
 	}
+	svc.identity.Store(kp)
+	return svc
 }
 
-func (s *ReactionService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+func (s *ReactionService) SetIdentity(kp *identity.KeyPair) { s.identity.Store(kp) }
 
 // SetContentStore configures optional CAS persistence for locally created reactions.
 func (s *ReactionService) SetContentStore(cas *content.ContentStore) { s.cas = cas }
@@ -41,7 +43,7 @@ func (s *ReactionService) SetPublisher(publisher Publisher) { s.publisher = publ
 // CreateReaction creates a new "like" reaction on the given target post
 // using the service's stored identity.
 func (s *ReactionService) CreateReaction(ctx context.Context, targetCID []byte) (*pb.Reaction, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return nil, err
 	}

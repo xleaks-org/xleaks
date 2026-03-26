@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -18,28 +19,29 @@ import (
 type FollowService struct {
 	storage   *storage.DB
 	feed      *feed.Manager
-	identity  *identity.KeyPair
+	identity  atomic.Pointer[identity.KeyPair]
 	publisher Publisher
 }
 
 // NewFollowService creates a new FollowService.
 func NewFollowService(db *storage.DB, feedMgr *feed.Manager, kp *identity.KeyPair) *FollowService {
-	return &FollowService{
-		storage:  db,
-		feed:     feedMgr,
-		identity: kp,
+	svc := &FollowService{
+		storage: db,
+		feed:    feedMgr,
 	}
+	svc.identity.Store(kp)
+	return svc
 }
 
 // SetIdentity updates the active key pair used for signing.
-func (s *FollowService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+func (s *FollowService) SetIdentity(kp *identity.KeyPair) { s.identity.Store(kp) }
 
 // SetPublisher configures the optional outbound P2P publisher.
 func (s *FollowService) SetPublisher(publisher Publisher) { s.publisher = publisher }
 
 // Follow records and broadcasts a follow event using the service's stored identity.
 func (s *FollowService) Follow(ctx context.Context, target []byte) (*pb.FollowEvent, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +50,7 @@ func (s *FollowService) Follow(ctx context.Context, target []byte) (*pb.FollowEv
 
 // Unfollow records and broadcasts an unfollow event using the service's stored identity.
 func (s *FollowService) Unfollow(ctx context.Context, target []byte) (*pb.FollowEvent, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return nil, err
 	}

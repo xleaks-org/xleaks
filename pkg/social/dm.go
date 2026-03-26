@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
-	"database/sql"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -20,19 +20,20 @@ import (
 type DMService struct {
 	storage   *storage.DB
 	cas       *content.ContentStore
-	identity  *identity.KeyPair
+	identity  atomic.Pointer[identity.KeyPair]
 	publisher Publisher
 }
 
 // NewDMService creates a new DMService.
 func NewDMService(db *storage.DB, kp *identity.KeyPair) *DMService {
-	return &DMService{
-		storage:  db,
-		identity: kp,
+	svc := &DMService{
+		storage: db,
 	}
+	svc.identity.Store(kp)
+	return svc
 }
 
-func (s *DMService) SetIdentity(kp *identity.KeyPair) { s.identity = kp }
+func (s *DMService) SetIdentity(kp *identity.KeyPair) { s.identity.Store(kp) }
 
 // SetContentStore configures optional CAS persistence for locally created direct messages.
 func (s *DMService) SetContentStore(cas *content.ContentStore) { s.cas = cas }
@@ -43,7 +44,7 @@ func (s *DMService) SetPublisher(publisher Publisher) { s.publisher = publisher 
 // SendDM encrypts and sends a direct message to the given recipient
 // using the service's stored identity.
 func (s *DMService) SendDM(ctx context.Context, recipientPubKey []byte, plaintext string) (*pb.DirectMessage, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func (s *DMService) sendDMWith(ctx context.Context, kp *identity.KeyPair, recipi
 
 // DecryptDM decrypts a direct message intended for us.
 func (s *DMService) DecryptDM(dm *pb.DirectMessage) (string, error) {
-	kp, err := activeIdentity(s.identity)
+	kp, err := activeIdentity(s.identity.Load())
 	if err != nil {
 		return "", err
 	}
@@ -164,40 +165,6 @@ func (s *DMService) DecryptDM(dm *pb.DirectMessage) (string, error) {
 	}
 
 	return string(plaintext), nil
-}
-
-// HandleIncomingDM validates an incoming DM, stores it, and creates a notification.
-func (s *DMService) HandleIncomingDM(dm *pb.DirectMessage) error {
-	if dm == nil {
-		return fmt.Errorf("direct message is nil")
-	}
-
-	// Validate the DM.
-	verifier := func(pubkey, message, signature []byte) bool {
-		return identity.Verify(pubkey, message, signature)
-	}
-	if err := content.ValidateDirectMessage(dm, verifier); err != nil {
-		return fmt.Errorf("validate DM: %w", err)
-	}
-
-	// Store in DB and create notification in a single transaction.
-	err := s.storage.WithTransaction(func(tx *sql.Tx) error {
-		if err := s.storage.InsertDMTx(tx, dm.Id, dm.Author, dm.Recipient, dm.EncryptedContent, dm.Nonce, int64(dm.Timestamp)); err != nil {
-			return fmt.Errorf("store incoming DM: %w", err)
-		}
-		// Create notification if the DM is addressed to us.
-		if hasIdentity(s.identity) && bytes.Equal(dm.Recipient, s.identity.PublicKeyBytes()) {
-			if err := s.storage.InsertNotificationTx(tx, dm.Recipient, "dm", dm.Author, nil, dm.Id, time.Now().UnixMilli()); err != nil {
-				return fmt.Errorf("create DM notification: %w", err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // signingPayloadDM returns the serialized DirectMessage with id and signature zeroed.

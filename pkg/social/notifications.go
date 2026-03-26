@@ -33,7 +33,7 @@ func NewNotificationService(db *storage.DB) *NotificationService {
 	}
 }
 
-// SetBroadcaster registers a callback for real-time notification events.
+// SetBroadcaster sets the WebSocket broadcast function. Must be called during startup before notifications fire.
 func (s *NotificationService) SetBroadcaster(fn func(eventType string, data interface{})) {
 	s.broadcast = fn
 }
@@ -67,22 +67,6 @@ func (s *NotificationService) NotifyReply(actor, targetCID, replyCID []byte) err
 		return fmt.Errorf("notify reply: %w", err)
 	}
 	s.emit("reply", owner, actor, targetCID, replyCID)
-	return nil
-}
-
-// NotifyRepost creates a notification for a repost.
-func (s *NotificationService) NotifyRepost(actor, targetCID, repostCID []byte) error {
-	owner, err := s.ownerForPost(targetCID)
-	if err != nil {
-		return fmt.Errorf("resolve repost owner: %w", err)
-	}
-	if len(owner) == 0 || bytes.Equal(owner, actor) {
-		return nil
-	}
-	if err := s.storage.InsertNotification(owner, "repost", actor, targetCID, repostCID, time.Now().UnixMilli()); err != nil {
-		return fmt.Errorf("notify repost: %w", err)
-	}
-	s.emit("repost", owner, actor, targetCID, repostCID)
 	return nil
 }
 

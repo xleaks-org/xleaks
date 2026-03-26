@@ -184,10 +184,14 @@ func (c *IndexerClient) SearchPosts(query string, page, pageSize int) (*ClientSe
 
 	resp := &ClientSearchResponse{}
 	if results, ok := raw["results"]; ok {
-		json.Unmarshal(results, &resp.Results)
+		if err := json.Unmarshal(results, &resp.Results); err != nil {
+			log.Printf("indexer client: failed to unmarshal search results: %v", err)
+		}
 	}
 	if total, ok := raw["total"]; ok {
-		json.Unmarshal(total, &resp.Total)
+		if err := json.Unmarshal(total, &resp.Total); err != nil {
+			log.Printf("indexer client: failed to unmarshal search total: %v", err)
+		}
 	}
 
 	c.putInCache(cacheKey, resp)
@@ -214,10 +218,14 @@ func (c *IndexerClient) SearchUsers(query string, page, pageSize int) (*ClientSe
 
 	resp := &ClientSearchResponse{}
 	if results, ok := raw["results"]; ok {
-		json.Unmarshal(results, &resp.Results)
+		if err := json.Unmarshal(results, &resp.Results); err != nil {
+			log.Printf("indexer client: failed to unmarshal user results: %v", err)
+		}
 	}
 	if total, ok := raw["total"]; ok {
-		json.Unmarshal(total, &resp.Total)
+		if err := json.Unmarshal(total, &resp.Total); err != nil {
+			log.Printf("indexer client: failed to unmarshal user total: %v", err)
+		}
 	}
 
 	c.putInCache(cacheKey, resp)
@@ -242,7 +250,9 @@ func (c *IndexerClient) GetTrending(window string, limit int) (*ClientTrendingRe
 	var postRaw map[string]json.RawMessage
 	if err := c.queryIndexer("/api/trending", postParams, &postRaw); err == nil {
 		if posts, ok := postRaw["posts"]; ok {
-			json.Unmarshal(posts, &resp.Posts)
+			if err := json.Unmarshal(posts, &resp.Posts); err != nil {
+				log.Printf("indexer client: failed to unmarshal trending posts: %v", err)
+			}
 		}
 	}
 
@@ -255,7 +265,9 @@ func (c *IndexerClient) GetTrending(window string, limit int) (*ClientTrendingRe
 	var tagRaw map[string]json.RawMessage
 	if err := c.queryIndexer("/api/trending", tagParams, &tagRaw); err == nil {
 		if tags, ok := tagRaw["tags"]; ok {
-			json.Unmarshal(tags, &resp.Tags)
+			if err := json.Unmarshal(tags, &resp.Tags); err != nil {
+				log.Printf("indexer client: failed to unmarshal trending tags: %v", err)
+			}
 		}
 	}
 
@@ -280,7 +292,9 @@ func (c *IndexerClient) GetExplorePublishers(limit int) ([]ClientPublisher, erro
 
 	var publishers []ClientPublisher
 	if pubs, ok := raw["publishers"]; ok {
-		json.Unmarshal(pubs, &publishers)
+		if err := json.Unmarshal(pubs, &publishers); err != nil {
+			log.Printf("indexer client: failed to unmarshal explore publishers: %v", err)
+		}
 	}
 	if publishers == nil {
 		publishers = []ClientPublisher{}

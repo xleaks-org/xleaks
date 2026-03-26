@@ -71,24 +71,22 @@ func NewMessageProcessor(db StorageWriter, cas ContentWriter, notifier Notifier)
 	return &MessageProcessor{db: db, cas: cas, notifier: notifier}
 }
 
-// SetIndexer sets an optional PostIndexer that will be called after each
-// post or profile is stored.
+// SetIndexer sets the post indexer. Must be called before message processing starts.
 func (mp *MessageProcessor) SetIndexer(idx PostIndexer) {
 	mp.indexer = idx
 }
 
-// SetBroadcaster registers a callback for real-time events emitted from
-// inbound network traffic.
+// SetBroadcaster sets the WebSocket broadcast function. Must be called before message processing starts.
 func (mp *MessageProcessor) SetBroadcaster(fn func(eventType string, data interface{})) {
 	mp.broadcast = fn
 }
 
-// SetAutoFetchMedia toggles eager media fetching for followed/local publishers.
+// SetAutoFetchMedia enables or disables eager media fetching. Must be called before message processing starts.
 func (mp *MessageProcessor) SetAutoFetchMedia(enabled bool) {
 	mp.autoFetchMedia = enabled
 }
 
-// SetMediaFetcher registers the content fetch callback used by eager media fetching.
+// SetMediaFetcher sets the content fetch callback for eager media fetching. Must be called before message processing starts.
 func (mp *MessageProcessor) SetMediaFetcher(fn func(ctx context.Context, cidHex string) ([]byte, error)) {
 	mp.fetchContent = fn
 }
