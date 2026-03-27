@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/xleaks-org/xleaks/pkg/metrics"
 )
 
 var upgrader = websocket.Upgrader{
@@ -55,6 +56,8 @@ func (hub *WSHub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	hub.mu.Lock()
 	hub.clients[client] = true
 	hub.mu.Unlock()
+
+	metrics.IncrWS()
 
 	go client.writePump()
 	go client.readPump(hub)
@@ -130,6 +133,7 @@ func (c *wsClient) readPump(hub *WSHub) {
 		delete(hub.clients, c)
 		hub.mu.Unlock()
 		c.conn.Close()
+		metrics.DecrWS()
 	}()
 
 	for {

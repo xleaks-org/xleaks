@@ -1,0 +1,1959 @@
+openapi: 3.1.0
+info:
+  title: XLeaks API
+  description: Decentralized P2P social platform API.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local node
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Health
+    description: Health check (unauthenticated)
+  - name: Identity
+    description: Create, import, unlock, lock, switch, export identities
+  - name: Posts
+    description: Create and retrieve posts
+  - name: Feed
+    description: Timeline feed
+  - name: Social
+    description: Reactions, reposts, follows
+  - name: Profile
+    description: User profiles
+  - name: Search
+    description: Search and discovery
+  - name: DMs
+    description: Direct messages
+  - name: Notifications
+    description: Notification management
+  - name: Media
+    description: Media upload and retrieval
+  - name: Node
+    description: Node status and configuration
+  - name: WebSocket
+    description: Real-time event stream
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    # Identity
+    CreateIdentityRequest:
+      type: object
+      properties:
+        passphrase:
+          type: string
+      required: [passphrase]
+
+    CreateIdentityResponse:
+      type: object
+      properties:
+        pubkey:
+          type: string
+          description: Hex-encoded public key
+        address:
+          type: string
+        mnemonic:
+          type: string
+
+    ImportIdentityRequest:
+      type: object
+      properties:
+        mnemonic:
+          type: string
+        seedPhrase:
+          type: string
+        passphrase:
+          type: string
+      required: [passphrase]
+
+    ImportIdentityResponse:
+      type: object
+      properties:
+        pubkey:
+          type: string
+        address:
+          type: string
+        status:
+          type: string
+
+    UnlockIdentityRequest:
+      type: object
+      properties:
+        passphrase:
+          type: string
+      required: [passphrase]
+
+    UnlockIdentityResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        pubkey:
+          type: string
+        address:
+          type: string
+
+    ActiveIdentityResponse:
+      type: object
+      properties:
+        active:
+          type: boolean
+        locked:
+          type: boolean
+        needs_onboarding:
+          type: boolean
+        pubkey:
+          type: string
+        address:
+          type: string
+        display_name:
+          type: string
+
+    LockIdentityResponse:
+      type: object
+      properties:
+        status:
+          type: string
+
+    SwitchIdentityRequest:
+      type: object
+      properties:
+        passphrase:
+          type: string
+      required: [passphrase]
+
+    SwitchIdentityResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        pubkey:
+          type: string
+        address:
+          type: string
+
+    ExportIdentityResponse:
+      type: object
+      properties:
+        pubkey:
+          type: string
+        address:
+          type: string
+        encrypted_key:
+          type: string
+
+    # Posts
+    CreatePostRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        media_cids:
+          type: array
+          items:
+            type: string
+        reply_to:
+          type: string
+          description: Hex-encoded CID of post being replied to
+
+    PostResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        content:
+          type: string
+        media_cids:
+          type: array
+          items:
+            type: string
+        reply_to:
+          type: string
+        repost_of:
+          type: string
+        timestamp:
+          type: integer
+        like_count:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+
+    ThreadNode:
+      type: object
+      properties:
+        post:
+          $ref: '#/components/schemas/PostResponse'
+        reply_count:
+          type: integer
+        like_count:
+          type: integer
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreadNode'
+
+    TimelineEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        author_name:
+          type: string
+        content:
+          type: string
+        media_cids:
+          type: array
+          items:
+            type: string
+        reply_to:
+          type: string
+        repost_of:
+          type: string
+        timestamp:
+          type: integer
+        like_count:
+          type: integer
+        reply_count:
+          type: integer
+        repost_count:
+          type: integer
+        is_liked:
+          type: boolean
+        is_reposted:
+          type: boolean
+
+    # Reactions
+    CreateReactionRequest:
+      type: object
+      properties:
+        target:
+          type: string
+          description: Hex-encoded CID of target post
+      required: [target]
+
+    ReactionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        target:
+          type: string
+        reaction_type:
+          type: string
+        timestamp:
+          type: integer
+
+    CreateRepostRequest:
+      type: object
+      properties:
+        post_cid:
+          type: string
+          description: Hex-encoded CID of post to repost
+      required: [post_cid]
+
+    RepostResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        repost_of:
+          type: string
+        timestamp:
+          type: integer
+
+    # Profile
+    UpdateProfileRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        bio:
+          type: string
+        website:
+          type: string
+        avatar_cid:
+          type: string
+        banner_cid:
+          type: string
+      required: [display_name]
+
+    ProfileResponse:
+      type: object
+      properties:
+        pubkey:
+          type: string
+        display_name:
+          type: string
+        bio:
+          type: string
+        website:
+          type: string
+        avatar_cid:
+          type: string
+        banner_cid:
+          type: string
+        version:
+          type: integer
+        timestamp:
+          type: integer
+
+    # Follow
+    FollowResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        pubkey:
+          type: string
+
+    FollowingResponse:
+      type: object
+      properties:
+        following:
+          type: array
+          items:
+            type: string
+        count:
+          type: integer
+
+    FollowersResponse:
+      type: object
+      properties:
+        followers:
+          type: array
+          items:
+            type: string
+        count:
+          type: integer
+
+    # DMs
+    SendDMRequest:
+      type: object
+      properties:
+        content:
+          type: string
+      required: [content]
+
+    DMResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        recipient:
+          type: string
+        timestamp:
+          type: integer
+
+    ConversationEntry:
+      type: object
+      properties:
+        peer:
+          type: string
+        last_timestamp:
+          type: integer
+        last_author:
+          type: string
+        preview:
+          type: string
+        unread_count:
+          type: integer
+
+    MessageEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        recipient:
+          type: string
+        content:
+          type: string
+        timestamp:
+          type: integer
+        read:
+          type: boolean
+
+    # Notifications
+    NotificationEntry:
+      type: object
+      properties:
+        type:
+          type: string
+        actor_pubkey:
+          type: string
+        actor_display_name:
+          type: string
+        actor_avatar_cid:
+          type: string
+        target_post_cid:
+          type: string
+        related_cid:
+          type: string
+        timestamp:
+          type: integer
+        read:
+          type: boolean
+        target_post_snippet:
+          type: string
+        reply_snippet:
+          type: string
+        summary:
+          type: string
+
+    UnreadCountResponse:
+      type: object
+      properties:
+        unread_count:
+          type: integer
+
+    # Search
+    SearchResponse:
+      type: object
+      properties:
+        type:
+          type: string
+        query:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchHit'
+        total:
+          type: integer
+        message:
+          type: string
+
+    SearchHit:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        content:
+          type: string
+        author:
+          type: string
+        name:
+          type: string
+        bio:
+          type: string
+        score:
+          type: number
+
+    TrendingResponse:
+      type: object
+      properties:
+        hashtags:
+          type: array
+          items:
+            type: object
+            properties:
+              tag:
+                type: string
+              count:
+                type: integer
+        posts:
+          type: array
+          items:
+            type: object
+            properties:
+              cid:
+                type: string
+              author:
+                type: string
+              content:
+                type: string
+              like_count:
+                type: integer
+              reply_count:
+                type: integer
+              repost_count:
+                type: integer
+              score:
+                type: number
+              timestamp:
+                type: integer
+        window:
+          type: string
+        message:
+          type: string
+
+    ExploreResponse:
+      type: object
+      properties:
+        publishers:
+          type: array
+          items:
+            type: object
+            properties:
+              pubkey:
+                type: string
+              follower_count:
+                type: integer
+              following_count:
+                type: integer
+              display_name:
+                type: string
+              bio:
+                type: string
+        message:
+          type: string
+
+    # Media
+    MediaUploadResponse:
+      type: object
+      properties:
+        cid:
+          type: string
+        mime_type:
+          type: string
+        size:
+          type: integer
+        chunk_count:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+        duration:
+          type: integer
+        thumbnail_cid:
+          type: string
+        filename:
+          type: string
+
+    MediaStatusResponse:
+      type: object
+      properties:
+        cid:
+          type: string
+        mime_type:
+          type: string
+        size:
+          type: integer
+        chunk_count:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+        duration:
+          type: integer
+        thumbnail_cid:
+          type: string
+        fully_fetched:
+          type: boolean
+
+    # Node
+    NodeStatusResponse:
+      type: object
+      properties:
+        peers:
+          type: integer
+        bandwidth:
+          type: object
+          properties:
+            total_in:
+              type: integer
+            total_out:
+              type: integer
+            rate_in:
+              type: integer
+            rate_out:
+              type: integer
+        storage:
+          type: object
+          properties:
+            used:
+              type: integer
+            limit:
+              type: integer
+        uptime:
+          type: number
+        subscriptions:
+          type: integer
+        identity:
+          type: string
+        node_id:
+          type: string
+        version:
+          type: string
+
+    PeerInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        addresses:
+          type: array
+          items:
+            type: string
+        direction:
+          type: string
+        latency:
+          type: string
+
+    NodeConfigResponse:
+      type: object
+      properties:
+        listen_addresses:
+          type: array
+          items:
+            type: string
+        bootstrap_peers:
+          type: array
+          items:
+            type: string
+        default_bootstrap_peers:
+          type: array
+          items:
+            type: string
+        known_indexers:
+          type: array
+          items:
+            type: string
+        default_known_indexers:
+          type: array
+          items:
+            type: string
+        max_connections:
+          type: integer
+        storage_limit_gb:
+          type: integer
+        bandwidth_limit_mbps:
+          type: integer
+        enable_relay:
+          type: boolean
+        enable_mdns:
+          type: boolean
+        enable_hole_punching:
+          type: boolean
+        enable_websocket:
+          type: boolean
+        auto_fetch_media:
+          type: boolean
+        max_upload_size_mb:
+          type: integer
+        thumbnail_quality:
+          type: integer
+        data_dir:
+          type: string
+        mode:
+          type: string
+        api_address:
+          type: string
+        log_level:
+          type: string
+
+    UpdateNodeConfigRequest:
+      type: object
+      properties:
+        max_connections:
+          type: integer
+        storage_limit_gb:
+          type: integer
+        enable_relay:
+          type: boolean
+        enable_mdns:
+          type: boolean
+        enable_hole_punching:
+          type: boolean
+        bandwidth_limit_mbps:
+          type: integer
+        bootstrap_peers:
+          type: array
+          items:
+            type: string
+        known_indexers:
+          type: array
+          items:
+            type: string
+        enable_websocket:
+          type: boolean
+        auto_fetch_media:
+          type: boolean
+        max_upload_size_mb:
+          type: integer
+        thumbnail_quality:
+          type: integer
+        log_level:
+          type: string
+
+    StatusOK:
+      type: object
+      properties:
+        status:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+        uptime_seconds:
+          type: integer
+
+  parameters:
+    CIDParam:
+      name: cid
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Hex-encoded content ID
+    PubkeyParam:
+      name: pubkey
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Hex-encoded public key
+    BeforeParam:
+      name: before
+      in: query
+      schema:
+        type: integer
+      description: Cursor timestamp for pagination (milliseconds)
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+      description: Number of items to return
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      security: []
+      operationId: getHealth
+      responses:
+        '200':
+          description: Node health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /ws:
+    get:
+      tags: [WebSocket]
+      summary: WebSocket event stream
+      description: >
+        Upgrades to WebSocket. Receives JSON events with `type` and `data` fields.
+        Event types: new_post, new_reaction, new_repost, new_notification, new_dm.
+      operationId: websocket
+      parameters:
+        - name: token
+          in: query
+          schema:
+            type: string
+          description: API token (alternative to Bearer header for WebSocket)
+      responses:
+        '101':
+          description: Switching protocols to WebSocket
+
+  # Identity
+  /api/identity/create:
+    post:
+      tags: [Identity]
+      summary: Create a new identity
+      operationId: createIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIdentityRequest'
+      responses:
+        '201':
+          description: Identity created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateIdentityResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/identity/import:
+    post:
+      tags: [Identity]
+      summary: Import an identity from mnemonic
+      operationId: importIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportIdentityRequest'
+      responses:
+        '200':
+          description: Identity imported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportIdentityResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/identity/unlock:
+    post:
+      tags: [Identity]
+      summary: Unlock the active identity
+      operationId: unlockIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnlockIdentityRequest'
+      responses:
+        '200':
+          description: Identity unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnlockIdentityResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Wrong passphrase
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/identity/active:
+    get:
+      tags: [Identity]
+      summary: Get active identity status
+      operationId: getActiveIdentity
+      responses:
+        '200':
+          description: Active identity info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveIdentityResponse'
+
+  /api/identity/lock:
+    post:
+      tags: [Identity]
+      summary: Lock the active identity
+      operationId: lockIdentity
+      responses:
+        '200':
+          description: Identity locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockIdentityResponse'
+
+  /api/identity/list:
+    get:
+      tags: [Identity]
+      summary: List all stored identities
+      operationId: listIdentities
+      responses:
+        '200':
+          description: List of identities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/identity/switch/{pubkey}:
+    put:
+      tags: [Identity]
+      summary: Switch to a different identity
+      operationId: switchIdentity
+      parameters:
+        - $ref: '#/components/parameters/PubkeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwitchIdentityRequest'
+      responses:
+        '200':
+          description: Identity switched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SwitchIdentityResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Wrong passphrase
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/identity/export:
+    get:
+      tags: [Identity]
+      summary: Export the active identity
+      operationId: exportIdentity
+      responses:
+        '200':
+          description: Exported identity file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportIdentityResponse'
+        '404':
+          description: No active identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Posts
+  /api/posts:
+    post:
+      tags: [Posts]
+      summary: Create a new post
+      operationId: createPost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostRequest'
+      responses:
+        '201':
+          description: Post created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/posts/{cid}:
+    get:
+      tags: [Posts]
+      summary: Get a post by CID
+      operationId: getPost
+      parameters:
+        - $ref: '#/components/parameters/CIDParam'
+      responses:
+        '200':
+          description: Post data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: Invalid CID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/posts/{cid}/thread:
+    get:
+      tags: [Posts]
+      summary: Get a post's thread tree
+      operationId: getThread
+      parameters:
+        - $ref: '#/components/parameters/CIDParam'
+      responses:
+        '200':
+          description: Thread tree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadNode'
+        '400':
+          description: Invalid CID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/posts/{cid}/reactions:
+    get:
+      tags: [Posts]
+      summary: Get reactions for a post
+      operationId: getPostReactions
+      parameters:
+        - $ref: '#/components/parameters/CIDParam'
+      responses:
+        '200':
+          description: List of reactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReactionResponse'
+        '400':
+          description: Invalid CID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users/{pubkey}/posts:
+    get:
+      tags: [Posts]
+      summary: Get posts by a user
+      operationId: getUserPosts
+      parameters:
+        - $ref: '#/components/parameters/PubkeyParam'
+        - $ref: '#/components/parameters/BeforeParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: List of timeline entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TimelineEntry'
+        '400':
+          description: Invalid pubkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Feed
+  /api/feed:
+    get:
+      tags: [Feed]
+      summary: Get the timeline feed
+      operationId: getFeed
+      parameters:
+        - $ref: '#/components/parameters/BeforeParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: List of timeline entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TimelineEntry'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Social
+  /api/reactions:
+    post:
+      tags: [Social]
+      summary: Create a reaction (like)
+      operationId: createReaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReactionRequest'
+      responses:
+        '201':
+          description: Reaction created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReactionResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/repost:
+    post:
+      tags: [Social]
+      summary: Create a repost
+      operationId: createRepost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRepostRequest'
+      responses:
+        '201':
+          description: Repost created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepostResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/follow/{pubkey}:
+    post:
+      tags: [Social]
+      summary: Follow a user
+      operationId: follow
+      parameters:
+        - $ref: '#/components/parameters/PubkeyParam'
+      responses:
+        '200':
+          description: Followed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowResponse'
+        '400':
+          description: Invalid pubkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Social]
+      summary: Unfollow a user
+      operationId: unfollow
+      parameters:
+        - $ref: '#/components/parameters/PubkeyParam'
+      responses:
+        '200':
+          description: Unfollowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowResponse'
+        '400':
+          description: Invalid pubkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/following:
+    get:
+      tags: [Social]
+      summary: Get list of users you follow
+      operationId: getFollowing
+      responses:
+        '200':
+          description: Following list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowingResponse'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users/{pubkey}/followers:
+    get:
+      tags: [Social]
+      summary: Get followers of a user
+      operationId: getFollowers
+      parameters:
+        - $ref: '#/components/parameters/PubkeyParam'
+      responses:
+        '200':
+          description: Followers list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowersResponse'
+        '400':
+          description: Invalid pubkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Profile
+  /api/profile:
+    get:
+      tags: [Profile]
+      summary: Get own profile
+      operationId: getOwnProfile
+      responses:
+        '200':
+          description: Profile data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags: [Profile]
+      summary: Update own profile
+      operationId: updateProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users/{pubkey}:
+    get:
+      tags: [Profile]
+      summary: Get a user's profile by pubkey
+      operationId: getUserProfile
+      parameters:
+        - $ref: '#/components/parameters/PubkeyParam'
+      responses:
+        '200':
+          description: Profile data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '400':
+          description: Invalid pubkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Search & Discovery
+  /api/search:
+    get:
+      tags: [Search]
+      summary: Search posts or users
+      operationId: search
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query (prefix with # for hashtag search, @ for user search)
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [posts, users]
+            default: posts
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Missing query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/trending:
+    get:
+      tags: [Search]
+      summary: Get trending posts and hashtags
+      operationId: getTrending
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum: ['1h', '6h', '24h', '7d']
+            default: '24h'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Trending data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrendingResponse'
+
+  /api/explore:
+    get:
+      tags: [Search]
+      summary: Discover publishers
+      operationId: explore
+      parameters:
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Publisher list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExploreResponse'
+
+  # DMs
+  /api/dm:
+    get:
+      tags: [DMs]
+      summary: List conversations
+      operationId: listConversations
+      responses:
+        '200':
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConversationEntry'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/dm/{pubkey}:
+    get:
+      tags: [DMs]
+      summary: Get conversation with a user
+      operationId: getConversation
+      parameters:
+        - $ref: '#/components/parameters/PubkeyParam'
+        - $ref: '#/components/parameters/BeforeParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MessageEntry'
+        '400':
+          description: Invalid pubkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [DMs]
+      summary: Send a direct message
+      operationId: sendDM
+      parameters:
+        - $ref: '#/components/parameters/PubkeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendDMRequest'
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DMResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Notifications
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: Get notifications
+      operationId: getNotifications
+      parameters:
+        - $ref: '#/components/parameters/BeforeParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationEntry'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/notifications/read:
+    put:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      operationId: markAllNotificationsRead
+      responses:
+        '200':
+          description: All marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOK'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/notifications/{id}/read:
+    put:
+      tags: [Notifications]
+      summary: Mark a single notification as read
+      operationId: markNotificationRead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Notification ID
+      responses:
+        '200':
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOK'
+        '400':
+          description: Invalid ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Get unread notification count
+      operationId: getUnreadCount
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCountResponse'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Media
+  /api/media:
+    post:
+      tags: [Media]
+      summary: Upload a media file
+      operationId: uploadMedia
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        '201':
+          description: Media uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaUploadResponse'
+        '400':
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Identity not unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/media/{cid}:
+    get:
+      tags: [Media]
+      summary: Get media content by CID
+      operationId: getMedia
+      parameters:
+        - $ref: '#/components/parameters/CIDParam'
+      responses:
+        '200':
+          description: Raw media content
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid CID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Media not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/media/{cid}/thumbnail:
+    get:
+      tags: [Media]
+      summary: Get media thumbnail
+      operationId: getMediaThumbnail
+      parameters:
+        - $ref: '#/components/parameters/CIDParam'
+      responses:
+        '200':
+          description: Thumbnail image (JPEG)
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid CID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Thumbnail not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/media/{cid}/status:
+    get:
+      tags: [Media]
+      summary: Get media metadata and status
+      operationId: getMediaStatus
+      parameters:
+        - $ref: '#/components/parameters/CIDParam'
+      responses:
+        '200':
+          description: Media status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaStatusResponse'
+        '400':
+          description: Invalid CID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Media not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Node
+  /api/node/status:
+    get:
+      tags: [Node]
+      summary: Get node status
+      operationId: getNodeStatus
+      responses:
+        '200':
+          description: Node status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeStatusResponse'
+
+  /api/node/peers:
+    get:
+      tags: [Node]
+      summary: Get connected peers
+      operationId: getNodePeers
+      responses:
+        '200':
+          description: List of peers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PeerInfo'
+
+  /api/node/config:
+    get:
+      tags: [Node]
+      summary: Get node configuration
+      operationId: getNodeConfig
+      responses:
+        '200':
+          description: Configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeConfigResponse'
+    put:
+      tags: [Node]
+      summary: Update node configuration
+      operationId: updateNodeConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNodeConfigRequest'
+      responses:
+        '200':
+          description: Config updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOK'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

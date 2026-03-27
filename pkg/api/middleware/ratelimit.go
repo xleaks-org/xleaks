@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/xleaks-org/xleaks/pkg/metrics"
 )
 
 // visitor tracks request counts for a single IP within a time window.
@@ -98,6 +100,8 @@ func (rl *RouteRateLimiter) SetGlobalLimit(maxRequests int, window time.Duration
 // Middleware returns an http.Handler middleware that enforces rate limits.
 func (rl *RouteRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		metrics.IncrRequests()
+
 		ip := extractIP(r)
 
 		rl.mu.Lock()
@@ -107,6 +111,7 @@ func (rl *RouteRateLimiter) Middleware(next http.Handler) http.Handler {
 			if !rl.allowLocked(rl.globalV, ip, rl.global) {
 				retryAfter := rl.retryAfterLocked(rl.globalV, ip)
 				rl.mu.Unlock()
+				metrics.IncrErrors()
 				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 				return
@@ -120,6 +125,7 @@ func (rl *RouteRateLimiter) Middleware(next http.Handler) http.Handler {
 			if !rl.allowLocked(visitors, ip, limit) {
 				retryAfter := rl.retryAfterLocked(visitors, ip)
 				rl.mu.Unlock()
+				metrics.IncrErrors()
 				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 				return
