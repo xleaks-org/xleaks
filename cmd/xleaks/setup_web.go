@@ -129,7 +129,11 @@ func setupWebHandler(
 	nodeStartTime := time.Now()
 	webHandler.SetNodeStatus(func() (int, float64, int64, int64, int) {
 		uptimeSecs := time.Since(nodeStartTime).Seconds()
-		storageLimit := int64(cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
+		maxStorageGB := cfg.Node.MaxStorageGB
+		if maxStorageGB == 0 {
+			maxStorageGB = 5
+		}
+		storageLimit := int64(maxStorageGB) * 1024 * 1024 * 1024
 
 		var peers int
 		if p2pHost != nil {

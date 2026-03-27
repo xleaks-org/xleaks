@@ -16,6 +16,7 @@ type ExploreUser struct {
 	ShortPubkey string
 	Initial     string
 	Bio         string
+	IsFollowing bool
 }
 
 // homePage serves the main feed page, or shows the landing page for unauthenticated visitors.
@@ -118,7 +119,11 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 
 	isOwn := user.Pubkey == pubkeyHex
 
-	data := h.pageData(r, "", displayName)
+	active := ""
+	if isOwn {
+		active = "profile"
+	}
+	data := h.pageData(r, active, displayName)
 	data["ProfileUser"] = &ProfileView{
 		DisplayName: displayName,
 		Pubkey:      pubkeyHex,
@@ -199,6 +204,8 @@ func (h *Handler) notificationsPage(w http.ResponseWriter, r *http.Request) {
 			Type:         n.Type,
 			ActorName:    actorName,
 			ActorInitial: getInitial(actorName),
+			ActorPubkey:  actorHex,
+			TargetCID:    hex.EncodeToString(n.TargetCID),
 			RelativeTime: formatRelativeTime(n.Timestamp),
 			Read:         n.Read,
 		})
@@ -240,8 +247,12 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 
 	// Get current user's pubkey to exclude from explore list
 	var ownPubkey string
+	var ownPubkeyBytes []byte
 	if user := h.currentUser(r); user != nil {
 		ownPubkey = user.Pubkey
+	}
+	if kp := h.getKeyPair(r); kp != nil {
+		ownPubkeyBytes = kp.PublicKeyBytes()
 	}
 
 	users := make([]ExploreUser, 0, 32)
@@ -265,12 +276,20 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 					displayName = shortenHex(publisher.Pubkey)
 				}
 
+				isFollowing := false
+				if len(ownPubkeyBytes) > 0 {
+					if pubBytes, err := hex.DecodeString(publisher.Pubkey); err == nil {
+						isFollowing = h.db.IsSubscribed(ownPubkeyBytes, pubBytes)
+					}
+				}
+
 				users = append(users, ExploreUser{
 					Pubkey:      publisher.Pubkey,
 					DisplayName: displayName,
 					ShortPubkey: shortenHex(publisher.Pubkey),
 					Initial:     getInitial(displayName),
 					Bio:         publisher.Bio,
+					IsFollowing: isFollowing,
 				})
 				seen[publisher.Pubkey] = struct{}{}
 			}
@@ -294,12 +313,19 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 		if displayName == "" {
 			displayName = shortenHex(pubkeyHex)
 		}
+
+		isFollowing := false
+		if len(ownPubkeyBytes) > 0 {
+			isFollowing = h.db.IsSubscribed(ownPubkeyBytes, p.Pubkey)
+		}
+
 		users = append(users, ExploreUser{
 			Pubkey:      pubkeyHex,
 			DisplayName: displayName,
 			ShortPubkey: shortenHex(pubkeyHex),
 			Initial:     getInitial(displayName),
 			Bio:         p.Bio,
+			IsFollowing: isFollowing,
 		})
 		seen[pubkeyHex] = struct{}{}
 	}
