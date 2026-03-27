@@ -11,6 +11,12 @@ import (
 // DB wraps a *sql.DB connection to the SQLite database.
 type DB struct {
 	*sql.DB
+	path string
+}
+
+// Path returns the filesystem path of the underlying SQLite database file.
+func (db *DB) Path() string {
+	return db.path
 }
 
 // NewDB opens a SQLite database at dbPath with WAL mode, a 5-second busy
@@ -28,7 +34,7 @@ func NewDB(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
 
-	return &DB{DB: sqlDB}, nil
+	return &DB{DB: sqlDB, path: dbPath}, nil
 }
 
 // Close closes the underlying database connection.

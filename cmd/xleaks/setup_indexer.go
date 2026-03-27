@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/indexer"
@@ -93,6 +95,69 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 		slog.Info("indexer reindexed existing profiles", "count", indexed)
 	}()
 
+	// Start periodic trending digest broadcast to /xleaks/global.
+	go startTrendingDigestBroadcast(ctx, idx, p2pHost)
+
 	slog.Info("indexer mode enabled")
 	return idx
+}
+
+// startTrendingDigestBroadcast periodically fetches trending tags and posts
+// from the indexer and publishes a JSON digest to the /xleaks/global topic.
+func startTrendingDigestBroadcast(ctx context.Context, idx *indexer.Indexer, host *p2p.Host) {
+	if idx == nil || host == nil {
+		return
+	}
+
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			publishTrendingDigest(ctx, idx, host)
+		}
+	}
+}
+
+// publishTrendingDigest fetches trending data and publishes it to the global topic.
+func publishTrendingDigest(ctx context.Context, idx *indexer.Indexer, host *p2p.Host) {
+	trending := idx.Trending()
+	if trending == nil {
+		return
+	}
+
+	tags, err := trending.GetTrendingTags("24h", 10)
+	if err != nil {
+		slog.Warn("trending digest: failed to get tags", "error", err)
+		tags = nil
+	}
+
+	posts, err := trending.GetTrendingPosts("24h", 10)
+	if err != nil {
+		slog.Warn("trending digest: failed to get posts", "error", err)
+		posts = nil
+	}
+
+	digest := map[string]interface{}{
+		"type":      "trending_digest",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"tags":      tags,
+		"posts":     posts,
+	}
+
+	data, err := json.Marshal(digest)
+	if err != nil {
+		slog.Warn("trending digest: failed to marshal", "error", err)
+		return
+	}
+
+	if err := host.Publish(ctx, p2p.GlobalTopic(), data); err != nil {
+		slog.Warn("trending digest: failed to publish", "error", err)
+		return
+	}
+
+	slog.Debug("trending digest published", "tags", len(tags), "posts", len(posts))
 }

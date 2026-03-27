@@ -13,6 +13,7 @@ import (
 
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/metrics"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 	pb "github.com/xleaks-org/xleaks/proto/gen"
 	"google.golang.org/protobuf/proto"
@@ -152,6 +153,8 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 			}
 		}
 	}
+
+	metrics.IncrPosts()
 
 	if err := publishPost(ctx, s.publisher, post); err != nil {
 		slog.Error("failed to publish post", "error", err)

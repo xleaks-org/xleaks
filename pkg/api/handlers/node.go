@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -295,6 +296,33 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "updated",
+	})
+}
+
+// CreateBackup handles POST /api/node/backup.
+func (h *Handler) CreateBackup(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		respondError(w, http.StatusInternalServerError, "database not available")
+		return
+	}
+
+	backupDir := filepath.Dir(h.db.Path())
+	path, err := h.db.Backup(backupDir)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "backup failed: "+err.Error())
+		return
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to stat backup: "+err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"path":      path,
+		"size":      info.Size(),
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }
 

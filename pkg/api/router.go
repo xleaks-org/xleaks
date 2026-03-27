@@ -150,6 +150,7 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 		r.Get("/node/peers", h.GetNodePeers)
 		r.Get("/node/config", h.GetNodeConfig)
 		r.Put("/node/config", h.UpdateNodeConfig)
+		r.Post("/node/backup", h.CreateBackup)
 	})
 
 	// WebSocket

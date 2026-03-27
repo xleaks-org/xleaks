@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/api/middleware"
+	"github.com/xleaks-org/xleaks/pkg/metrics"
 	"github.com/xleaks-org/xleaks/pkg/version"
 )
 
@@ -56,9 +57,10 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 	handler = middleware.CORS("*")(handler)
 
-	// Create a top-level mux so /health bypasses all auth/local middleware.
+	// Create a top-level mux so /health and /metrics bypass all auth/local middleware.
 	topMux := http.NewServeMux()
 	topMux.HandleFunc("GET /health", handleHealth)
+	topMux.HandleFunc("GET /metrics", metrics.Handler())
 	topMux.Handle("/", handler)
 
 	s := &Server{
