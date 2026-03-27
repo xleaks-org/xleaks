@@ -53,6 +53,50 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 		before, _ = strconv.ParseInt(b, 10, 64)
 	}
 
+	// Handle author filter: load posts by a specific user (profile page).
+	author := r.URL.Query().Get("author")
+	if author != "" {
+		authorBytes, err := hex.DecodeString(author)
+		if err != nil {
+			slog.Warn("invalid author pubkey", "author", author, "error", err)
+			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Invalid author key.</p></div>`)
+			return
+		}
+		entries, err := h.timeline.GetUserPosts(authorBytes, before, pageSize+1)
+		if err != nil {
+			slog.Error("failed to get user posts", "error", err)
+			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load posts.</p></div>`)
+			return
+		}
+
+		hasMore := len(entries) > pageSize
+		if hasMore {
+			entries = entries[:pageSize]
+		}
+
+		posts := make([]PostView, 0, len(entries))
+		for _, e := range entries {
+			posts = append(posts, h.entryToView(&e))
+		}
+
+		if len(posts) == 0 {
+			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>No posts yet.</p></div>`)
+			return
+		}
+
+		if err := h.partials.ExecuteTemplate(w, "feed_items.html", map[string]interface{}{"Posts": posts}); err != nil {
+			slog.Error("template error rendering user feed", "error", err)
+		}
+
+		if hasMore && len(entries) > 0 {
+			lastTs := entries[len(entries)-1].Post.Timestamp
+			fmt.Fprintf(w, `<div class="text-center py-4">`+
+				`<button hx-get="/web/feed?author=%s&before=%d" hx-target="closest div" hx-swap="outerHTML" `+
+				`class="text-blue-500 hover:text-blue-400 text-sm">Load more</button></div>`, author, lastTs)
+		}
+		return
+	}
+
 	// Use global feed when ?all=1 is present or when the user follows nobody.
 	useGlobal := r.URL.Query().Get("all") == "1"
 	var entries []feed.TimelineEntry

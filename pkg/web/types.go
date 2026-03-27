@@ -60,6 +60,8 @@ type NotificationView struct {
 	Type         string
 	ActorName    string
 	ActorInitial string
+	ActorPubkey  string
+	TargetCID    string
 	RelativeTime string
 	Read         bool
 }

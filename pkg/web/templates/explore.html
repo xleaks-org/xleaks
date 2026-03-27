@@ -14,9 +14,13 @@
             <p class="text-gray-500 text-xs font-mono">{{.ShortPubkey}}</p>
             {{if .Bio}}<p class="text-gray-400 text-sm mt-1 truncate">{{.Bio}}</p>{{end}}
         </div>
+        {{if .IsFollowing}}
+        <span class="bg-gray-700 text-gray-300 text-sm font-bold px-4 py-2 rounded-full cursor-default">Following</span>
+        {{else}}
         <form method="POST" action="/web/follow/{{.Pubkey}}">
             <button class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-full">Follow</button>
         </form>
+        {{end}}
     </div>
     {{else}}
     <div class="text-center py-12 text-gray-400">

@@ -282,7 +282,7 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update profile", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings?success=Profile+updated", http.StatusSeeOther)
 }
 
 // handleSwitchIdentity switches the active identity and replaces the current web session.
@@ -339,8 +339,11 @@ func (h *Handler) handleToggleTheme(w http.ResponseWriter, r *http.Request) {
 		MaxAge: 365 * 24 * 60 * 60, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 	referer := r.Header.Get("Referer")
-	if referer == "" || !strings.HasPrefix(referer, "/") {
-		referer = "/settings"
+	redirectTo := "/settings"
+	if referer != "" {
+		if u, err := url.Parse(referer); err == nil && u.Path != "" {
+			redirectTo = u.Path
+		}
 	}
-	http.Redirect(w, r, referer, http.StatusSeeOther)
+	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
 }
