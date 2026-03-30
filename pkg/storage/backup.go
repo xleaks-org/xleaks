@@ -11,6 +11,10 @@ import (
 // Backup creates a consistent copy of the database using SQLite's backup mechanism.
 // It returns the path to the backup file.
 func (db *DB) Backup(destDir string) (string, error) {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return "", fmt.Errorf("create backup directory: %w", err)
+	}
+
 	timestamp := time.Now().Format("20060102-150405")
 	backupPath := filepath.Join(destDir, fmt.Sprintf("xleaks-backup-%s.db", timestamp))
 
@@ -29,14 +33,26 @@ func (db *DB) Backup(destDir string) (string, error) {
 	}
 	defer src.Close()
 
-	dst, err := os.Create(backupPath)
+	dst, err := os.CreateTemp(destDir, "xleaks-backup-*.tmp")
 	if err != nil {
-		return "", fmt.Errorf("create backup: %w", err)
+		return "", fmt.Errorf("create backup temp file: %w", err)
 	}
-	defer dst.Close()
+	tempPath := dst.Name()
+	defer os.Remove(tempPath)
 
 	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
 		return "", fmt.Errorf("copy db: %w", err)
+	}
+	if err := dst.Sync(); err != nil {
+		dst.Close()
+		return "", fmt.Errorf("sync backup: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		return "", fmt.Errorf("close backup: %w", err)
+	}
+	if err := os.Rename(tempPath, backupPath); err != nil {
+		return "", fmt.Errorf("finalize backup: %w", err)
 	}
 
 	return backupPath, nil

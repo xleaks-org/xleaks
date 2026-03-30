@@ -142,23 +142,82 @@ func Load(path string) (*Config, error) {
 // Save writes the configuration to a TOML file.
 func (c *Config) Save(path string) error {
 	path = expandHome(path)
-	dir := filepath.Dir(path)
+	savePath, err := resolveSavePath(path)
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(savePath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	f, err := os.Create(path)
+	mode, err := configFileMode(savePath)
 	if err != nil {
-		return fmt.Errorf("failed to create config file: %w", err)
+		return err
 	}
-	defer f.Close()
+
+	f, err := os.CreateTemp(dir, filepath.Base(savePath)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp config file: %w", err)
+	}
+	tempPath := f.Name()
+	defer os.Remove(tempPath)
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to set config file permissions: %w", err)
+	}
 
 	encoder := toml.NewEncoder(f)
 	if err := encoder.Encode(c); err != nil {
+		f.Close()
 		return fmt.Errorf("failed to encode config: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to sync config file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close config file: %w", err)
+	}
+	if err := os.Rename(tempPath, savePath); err != nil {
+		return fmt.Errorf("failed to replace config file: %w", err)
 	}
 
 	return nil
+}
+
+func resolveSavePath(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return path, nil
+		}
+		return "", fmt.Errorf("failed to inspect config path: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
+	}
+
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve config symlink: %w", err)
+	}
+	return resolved, nil
+}
+
+func configFileMode(path string) (os.FileMode, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0o600, nil
+		}
+		return 0, fmt.Errorf("failed to stat config file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return 0, fmt.Errorf("config path must be a regular file")
+	}
+	return info.Mode().Perm(), nil
 }
 
 // DataDir returns the expanded data directory path.

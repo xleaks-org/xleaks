@@ -103,6 +103,52 @@ func TestNewDB_WALMode(t *testing.T) {
 	}
 }
 
+func TestBackupCreatesOwnerOnlyDatabaseCopy(t *testing.T) {
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "nested", "backups")
+
+	backupPath, err := db.Backup(backupDir)
+	if err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+	if filepath.Dir(backupPath) != backupDir {
+		t.Fatalf("backup dir = %s, want %s", filepath.Dir(backupPath), backupDir)
+	}
+
+	info, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatalf("Stat backup: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("backup permissions = %o, want 600", perm)
+	}
+	if info.Size() == 0 {
+		t.Fatal("expected non-empty backup file")
+	}
+
+	tempFiles, err := filepath.Glob(filepath.Join(backupDir, "xleaks-backup-*.tmp"))
+	if err != nil {
+		t.Fatalf("Glob temp files: %v", err)
+	}
+	if len(tempFiles) != 0 {
+		t.Fatalf("expected no leftover temp files, found %v", tempFiles)
+	}
+
+	backupDB, err := NewDB(backupPath)
+	if err != nil {
+		t.Fatalf("open backup db: %v", err)
+	}
+	defer backupDB.Close()
+
+	var table string
+	if err := backupDB.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='posts'`).Scan(&table); err != nil {
+		t.Fatalf("query backup schema: %v", err)
+	}
+	if table != "posts" {
+		t.Fatalf("backup schema lookup = %q, want posts", table)
+	}
+}
+
 func TestTrackContentAccess_PreservesPinState(t *testing.T) {
 	db := setupTestDB(t)
 	cid := []byte("content-access-cid")
