@@ -2,6 +2,7 @@ package content
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -167,6 +168,34 @@ func TestContentStorePutReader(t *testing.T) {
 	}
 	if !bytes.Equal(data, retrieved) {
 		t.Fatal("Get() returned different data than PutReader()")
+	}
+}
+
+func TestContentStoreOpen(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewContentStore(dir)
+	if err != nil {
+		t.Fatalf("NewContentStore() error: %v", err)
+	}
+
+	data := []byte("openable content")
+	cid, _ := ComputeCID(data)
+	if err := store.Put(cid, data); err != nil {
+		t.Fatalf("Put() error: %v", err)
+	}
+
+	file, err := store.Open(cid)
+	if err != nil {
+		t.Fatalf("Open() error: %v", err)
+	}
+	defer file.Close()
+
+	readBack, err := io.ReadAll(file)
+	if err != nil {
+		t.Fatalf("ReadAll() error: %v", err)
+	}
+	if !bytes.Equal(data, readBack) {
+		t.Fatal("Open() returned different data than Put()")
 	}
 }
 

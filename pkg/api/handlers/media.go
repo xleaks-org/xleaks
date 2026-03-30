@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -32,6 +33,19 @@ type stagedUpload struct {
 	Filename string
 	Size     int64
 	Sniff    []byte
+}
+
+type contentSource struct {
+	io.ReadSeeker
+	size    int64
+	closeFn func() error
+}
+
+func (s *contentSource) Close() error {
+	if s == nil || s.closeFn == nil {
+		return nil
+	}
+	return s.closeFn()
 }
 
 // UploadMedia handles POST /api/media (multipart file upload).
@@ -394,25 +408,30 @@ func (h *Handler) GetMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	media, _ := h.db.GetMediaObject(cidBytes)
-	data, err := h.loadContent(r.Context(), cidBytes)
+	source, err := h.openContent(r.Context(), cidBytes)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "media data not available")
 		return
 	}
+	defer source.Close()
 	if media != nil {
 		if err := h.db.TrackContentForMedia(cidBytes, cidBytes); err != nil {
 			slog.Warn("failed to track media access", "cid", hex.EncodeToString(cidBytes), "error", err)
 		}
 	}
 
-	mimeType := http.DetectContentType(data)
-	if media != nil && media.MimeType != "" {
+	mimeType := ""
+	if media != nil {
 		mimeType = media.MimeType
+	}
+	mimeType, err = detectContentType(source, mimeType)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to read media data")
+		return
 	}
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	http.ServeContent(w, r, "", time.Time{}, source)
 }
 
 // GetMediaThumbnail handles GET /api/media/{cid}/thumbnail.
@@ -425,25 +444,35 @@ func (h *Handler) GetMediaThumbnail(w http.ResponseWriter, r *http.Request) {
 
 	media, _ := h.db.GetMediaObject(cidBytes)
 	if media != nil && len(media.ThumbnailCID) > 0 {
-		data, err := h.loadContent(r.Context(), media.ThumbnailCID)
+		source, err := h.openContent(r.Context(), media.ThumbnailCID)
 		if err == nil {
+			defer source.Close()
 			if err := h.db.TrackContentForMedia(media.ThumbnailCID, media.CID); err != nil {
 				slog.Warn("failed to track thumbnail access", "cid", hex.EncodeToString(media.ThumbnailCID), "error", err)
 			}
 			w.Header().Set("Content-Type", "image/jpeg")
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			w.WriteHeader(http.StatusOK)
-			w.Write(data)
+			http.ServeContent(w, r, "", time.Time{}, source)
 			return
 		}
 	}
 
-	raw, err := h.loadContent(r.Context(), cidBytes)
+	source, err := h.openContent(r.Context(), cidBytes)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "thumbnail data not available")
 		return
 	}
-	mimeType := http.DetectContentType(raw)
+	defer source.Close()
+
+	mimeType := ""
+	if media != nil {
+		mimeType = media.MimeType
+	}
+	mimeType, err = detectContentType(source, mimeType)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "thumbnail data not available")
+		return
+	}
 	if !isImageMime(mimeType) && !isVideoMime(mimeType) {
 		respondError(w, http.StatusNotFound, "no thumbnail available")
 		return
@@ -452,7 +481,7 @@ func (h *Handler) GetMediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	if h.cfg != nil {
 		thumbnailQuality = h.cfg.ThumbnailJPEGQuality()
 	}
-	thumbData, _, err := content.GenerateMediaThumbnail(raw, mimeType, thumbnailQuality)
+	thumbData, _, err := content.GenerateMediaThumbnailReader(source, mimeType, thumbnailQuality)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "no thumbnail available")
 		return
@@ -487,22 +516,31 @@ func (h *Handler) GetMediaStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := h.loadContent(r.Context(), cidBytes)
+	source, err := h.openContent(r.Context(), cidBytes)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "media not found")
 		return
 	}
-	mimeType := http.DetectContentType(data)
+	defer source.Close()
+
+	mimeType, err := detectContentType(source, "")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "media not found")
+		return
+	}
+
 	var width, height, duration uint32
-	if meta := content.ExtractMediaMetadata(data, mimeType); meta != nil {
-		width = meta.Width
-		height = meta.Height
-		duration = meta.Duration
+	if isImageMime(mimeType) {
+		meta, metaErr := content.ExtractImageMetadataReader(source)
+		if metaErr == nil {
+			width = meta.Width
+			height = meta.Height
+		}
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"cid":           hex.EncodeToString(cidBytes),
 		"mime_type":     mimeType,
-		"size":          len(data),
+		"size":          source.size,
 		"chunk_count":   1,
 		"width":         width,
 		"height":        height,
@@ -567,13 +605,20 @@ func signMediaObject(kp *identity.KeyPair, cid []byte, mimeType string, chunks [
 	return obj, nil
 }
 
-func (h *Handler) loadContent(ctx context.Context, cidBytes []byte) ([]byte, error) {
-	data, err := h.cas.Get(cidBytes)
+func (h *Handler) openContent(ctx context.Context, cidBytes []byte) (*contentSource, error) {
+	file, err := h.cas.Open(cidBytes)
 	if err == nil {
-		if trackErr := h.db.TrackContentAccess(cidBytes, false); trackErr != nil {
-			slog.Warn("failed to track content access", "cid", hex.EncodeToString(cidBytes), "error", trackErr)
+		info, statErr := file.Stat()
+		if statErr != nil {
+			file.Close()
+			return nil, statErr
 		}
-		return data, nil
+		h.trackContentAccess(cidBytes)
+		return &contentSource{
+			ReadSeeker: file,
+			size:       info.Size(),
+			closeFn:    file.Close,
+		}, nil
 	}
 	if h.p2pHost == nil {
 		return nil, err
@@ -583,23 +628,63 @@ func (h *Handler) loadContent(ctx context.Context, cidBytes []byte) ([]byte, err
 		return nil, err
 	}
 	cidHex := hex.EncodeToString(cidBytes)
-	data, err = ce.FetchContent(ctx, cidHex, func(cidHex string) ([]byte, error) {
-		localCID, convErr := content.HexToCID(cidHex)
-		if convErr != nil {
-			return nil, convErr
-		}
-		return h.cas.Get(localCID)
-	})
-	if err != nil {
-		return nil, err
+	data, fetchErr := ce.FetchContent(ctx, cidHex, nil)
+	if fetchErr != nil {
+		return nil, fetchErr
 	}
-	if putErr := h.cas.Put(cidBytes, data); putErr != nil {
+	if putErr := h.cas.PutReader(cidBytes, bytes.NewReader(data)); putErr == nil {
+		file, openErr := h.cas.Open(cidBytes)
+		if openErr == nil {
+			info, statErr := file.Stat()
+			if statErr == nil {
+				h.trackContentAccess(cidBytes)
+				return &contentSource{
+					ReadSeeker: file,
+					size:       info.Size(),
+					closeFn:    file.Close,
+				}, nil
+			}
+			file.Close()
+		}
+	} else {
 		slog.Warn("failed to cache fetched media", "cid", cidHex, "error", putErr)
 	}
+
+	h.trackContentAccess(cidBytes)
+	return &contentSource{
+		ReadSeeker: bytes.NewReader(data),
+		size:       int64(len(data)),
+	}, nil
+}
+
+func (h *Handler) trackContentAccess(cidBytes []byte) {
 	if trackErr := h.db.TrackContentAccess(cidBytes, false); trackErr != nil {
-		slog.Warn("failed to track fetched content", "cid", cidHex, "error", trackErr)
+		slog.Warn("failed to track content access", "cid", hex.EncodeToString(cidBytes), "error", trackErr)
 	}
-	return data, nil
+}
+
+func detectContentType(source *contentSource, fallback string) (string, error) {
+	if fallback != "" {
+		if _, err := source.Seek(0, io.SeekStart); err != nil {
+			return "", err
+		}
+		return fallback, nil
+	}
+
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+
+	var sniff [512]byte
+	n, err := source.Read(sniff[:])
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+
+	return http.DetectContentType(sniff[:n]), nil
 }
 
 func (h *Handler) provideContent(_ context.Context, fileCID, thumbnailCID []byte, chunks []content.Chunk) {

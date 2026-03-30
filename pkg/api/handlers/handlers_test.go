@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hash/crc32"
+	"image"
+	"image/color"
+	"image/png"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/feed"
@@ -84,6 +89,26 @@ func testPNGWithDimensions(width, height uint32) []byte {
 	writeChunk("IHDR", ihdr)
 	writeChunk("IEND", nil)
 
+	return buf.Bytes()
+}
+
+func testPNGImage(width, height int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.Set(x, y, color.RGBA{
+				R: uint8((x * 17) % 255),
+				G: uint8((y * 19) % 255),
+				B: 120,
+				A: 255,
+			})
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		panic(err)
+	}
 	return buf.Bytes()
 }
 
@@ -783,6 +808,118 @@ func TestUploadMediaRejectsConfiguredUploadLimit(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "uploaded file too large") {
 		t.Fatalf("body = %q, want upload-too-large error", w.Body.String())
+	}
+}
+
+func TestGetMediaServesStoredContent(t *testing.T) {
+	t.Parallel()
+
+	h, db := testHandler(t)
+	png := testPNGWithDimensions(320, 240)
+	cid, err := content.ComputeCID(png)
+	if err != nil {
+		t.Fatalf("ComputeCID() error: %v", err)
+	}
+	if err := h.cas.Put(cid, png); err != nil {
+		t.Fatalf("CAS Put() error: %v", err)
+	}
+	if err := db.InsertMediaObject(cid, h.kp.PublicKeyBytes(), "image/png", uint64(len(png)), 1, 320, 240, 0, nil, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("InsertMediaObject() error: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/media/"+hex.EncodeToString(cid), nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("cid", hex.EncodeToString(cid))
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	h.GetMedia(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if got := w.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("Content-Type = %q, want %q", got, "image/png")
+	}
+	if !bytes.Equal(w.Body.Bytes(), png) {
+		t.Fatal("GetMedia() body did not match stored content")
+	}
+}
+
+func TestGetMediaThumbnailGeneratesFromStoredImage(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	png := testPNGImage(320, 240)
+	cid, err := content.ComputeCID(png)
+	if err != nil {
+		t.Fatalf("ComputeCID() error: %v", err)
+	}
+	if err := h.cas.Put(cid, png); err != nil {
+		t.Fatalf("CAS Put() error: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/media/"+hex.EncodeToString(cid)+"/thumbnail", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("cid", hex.EncodeToString(cid))
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	h.GetMediaThumbnail(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if got := w.Header().Get("Content-Type"); got != "image/jpeg" {
+		t.Fatalf("Content-Type = %q, want %q", got, "image/jpeg")
+	}
+	if w.Body.Len() == 0 {
+		t.Fatal("expected generated thumbnail bytes")
+	}
+}
+
+func TestGetMediaStatusReadsStoredContentWithoutMediaRow(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	png := testPNGWithDimensions(640, 480)
+	cid, err := content.ComputeCID(png)
+	if err != nil {
+		t.Fatalf("ComputeCID() error: %v", err)
+	}
+	if err := h.cas.Put(cid, png); err != nil {
+		t.Fatalf("CAS Put() error: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/media/"+hex.EncodeToString(cid)+"/status", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("cid", hex.EncodeToString(cid))
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	h.GetMediaStatus(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		MimeType string `json:"mime_type"`
+		Size     int64  `json:"size"`
+		Width    uint32 `json:"width"`
+		Height   uint32 `json:"height"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if resp.MimeType != "image/png" {
+		t.Fatalf("mime_type = %q, want %q", resp.MimeType, "image/png")
+	}
+	if resp.Size != int64(len(png)) {
+		t.Fatalf("size = %d, want %d", resp.Size, len(png))
+	}
+	if resp.Width != 640 || resp.Height != 480 {
+		t.Fatalf("dimensions = %dx%d, want 640x480", resp.Width, resp.Height)
 	}
 }
 

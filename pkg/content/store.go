@@ -54,6 +54,16 @@ func (cs *ContentStore) PutReader(cid []byte, r io.Reader) error {
 	return nil
 }
 
+// Open opens the content stored under the given CID for streaming reads.
+func (cs *ContentStore) Open(cid []byte) (*os.File, error) {
+	path := cs.objectPath(cid)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open content: %w", err)
+	}
+	return file, nil
+}
+
 // Get retrieves the data stored under the given CID.
 func (cs *ContentStore) Get(cid []byte) ([]byte, error) {
 	path := cs.objectPath(cid)
