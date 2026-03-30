@@ -99,8 +99,19 @@ func TestContentStore(t *testing.T) {
 	// Verify sharded directory structure.
 	hexCID := CIDToHex(cid)
 	expectedPath := filepath.Join(dir, hexCID[:2], hexCID)
-	if _, err := os.Stat(expectedPath); err != nil {
+	info, err := os.Stat(expectedPath)
+	if err != nil {
 		t.Errorf("expected file at sharded path %s: %v", expectedPath, err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("stored content mode = %o, want 644", info.Mode().Perm())
+	}
+	tempMatches, err := filepath.Glob(filepath.Join(dir, hexCID[:2], hexCID+".tmp-*"))
+	if err != nil {
+		t.Fatalf("Glob() error: %v", err)
+	}
+	if len(tempMatches) != 0 {
+		t.Fatalf("expected no temporary CAS files, got %v", tempMatches)
 	}
 
 	// Delete.
@@ -109,6 +120,38 @@ func TestContentStore(t *testing.T) {
 	}
 	if store.Has(cid) {
 		t.Error("Has() should return false after Delete")
+	}
+}
+
+func TestContentStorePutCleansTempFileOnFinalizeFailure(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewContentStore(dir)
+	if err != nil {
+		t.Fatalf("NewContentStore() error: %v", err)
+	}
+
+	data := []byte("stored content")
+	cid, _ := ComputeCID(data)
+	objectPath := store.objectPath(cid)
+	shardDir := filepath.Dir(objectPath)
+
+	if err := os.MkdirAll(shardDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+	if err := os.Mkdir(objectPath, 0o755); err != nil {
+		t.Fatalf("Mkdir() error: %v", err)
+	}
+
+	if err := store.Put(cid, data); err == nil {
+		t.Fatal("Put() should fail when final content path is a directory")
+	}
+
+	tempMatches, err := filepath.Glob(filepath.Join(shardDir, filepath.Base(objectPath)+".tmp-*"))
+	if err != nil {
+		t.Fatalf("Glob() error: %v", err)
+	}
+	if len(tempMatches) != 0 {
+		t.Fatalf("expected no temporary CAS files after failed finalize, got %v", tempMatches)
 	}
 }
 

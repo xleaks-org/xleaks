@@ -15,7 +15,7 @@ type ContentStore struct {
 // NewContentStore creates a new ContentStore rooted at basePath, ensuring the
 // base directory exists.
 func NewContentStore(basePath string) (*ContentStore, error) {
-	if err := os.MkdirAll(basePath, 0o755); err != nil {
+	if err := ensureDirectory(basePath, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create content store directory: %w", err)
 	}
 	return &ContentStore{basePath: basePath}, nil
@@ -31,10 +31,10 @@ func (cs *ContentStore) BasePath() string {
 func (cs *ContentStore) Put(cid []byte, data []byte) error {
 	path := cs.objectPath(cid)
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := ensureDirectory(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create shard directory: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := writeFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write content: %w", err)
 	}
 	return nil
