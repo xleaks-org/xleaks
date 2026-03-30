@@ -82,6 +82,10 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	// /metrics still follows the server's local/token exposure policy.
 	topMux := http.NewServeMux()
 	if browserAuth != nil {
+		authLimiter := middleware.NewRouteRateLimiter()
+		authLimiter.AddLimit("POST /auth/token", 5, time.Minute)
+		authLimiter.SetGlobalLimit(30, time.Minute)
+
 		topMux.HandleFunc("GET /auth/token", func(w http.ResponseWriter, r *http.Request) {
 			nextPath := safeBrowserRedirectPath(r.URL.Query().Get("next"))
 			if browserAuth.ValidateRequest(r) {
@@ -90,7 +94,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 			}
 			renderBrowserAuthPage(w, nextPath, strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("error")), "invalid"))
 		})
-		topMux.HandleFunc("POST /auth/token", func(w http.ResponseWriter, r *http.Request) {
+		topMux.Handle("POST /auth/token", authLimiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 			if err := r.ParseForm(); err != nil {
 				http.Error(w, "Bad request", http.StatusBadRequest)
@@ -110,7 +114,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 			}
 			browserAuth.SetCookie(w, r, sessionToken)
 			http.Redirect(w, r, nextPath, http.StatusSeeOther)
-		})
+		})))
 	}
 	topMux.HandleFunc("GET /health", handleHealth)
 	topMux.Handle("GET /metrics", metricsHandler)

@@ -423,6 +423,16 @@ func TestMountedServerBrowserAuthBootstrapSupportsProtectedWebUIAndAPI(t *testin
 		t.Fatal("expected csrf cookie from browser-authenticated signup page")
 	}
 
+	resp, err = client.Get(testServer.URL + "/api/node/status")
+	if err != nil {
+		t.Fatalf("GET /api/node/status with browser auth error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/node/status with browser auth status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
 	req, err = http.NewRequest(http.MethodPost, testServer.URL+"/api/ws-ticket", nil)
 	if err != nil {
 		t.Fatalf("NewRequest(POST /api/ws-ticket) error = %v", err)
@@ -438,6 +448,46 @@ func TestMountedServerBrowserAuthBootstrapSupportsProtectedWebUIAndAPI(t *testin
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("POST /api/ws-ticket with browser auth status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
+func TestMountedServerBrowserAuthLoginRateLimited(t *testing.T) {
+	t.Parallel()
+
+	const apiToken = "integration-token"
+	testServer := newMountedTestServerWithWebSocket(t, apiToken, false)
+	defer testServer.Close()
+
+	client := testServer.Client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	for i := 0; i < 5; i++ {
+		resp, err := client.PostForm(testServer.URL+"/auth/token", url.Values{
+			"token": []string{"wrong-token"},
+			"next":  []string{"/"},
+		})
+		if err != nil {
+			t.Fatalf("POST /auth/token attempt %d error = %v", i+1, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST /auth/token attempt %d status = %d, want %d", i+1, resp.StatusCode, http.StatusSeeOther)
+		}
+	}
+
+	resp, err := client.PostForm(testServer.URL+"/auth/token", url.Values{
+		"token": []string{"wrong-token"},
+		"next":  []string{"/"},
+	})
+	if err != nil {
+		t.Fatalf("POST /auth/token rate-limited attempt error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("POST /auth/token rate-limited status = %d, want %d", resp.StatusCode, http.StatusTooManyRequests)
 	}
 }
 
