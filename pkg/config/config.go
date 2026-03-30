@@ -185,6 +185,14 @@ func DefaultKnownIndexers() []string {
 	return append([]string(nil), defaultKnownIndexers...)
 }
 
+// MaxStorageBytes returns the configured storage cap in bytes, clamped at zero.
+func (c *Config) MaxStorageBytes() int64 {
+	if c == nil || c.Node.MaxStorageGB <= 0 {
+		return 0
+	}
+	return int64(c.Node.MaxStorageGB) * 1024 * 1024 * 1024
+}
+
 // MaxUploadBytes returns the effective upload cap in bytes, clamped to a sane minimum.
 func (c *Config) MaxUploadBytes() int64 {
 	sizeMB := c.Media.MaxUploadSizeMB

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -588,6 +589,44 @@ func TestRemoveSubscription(t *testing.T) {
 
 	if db.IsSubscribed(owner, pubkey) {
 		t.Error("IsSubscribed returned true after removal")
+	}
+}
+
+func TestGetSubscriptionSet(t *testing.T) {
+	db := setupTestDB(t)
+	owner := []byte("sub_set_owner_1_xxxxxxxxxxxxxxxxx")
+	otherOwner := []byte("sub_set_owner_2_xxxxxxxxxxxxxxxxx")
+	globalOwner := []byte{}
+	ownFollow := []byte("sub_set_pubkey_1_xxxxxxxxxxxxxxxxx")
+	globalFollow := []byte("sub_set_pubkey_2_xxxxxxxxxxxxxxxxx")
+	otherFollow := []byte("sub_set_pubkey_3_xxxxxxxxxxxxxxxxx")
+
+	if err := db.AddSubscription(owner, ownFollow, 1000); err != nil {
+		t.Fatalf("AddSubscription own: %v", err)
+	}
+	if err := db.AddSubscription(globalOwner, globalFollow, 1001); err != nil {
+		t.Fatalf("AddSubscription global: %v", err)
+	}
+	if err := db.AddSubscription(otherOwner, otherFollow, 1002); err != nil {
+		t.Fatalf("AddSubscription other: %v", err)
+	}
+
+	subs, err := db.GetSubscriptionSet(owner)
+	if err != nil {
+		t.Fatalf("GetSubscriptionSet: %v", err)
+	}
+	if len(subs) != 2 {
+		t.Fatalf("expected 2 subscriptions in set, got %d", len(subs))
+	}
+
+	if _, ok := subs[hex.EncodeToString(ownFollow)]; !ok {
+		t.Error("expected owner follow in subscription set")
+	}
+	if _, ok := subs[hex.EncodeToString(globalFollow)]; !ok {
+		t.Error("expected global follow in subscription set")
+	}
+	if _, ok := subs[hex.EncodeToString(otherFollow)]; ok {
+		t.Error("did not expect other owner's follow in subscription set")
 	}
 }
 

@@ -53,7 +53,7 @@ func (h *Handler) GetNodeStatus(w http.ResponseWriter, r *http.Request) {
 	storageUsed := int64(0)
 	storageLimit := int64(0)
 	if h.cfg != nil {
-		storageLimit = int64(h.cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
+		storageLimit = h.cfg.MaxStorageBytes()
 		storageSizeMu.Lock()
 		if time.Since(storageSizeTime) > 60*time.Second {
 			dataDir := h.cfg.DataDir()

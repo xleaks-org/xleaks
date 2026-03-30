@@ -254,6 +254,15 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 	if kp := h.getKeyPair(r); kp != nil {
 		ownPubkeyBytes = kp.PublicKeyBytes()
 	}
+	followedPubkeys := make(map[string]struct{})
+	if len(ownPubkeyBytes) > 0 {
+		var err error
+		followedPubkeys, err = h.db.GetSubscriptionSet(ownPubkeyBytes)
+		if err != nil {
+			slog.Error("failed to get subscriptions for explore page", "error", err)
+			followedPubkeys = make(map[string]struct{})
+		}
+	}
 
 	users := make([]ExploreUser, 0, 32)
 	seen := make(map[string]struct{}, 32)
@@ -277,9 +286,9 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 				}
 
 				isFollowing := false
-				if len(ownPubkeyBytes) > 0 {
+				if len(followedPubkeys) > 0 {
 					if pubBytes, err := hex.DecodeString(publisher.Pubkey); err == nil {
-						isFollowing = h.db.IsSubscribed(ownPubkeyBytes, pubBytes)
+						_, isFollowing = followedPubkeys[hex.EncodeToString(pubBytes)]
 					}
 				}
 
@@ -315,8 +324,8 @@ func (h *Handler) explorePage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		isFollowing := false
-		if len(ownPubkeyBytes) > 0 {
-			isFollowing = h.db.IsSubscribed(ownPubkeyBytes, p.Pubkey)
+		if len(followedPubkeys) > 0 {
+			_, isFollowing = followedPubkeys[pubkeyHex]
 		}
 
 		users = append(users, ExploreUser{

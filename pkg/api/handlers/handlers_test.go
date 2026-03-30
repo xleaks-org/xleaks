@@ -112,11 +112,11 @@ func TestParsePagination(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		query       string
-		defaultLim  int
-		wantBefore  int64
-		wantLimit   int
+		name       string
+		query      string
+		defaultLim int
+		wantBefore int64
+		wantLimit  int
 	}{
 		{"defaults", "", 20, 0, 20},
 		{"custom before", "before=1000", 20, 1000, 20},
@@ -353,6 +353,33 @@ func TestGetNodeStatusWithoutConfig(t *testing.T) {
 	if stor["used"].(float64) != 0 {
 		t.Errorf("storage.used = %v, want 0", stor["used"])
 	}
+	if stor["limit"].(float64) != 0 {
+		t.Errorf("storage.limit = %v, want 0", stor["limit"])
+	}
+}
+
+func TestGetNodeStatusUsesConfiguredStorageLimit(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	cfg.Node.MaxStorageGB = 0
+	h.SetConfig(cfg, "")
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/node/status", nil)
+	h.GetNodeStatus(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	stor := body["storage"].(map[string]interface{})
 	if stor["limit"].(float64) != 0 {
 		t.Errorf("storage.limit = %v, want 0", stor["limit"])
 	}

@@ -1,6 +1,9 @@
 package storage
 
-import "fmt"
+import (
+	"encoding/hex"
+	"fmt"
+)
 
 // SubscriptionRow represents a single row from the subscriptions table.
 type SubscriptionRow struct {
@@ -96,6 +99,40 @@ func (db *DB) CountSubscriptions(ownerPubkey []byte) (int, error) {
 		return 0, fmt.Errorf("count subscriptions: %w", err)
 	}
 	return count, nil
+}
+
+// GetSubscriptionSet returns the followed pubkeys for an owner as a hex-keyed lookup set.
+// Passing a nil/empty owner returns subscriptions across all identities.
+func (db *DB) GetSubscriptionSet(ownerPubkey []byte) (map[string]struct{}, error) {
+	var (
+		rows Rows
+		err  error
+	)
+	if len(ownerPubkey) == 0 {
+		rows, err = db.Query(`SELECT pubkey FROM subscriptions`)
+	} else {
+		rows, err = db.Query(
+			`SELECT pubkey FROM subscriptions WHERE owner_pubkey = ? OR owner_pubkey = x''`,
+			ownerPubkey,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get subscription set: %w", err)
+	}
+	defer rows.Close()
+
+	subs := make(map[string]struct{})
+	for rows.Next() {
+		var pubkey []byte
+		if err := rows.Scan(&pubkey); err != nil {
+			return nil, fmt.Errorf("scan subscription set row: %w", err)
+		}
+		subs[hex.EncodeToString(pubkey)] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate subscription set: %w", err)
+	}
+	return subs, nil
 }
 
 // IsSubscribed returns true if the owner is currently subscribed to the given public key.

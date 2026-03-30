@@ -94,7 +94,7 @@ func run() error {
 	}
 
 	replicator := feed.NewReplicator(db, cas)
-	maxStorage := int64(cfg.Node.MaxStorageGB) * 1024 * 1024 * 1024
+	maxStorage := cfg.MaxStorageBytes()
 	replicator.StartStorageManager(ctx, maxStorage, 5*time.Minute)
 
 	cfgPath := defaultConfigPath
