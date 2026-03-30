@@ -149,6 +149,9 @@ func parsePageParam(s string) int {
 	if err != nil || n < 0 {
 		return 0
 	}
+	if n > maxIndexerPage {
+		return maxIndexerPage
+	}
 	return n
 }
 

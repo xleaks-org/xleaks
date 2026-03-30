@@ -37,13 +37,14 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 
 	// Mount indexer API on public port.
 	idxAPI := indexer.NewIndexerAPI(idx.Search(), idx.Trending(), idx.Stats())
+	indexerServer := newIndexerHTTPServer(cfg.Indexer.PublicAPIAddress, idxAPI.Handler())
 	go func() {
-		addr := cfg.Indexer.PublicAPIAddress
-		slog.Info("indexer API listening", "addr", addr)
-		if err := http.ListenAndServe(addr, idxAPI.Handler()); err != nil {
+		slog.Info("indexer API listening", "addr", indexerServer.Addr)
+		if err := indexerServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("indexer API error", "error", err)
 		}
 	}()
+	go shutdownIndexerHTTPServer(ctx, indexerServer)
 
 	// Advertise as indexer on DHT.
 	if p2pHost != nil {
@@ -100,6 +101,28 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 
 	slog.Info("indexer mode enabled")
 	return idx
+}
+
+func newIndexerHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+}
+
+func shutdownIndexerHTTPServer(ctx context.Context, srv *http.Server) {
+	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil && err != context.Canceled && err != http.ErrServerClosed {
+		slog.Warn("indexer API shutdown failed", "error", err)
+	}
 }
 
 // startTrendingDigestBroadcast periodically fetches trending tags and posts

@@ -9,6 +9,12 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+const (
+	defaultIndexerLimit = 20
+	maxIndexerLimit     = 100
+	maxIndexerPage      = 1000
+)
+
 // IndexerAPI exposes search, trending, and stats endpoints for regular nodes.
 type IndexerAPI struct {
 	search   *SearchIndex
@@ -29,6 +35,7 @@ func NewIndexerAPI(search *SearchIndex, trending *TrendingEngine, stats *StatsCo
 // /api/explore/publishers, and /api/stats endpoints.
 func (api *IndexerAPI) Handler() http.Handler {
 	r := chi.NewRouter()
+	r.Use(indexerSecurityHeaders)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/search", api.handleSearch)
@@ -84,13 +91,7 @@ func (api *IndexerAPI) handleTrending(w http.ResponseWriter, r *http.Request) {
 		window = "24h"
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 20
-	if limitStr != "" {
-		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
-			limit = n
-		}
-	}
+	limit := parseLimitParam(r.URL.Query().Get("limit"))
 
 	trendingType := r.URL.Query().Get("type")
 
@@ -121,13 +122,7 @@ func (api *IndexerAPI) handleTrending(w http.ResponseWriter, r *http.Request) {
 
 func (api *IndexerAPI) handleExplorePublishers(w http.ResponseWriter, r *http.Request) {
 	// Return top publishers by follower count.
-	limitStr := r.URL.Query().Get("limit")
-	limit := 20
-	if limitStr != "" {
-		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
-			limit = n
-		}
-	}
+	limit := parseLimitParam(r.URL.Query().Get("limit"))
 
 	// Query the follower_counts table for top publishers.
 	rows, err := api.stats.db.Query(
@@ -190,16 +185,39 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
-func parsePageSizeParam(s string) int {
+func indexerSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func parseLimitParam(s string) int {
 	if s == "" {
-		return 20
+		return defaultIndexerLimit
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return 20
+		return defaultIndexerLimit
 	}
-	if n > 100 {
-		return 100
+	if n > maxIndexerLimit {
+		return maxIndexerLimit
+	}
+	return n
+}
+
+func parsePageSizeParam(s string) int {
+	if s == "" {
+		return defaultIndexerLimit
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return defaultIndexerLimit
+	}
+	if n > maxIndexerLimit {
+		return maxIndexerLimit
 	}
 	return n
 }
