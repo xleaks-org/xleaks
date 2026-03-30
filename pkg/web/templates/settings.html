@@ -170,7 +170,7 @@
                 </div>
                 <div>
                     <label class="text-xs text-gray-400 block mb-1">Storage Limit (GB)</label>
-                    <input id="node-storage-limit" type="number" min="1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
+                    <input id="node-storage-limit" type="number" min="0" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 focus:outline-none">
                 </div>
                 <div>
                     <label class="text-xs text-gray-400 block mb-1">Bandwidth Limit (Mbps)</label>
@@ -377,6 +377,49 @@
         fillNodeConfig(await response.json());
     }
 
+    function isWholeNumber(value) {
+        return Number.isFinite(value) && Math.floor(value) === value;
+    }
+
+    function validateKnownIndexerURL(value) {
+        try {
+            var parsed = new URL(value);
+            if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !parsed.host) {
+                return false;
+            }
+            if (parsed.search || parsed.hash) {
+                return false;
+            }
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    function validateNodeConfigPayload(payload) {
+        if (!isWholeNumber(payload.max_connections) || payload.max_connections < 1) {
+            return 'Max Connections must be a whole number of at least 1.';
+        }
+        if (!isWholeNumber(payload.storage_limit_gb) || payload.storage_limit_gb < 0) {
+            return 'Storage Limit must be a whole number of 0 or greater.';
+        }
+        if (!isWholeNumber(payload.bandwidth_limit_mbps) || payload.bandwidth_limit_mbps < 0) {
+            return 'Bandwidth Limit must be a whole number of 0 or greater.';
+        }
+        if (!isWholeNumber(payload.max_upload_size_mb) || payload.max_upload_size_mb < 1) {
+            return 'Max Upload Size must be a whole number of at least 1.';
+        }
+        if (!isWholeNumber(payload.thumbnail_quality) || payload.thumbnail_quality < 10 || payload.thumbnail_quality > 100) {
+            return 'Thumbnail JPEG Quality must be a whole number between 10 and 100.';
+        }
+        for (var i = 0; i < payload.known_indexers.length; i++) {
+            if (!validateKnownIndexerURL(payload.known_indexers[i])) {
+                return 'Known Indexers must be valid http:// or https:// base URLs.';
+            }
+        }
+        return '';
+    }
+
     nodeForm.addEventListener('submit', function(event) {
         event.preventDefault();
 
@@ -398,6 +441,12 @@
             enable_websocket: document.getElementById('node-enable-websocket').checked,
             auto_fetch_media: document.getElementById('node-auto-fetch-media').checked
         };
+
+        var validationError = validateNodeConfigPayload(payload);
+        if (validationError) {
+            setStatus(nodeStatus, validationError, true);
+            return;
+        }
 
         fetch('/api/node/config', {
             method: 'PUT',

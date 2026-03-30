@@ -647,10 +647,13 @@ components:
             type: string
         max_connections:
           type: integer
+          minimum: 1
         storage_limit_gb:
           type: integer
+          minimum: 0
         bandwidth_limit_mbps:
           type: integer
+          minimum: 0
         enable_relay:
           type: boolean
         enable_mdns:
@@ -663,8 +666,11 @@ components:
           type: boolean
         max_upload_size_mb:
           type: integer
+          minimum: 1
         thumbnail_quality:
           type: integer
+          minimum: 10
+          maximum: 100
         data_dir:
           type: string
         mode:
@@ -673,14 +679,17 @@ components:
           type: string
         log_level:
           type: string
+          enum: [debug, info, warn, warning, error]
 
     UpdateNodeConfigRequest:
       type: object
       properties:
         max_connections:
           type: integer
+          minimum: 1
         storage_limit_gb:
           type: integer
+          minimum: 0
         enable_relay:
           type: boolean
         enable_mdns:
@@ -689,6 +698,7 @@ components:
           type: boolean
         bandwidth_limit_mbps:
           type: integer
+          minimum: 0
         bootstrap_peers:
           type: array
           items:
@@ -703,10 +713,14 @@ components:
           type: boolean
         max_upload_size_mb:
           type: integer
+          minimum: 1
         thumbnail_quality:
           type: integer
+          minimum: 10
+          maximum: 100
         log_level:
           type: string
+          enum: [debug, info, warn, warning, error]
 
     StatusOK:
       type: object

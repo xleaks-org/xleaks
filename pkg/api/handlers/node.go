@@ -3,12 +3,16 @@ package handlers
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/version"
@@ -22,6 +26,11 @@ var (
 	cachedStorageSize int64
 	storageSizeTime   time.Time
 	storageSizeMu     sync.Mutex
+)
+
+const (
+	minThumbnailQuality = 10
+	maxThumbnailQuality = 100
 )
 
 // GetNodeStatus handles GET /api/node/status.
@@ -219,84 +228,258 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply supported config updates.
-	if v, ok := updates["max_connections"]; ok {
-		if n, ok := v.(float64); ok {
-			h.cfg.Network.MaxPeers = int(n)
+	next := cloneConfig(h.cfg)
+	refreshIndexers := false
+
+	if n, ok, err := optionalIntField(updates, "max_connections"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		if n < 1 {
+			respondError(w, http.StatusBadRequest, "max_connections must be at least 1")
+			return
 		}
+		next.Network.MaxPeers = n
 	}
-	if v, ok := updates["storage_limit_gb"]; ok {
-		if n, ok := v.(float64); ok {
-			h.cfg.Node.MaxStorageGB = int(n)
+	if n, ok, err := optionalIntField(updates, "storage_limit_gb"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		if n < 0 {
+			respondError(w, http.StatusBadRequest, "storage_limit_gb must be 0 or greater")
+			return
 		}
+		next.Node.MaxStorageGB = n
 	}
-	if v, ok := updates["enable_relay"]; ok {
-		if b, ok := v.(bool); ok {
-			h.cfg.Network.EnableRelay = b
-		}
+	if b, ok, err := optionalBoolField(updates, "enable_relay"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		next.Network.EnableRelay = b
 	}
-	if v, ok := updates["enable_mdns"]; ok {
-		if b, ok := v.(bool); ok {
-			h.cfg.Network.EnableMDNS = b
-		}
+	if b, ok, err := optionalBoolField(updates, "enable_mdns"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		next.Network.EnableMDNS = b
 	}
-	if v, ok := updates["enable_hole_punching"]; ok {
-		if b, ok := v.(bool); ok {
-			h.cfg.Network.EnableHolePunching = b
-		}
+	if b, ok, err := optionalBoolField(updates, "enable_hole_punching"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		next.Network.EnableHolePunching = b
 	}
-	if v, ok := updates["bandwidth_limit_mbps"]; ok {
-		if n, ok := v.(float64); ok {
-			h.cfg.Network.BandwidthLimitMbps = int(n)
+	if n, ok, err := optionalIntField(updates, "bandwidth_limit_mbps"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		if n < 0 {
+			respondError(w, http.StatusBadRequest, "bandwidth_limit_mbps must be 0 or greater")
+			return
 		}
+		next.Network.BandwidthLimitMbps = n
 	}
-	if v, ok := updates["bootstrap_peers"]; ok {
-		if peers, ok := toStringSlice(v); ok {
-			h.cfg.Network.BootstrapPeers = peers
+	if peers, ok, err := optionalStringSliceField(updates, "bootstrap_peers"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		peers = normalizeStringSlice(peers)
+		if err := validateBootstrapPeers(peers); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
 		}
+		next.Network.BootstrapPeers = peers
 	}
-	if v, ok := updates["known_indexers"]; ok {
-		if indexers, ok := toStringSlice(v); ok {
-			h.cfg.Indexer.KnownIndexers = indexers
+	if indexers, ok, err := optionalStringSliceField(updates, "known_indexers"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		indexers, err = normalizeIndexerURLs(indexers)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
 		}
+		next.Indexer.KnownIndexers = indexers
+		refreshIndexers = true
 	}
-	if v, ok := updates["enable_websocket"]; ok {
-		if b, ok := v.(bool); ok {
-			h.cfg.API.EnableWebSocket = b
-		}
+	if b, ok, err := optionalBoolField(updates, "enable_websocket"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		next.API.EnableWebSocket = b
 	}
-	if v, ok := updates["auto_fetch_media"]; ok {
-		if b, ok := v.(bool); ok {
-			h.cfg.Media.AutoFetchMedia = b
-		}
+	if b, ok, err := optionalBoolField(updates, "auto_fetch_media"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		next.Media.AutoFetchMedia = b
 	}
-	if v, ok := updates["max_upload_size_mb"]; ok {
-		if n, ok := v.(float64); ok && int(n) > 0 {
-			h.cfg.Media.MaxUploadSizeMB = int(n)
+	if n, ok, err := optionalIntField(updates, "max_upload_size_mb"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		if n < 1 {
+			respondError(w, http.StatusBadRequest, "max_upload_size_mb must be at least 1")
+			return
 		}
+		next.Media.MaxUploadSizeMB = n
 	}
-	if v, ok := updates["thumbnail_quality"]; ok {
-		if n, ok := v.(float64); ok {
-			h.cfg.Media.ThumbnailQuality = int(n)
+	if n, ok, err := optionalIntField(updates, "thumbnail_quality"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		if n < minThumbnailQuality || n > maxThumbnailQuality {
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("thumbnail_quality must be between %d and %d", minThumbnailQuality, maxThumbnailQuality))
+			return
 		}
+		next.Media.ThumbnailQuality = n
 	}
-	if v, ok := updates["log_level"]; ok {
-		if s, ok := v.(string); ok {
-			h.cfg.Logging.Level = s
-		}
+	if level, ok, err := optionalLogLevelField(updates, "log_level"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		next.Logging.Level = level
 	}
 
 	// Persist to disk if we have a config path.
 	if h.cfgPath != "" {
-		if err := h.cfg.Save(h.cfgPath); err != nil {
+		if err := next.Save(h.cfgPath); err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save config: %v", err))
 			return
 		}
+	}
+	*h.cfg = *next
+	if refreshIndexers && h.indexerClient != nil {
+		h.indexerClient.SetIndexers(next.Indexer.KnownIndexers)
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "updated",
 	})
+}
+
+func cloneConfig(cfg *config.Config) *config.Config {
+	if cfg == nil {
+		return nil
+	}
+	cloned := *cfg
+	cloned.Network.ListenAddresses = append([]string(nil), cfg.Network.ListenAddresses...)
+	cloned.Network.BootstrapPeers = append([]string(nil), cfg.Network.BootstrapPeers...)
+	cloned.Network.RelayAddresses = append([]string(nil), cfg.Network.RelayAddresses...)
+	cloned.Indexer.TrendingWindows = append([]string(nil), cfg.Indexer.TrendingWindows...)
+	cloned.Indexer.KnownIndexers = append([]string(nil), cfg.Indexer.KnownIndexers...)
+	return &cloned
+}
+
+func optionalIntField(updates map[string]interface{}, key string) (int, bool, error) {
+	raw, ok := updates[key]
+	if !ok {
+		return 0, false, nil
+	}
+	n, ok := raw.(float64)
+	if !ok || math.Trunc(n) != n {
+		return 0, false, fmt.Errorf("%s must be an integer", key)
+	}
+	return int(n), true, nil
+}
+
+func optionalBoolField(updates map[string]interface{}, key string) (bool, bool, error) {
+	raw, ok := updates[key]
+	if !ok {
+		return false, false, nil
+	}
+	b, ok := raw.(bool)
+	if !ok {
+		return false, false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return b, true, nil
+}
+
+func optionalStringSliceField(updates map[string]interface{}, key string) ([]string, bool, error) {
+	raw, ok := updates[key]
+	if !ok {
+		return nil, false, nil
+	}
+	items, ok := toStringSlice(raw)
+	if !ok {
+		return nil, false, fmt.Errorf("%s must be an array of strings", key)
+	}
+	return items, true, nil
+}
+
+func optionalLogLevelField(updates map[string]interface{}, key string) (string, bool, error) {
+	raw, ok := updates[key]
+	if !ok {
+		return "", false, nil
+	}
+	level, ok := raw.(string)
+	if !ok {
+		return "", false, fmt.Errorf("%s must be a string", key)
+	}
+	level = strings.ToLower(strings.TrimSpace(level))
+	switch level {
+	case "debug", "info", "warn", "warning", "error":
+		if level == "warning" {
+			level = "warn"
+		}
+		return level, true, nil
+	default:
+		return "", false, fmt.Errorf("%s must be one of debug, info, warn, warning, or error", key)
+	}
+}
+
+func normalizeStringSlice(items []string) []string {
+	out := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func validateBootstrapPeers(peers []string) error {
+	for _, peer := range peers {
+		if _, err := ma.NewMultiaddr(peer); err != nil {
+			return fmt.Errorf("bootstrap_peers contains invalid multiaddr %q", peer)
+		}
+	}
+	return nil
+}
+
+func normalizeIndexerURLs(urls []string) ([]string, error) {
+	normalized := make([]string, 0, len(urls))
+	seen := make(map[string]struct{}, len(urls))
+	for _, rawURL := range urls {
+		rawURL = strings.TrimSpace(rawURL)
+		if rawURL == "" {
+			continue
+		}
+		parsed, err := url.ParseRequestURI(rawURL)
+		if err != nil || parsed.Host == "" {
+			return nil, fmt.Errorf("known_indexers contains invalid URL %q", rawURL)
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return nil, fmt.Errorf("known_indexers must use http or https URLs")
+		}
+		if parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("known_indexers must be base URLs without query or fragment")
+		}
+		canonical := strings.TrimRight(parsed.String(), "/")
+		if _, ok := seen[canonical]; ok {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		normalized = append(normalized, canonical)
+	}
+	return normalized, nil
 }
 
 // CreateBackup handles POST /api/node/backup.

@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/indexer"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -658,6 +661,134 @@ func TestUpdateNodeConfigNoConfig(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestUpdateNodeConfigValidatedAndNormalized(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	h.SetConfig(cfg, "")
+
+	idxClient := indexer.NewIndexerClient(context.Background())
+	t.Cleanup(idxClient.Close)
+	h.SetIndexerClient(idxClient)
+
+	bootstrapPeer := config.DefaultBootstrapPeers()[0]
+	body := strings.NewReader(fmt.Sprintf(`{
+		"max_connections": 100,
+		"storage_limit_gb": 0,
+		"bandwidth_limit_mbps": 250,
+		"enable_relay": false,
+		"enable_mdns": false,
+		"enable_hole_punching": false,
+		"enable_websocket": false,
+		"auto_fetch_media": true,
+		"max_upload_size_mb": 256,
+		"thumbnail_quality": 90,
+		"bootstrap_peers": ["  %s  ", "%s"],
+		"known_indexers": [" https://indexer.example.org:7471/ ", "https://indexer.example.org:7471/"],
+		"log_level": "warning"
+	}`, bootstrapPeer, bootstrapPeer))
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	if cfg.Network.MaxPeers != 100 {
+		t.Fatalf("max peers = %d, want 100", cfg.Network.MaxPeers)
+	}
+	if cfg.Node.MaxStorageGB != 0 {
+		t.Fatalf("storage_limit_gb = %d, want 0", cfg.Node.MaxStorageGB)
+	}
+	if cfg.Network.BandwidthLimitMbps != 250 {
+		t.Fatalf("bandwidth_limit_mbps = %d, want 250", cfg.Network.BandwidthLimitMbps)
+	}
+	if cfg.Network.EnableRelay || cfg.Network.EnableMDNS || cfg.Network.EnableHolePunching {
+		t.Fatal("expected relay, mdns, and hole punching to be disabled")
+	}
+	if cfg.API.EnableWebSocket {
+		t.Fatal("expected websocket to be disabled")
+	}
+	if !cfg.Media.AutoFetchMedia {
+		t.Fatal("expected auto_fetch_media to be enabled")
+	}
+	if cfg.Media.MaxUploadSizeMB != 256 {
+		t.Fatalf("max_upload_size_mb = %d, want 256", cfg.Media.MaxUploadSizeMB)
+	}
+	if cfg.Media.ThumbnailQuality != 90 {
+		t.Fatalf("thumbnail_quality = %d, want 90", cfg.Media.ThumbnailQuality)
+	}
+	if len(cfg.Network.BootstrapPeers) != 1 || cfg.Network.BootstrapPeers[0] != bootstrapPeer {
+		t.Fatalf("bootstrap_peers = %v, want [%q]", cfg.Network.BootstrapPeers, bootstrapPeer)
+	}
+	if len(cfg.Indexer.KnownIndexers) != 1 || cfg.Indexer.KnownIndexers[0] != "https://indexer.example.org:7471" {
+		t.Fatalf("known_indexers = %v, want [https://indexer.example.org:7471]", cfg.Indexer.KnownIndexers)
+	}
+	if cfg.Logging.Level != "warn" {
+		t.Fatalf("log_level = %q, want %q", cfg.Logging.Level, "warn")
+	}
+	if !h.indexerClient.Available() {
+		t.Fatal("expected runtime indexer client to refresh known indexers")
+	}
+}
+
+func TestUpdateNodeConfigRejectsInvalidUpdateAtomically(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	cfg.Network.MaxPeers = 42
+	cfg.Node.MaxStorageGB = 5
+	h.SetConfig(cfg, "")
+
+	body := strings.NewReader(`{"max_connections": 100, "storage_limit_gb": -1}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if cfg.Network.MaxPeers != 42 {
+		t.Fatalf("max peers mutated to %d after rejected update", cfg.Network.MaxPeers)
+	}
+	if cfg.Node.MaxStorageGB != 5 {
+		t.Fatalf("storage_limit_gb mutated to %d after rejected update", cfg.Node.MaxStorageGB)
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !strings.Contains(resp["error"], "storage_limit_gb") {
+		t.Fatalf("error = %q, want to mention storage_limit_gb", resp["error"])
+	}
+}
+
+func TestUpdateNodeConfigRejectsFractionalNumbers(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	cfg.Network.MaxPeers = 42
+	h.SetConfig(cfg, "")
+
+	body := strings.NewReader(`{"max_connections": 42.5}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if cfg.Network.MaxPeers != 42 {
+		t.Fatalf("max peers mutated to %d after fractional update", cfg.Network.MaxPeers)
 	}
 }
 
