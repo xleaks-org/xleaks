@@ -350,6 +350,97 @@ func TestMountedServerWebSocketTicketFlowWithTokenAuth(t *testing.T) {
 	}
 }
 
+func TestMountedServerBrowserAuthBootstrapSupportsProtectedWebUIAndAPI(t *testing.T) {
+	t.Parallel()
+
+	const apiToken = "integration-token"
+	testServer := newMountedTestServerWithWebSocket(t, apiToken, true)
+	defer testServer.Close()
+
+	client := testServer.Client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(GET /) error = %v", err)
+	}
+	req.Header.Set("Accept", "text/html")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET / error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("GET / status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+	if got := resp.Header.Get("Location"); got != "/auth/token?next=%2F" {
+		t.Fatalf("GET / Location = %q, want %q", got, "/auth/token?next=%2F")
+	}
+
+	resp, err = client.Get(testServer.URL + "/auth/token?next=%2Fsignup")
+	if err != nil {
+		t.Fatalf("GET /auth/token error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /auth/token status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	form := url.Values{
+		"token": []string{apiToken},
+		"next":  []string{"/signup"},
+	}
+	resp, err = client.PostForm(testServer.URL+"/auth/token", form)
+	if err != nil {
+		t.Fatalf("POST /auth/token error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /auth/token status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+	if got := resp.Header.Get("Location"); got != "/signup" {
+		t.Fatalf("POST /auth/token Location = %q, want %q", got, "/signup")
+	}
+
+	resp, err = client.Get(testServer.URL + "/signup")
+	if err != nil {
+		t.Fatalf("GET /signup after browser auth error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /signup after browser auth status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	csrfCookie := findCookie(resp.Cookies(), "xleaks_csrf")
+	if csrfCookie == nil || csrfCookie.Value == "" {
+		t.Fatal("expected csrf cookie from browser-authenticated signup page")
+	}
+
+	req, err = http.NewRequest(http.MethodPost, testServer.URL+"/api/ws-ticket", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(POST /api/ws-ticket) error = %v", err)
+	}
+	req.Header.Set("Origin", testServer.URL)
+	req.Header.Set("X-CSRF-Token", csrfCookie.Value)
+
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/ws-ticket with browser auth error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /api/ws-ticket with browser auth status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
 func newMountedTestServer(t *testing.T, apiToken string) *httptest.Server {
 	return newMountedTestServerWithWebSocket(t, apiToken, false)
 }

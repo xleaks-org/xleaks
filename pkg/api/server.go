@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/api/middleware"
@@ -26,11 +28,12 @@ type ServerConfig struct {
 
 // Server wraps the HTTP server, WebSocket hub, and all handler dependencies.
 type Server struct {
-	httpServer *http.Server
-	wsHub      *WSHub
-	wsTickets  *WSTicketManager
-	router     http.Handler
-	apiToken   string
+	httpServer  *http.Server
+	wsHub       *WSHub
+	wsTickets   *WSTicketManager
+	browserAuth *BrowserAuthManager
+	router      http.Handler
+	apiToken    string
 }
 
 // NewServer creates a new API server. It accepts a listen address string and
@@ -43,9 +46,13 @@ func NewServer(listenAddr string, deps *HandlerDeps) *Server {
 func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	var wsHub *WSHub
 	var wsTickets *WSTicketManager
+	var browserAuth *BrowserAuthManager
 	if cfg.EnableWebSocket {
 		wsHub = NewWSHub()
 		wsTickets = NewWSTicketManager(defaultWSTicketTTL)
+	}
+	if cfg.APIToken != "" {
+		browserAuth = NewBrowserAuthManager(defaultBrowserAuthTTL)
 	}
 	if deps == nil {
 		deps = &HandlerDeps{}
@@ -61,6 +68,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 	if cfg.APIToken != "" {
 		handler = middleware.TokenAuthWithWebSocketTicket(cfg.APIToken, wsTickets.ValidateAndConsume)(handler)
+		handler = browserSessionAuth(cfg.APIToken, browserAuth)(handler)
 	}
 
 	handler = middleware.CORS()(handler)
@@ -73,6 +81,37 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	// Create a top-level mux so /health bypasses all auth/local middleware while
 	// /metrics still follows the server's local/token exposure policy.
 	topMux := http.NewServeMux()
+	if browserAuth != nil {
+		topMux.HandleFunc("GET /auth/token", func(w http.ResponseWriter, r *http.Request) {
+			nextPath := safeBrowserRedirectPath(r.URL.Query().Get("next"))
+			if browserAuth.ValidateRequest(r) {
+				http.Redirect(w, r, nextPath, http.StatusSeeOther)
+				return
+			}
+			renderBrowserAuthPage(w, nextPath, strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("error")), "invalid"))
+		})
+		topMux.HandleFunc("POST /auth/token", func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+
+			nextPath := safeBrowserRedirectPath(r.FormValue("next"))
+			if !authTokensEqual(r.FormValue("token"), cfg.APIToken) {
+				http.Redirect(w, r, "/auth/token?error=invalid&next="+url.QueryEscape(nextPath), http.StatusSeeOther)
+				return
+			}
+
+			sessionToken, err := browserAuth.Issue()
+			if err != nil {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			browserAuth.SetCookie(w, r, sessionToken)
+			http.Redirect(w, r, nextPath, http.StatusSeeOther)
+		})
+	}
 	topMux.HandleFunc("GET /health", handleHealth)
 	topMux.Handle("GET /metrics", metricsHandler)
 	topMux.Handle("/", handler)
@@ -87,10 +126,11 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
-		wsHub:     wsHub,
-		wsTickets: wsTickets,
-		router:    router,
-		apiToken:  cfg.APIToken,
+		wsHub:       wsHub,
+		wsTickets:   wsTickets,
+		browserAuth: browserAuth,
+		router:      router,
+		apiToken:    cfg.APIToken,
 	}
 
 	return s
@@ -138,4 +178,40 @@ func (s *Server) Handler() http.Handler {
 // means token auth is not enabled.
 func (s *Server) GetToken() string {
 	return s.apiToken
+}
+
+func browserSessionAuth(apiToken string, browserAuth *BrowserAuthManager) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if apiToken == "" || browserAuth == nil || r.Method == http.MethodOptions {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if r.Header.Get("Authorization") == "Bearer "+apiToken {
+				if shouldBootstrapBrowserSession(r) && !browserAuth.ValidateRequest(r) {
+					if token, err := browserAuth.Issue(); err == nil {
+						browserAuth.SetCookie(w, r, token)
+					}
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if browserAuth.ValidateRequest(r) {
+				clone := r.Clone(r.Context())
+				clone.Header = r.Header.Clone()
+				clone.Header.Set("Authorization", "Bearer "+apiToken)
+				next.ServeHTTP(w, clone)
+				return
+			}
+
+			if shouldBootstrapBrowserSession(r) {
+				http.Redirect(w, r, "/auth/token?next="+url.QueryEscape(safeBrowserRedirectPath(r.URL.RequestURI())), http.StatusSeeOther)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
