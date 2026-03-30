@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/identity"
@@ -29,7 +31,15 @@ type MessageProcessor struct {
 	broadcast      func(eventType string, data interface{})
 	autoFetchMedia bool
 	fetchContent   func(ctx context.Context, cidHex string) ([]byte, error)
+	prefetchMu     sync.Mutex
+	prefetching    map[string]struct{}
+	prefetchSlots  chan struct{}
 }
+
+const (
+	mediaPrefetchConcurrency = 2
+	mediaPrefetchTimeout     = 45 * time.Second
+)
 
 // StorageWriter defines the storage operations needed for message processing.
 type StorageWriter interface {
@@ -69,7 +79,13 @@ type Notifier interface {
 
 // NewMessageProcessor creates a new MessageProcessor.
 func NewMessageProcessor(db StorageWriter, cas ContentWriter, notifier Notifier) *MessageProcessor {
-	return &MessageProcessor{db: db, cas: cas, notifier: notifier}
+	return &MessageProcessor{
+		db:            db,
+		cas:           cas,
+		notifier:      notifier,
+		prefetching:   make(map[string]struct{}),
+		prefetchSlots: make(chan struct{}, mediaPrefetchConcurrency),
+	}
 }
 
 // SetIndexer sets the post indexer. Must be called before message processing starts.
@@ -365,9 +381,7 @@ func (mp *MessageProcessor) handleMediaObject(ctx context.Context, obj *pb.Media
 			return fmt.Errorf("resolve media pin policy: %w", err)
 		}
 		if shouldPin {
-			if err := mp.prefetchMediaContent(ctx, obj); err != nil {
-				slog.Warn("failed to prefetch media", "cid", hex.EncodeToString(obj.Cid), "error", err)
-			}
+			mp.scheduleMediaPrefetch(obj)
 		}
 	}
 	return nil
@@ -410,6 +424,12 @@ func (mp *MessageProcessor) prefetchMediaContent(ctx context.Context, obj *pb.Me
 		if len(item.cid) == 0 {
 			continue
 		}
+		if mp.cas.Has(item.cid) {
+			if err := mp.db.TrackContentForMedia(item.cid, item.parent); err != nil {
+				return fmt.Errorf("track existing %x: %w", item.cid, err)
+			}
+			continue
+		}
 		data, err := mp.fetchContent(ctx, hex.EncodeToString(item.cid))
 		if err != nil {
 			return fmt.Errorf("fetch %x: %w", item.cid, err)
@@ -426,4 +446,39 @@ func (mp *MessageProcessor) prefetchMediaContent(ctx context.Context, obj *pb.Me
 		return fmt.Errorf("mark media fetched: %w", err)
 	}
 	return nil
+}
+
+func (mp *MessageProcessor) scheduleMediaPrefetch(obj *pb.MediaObject) {
+	if obj == nil || len(obj.Cid) == 0 {
+		return
+	}
+
+	cidHex := hex.EncodeToString(obj.Cid)
+	mp.prefetchMu.Lock()
+	if _, ok := mp.prefetching[cidHex]; ok {
+		mp.prefetchMu.Unlock()
+		return
+	}
+	mp.prefetching[cidHex] = struct{}{}
+	mp.prefetchMu.Unlock()
+
+	go func() {
+		defer func() {
+			mp.prefetchMu.Lock()
+			delete(mp.prefetching, cidHex)
+			mp.prefetchMu.Unlock()
+		}()
+
+		if mp.prefetchSlots != nil {
+			mp.prefetchSlots <- struct{}{}
+			defer func() { <-mp.prefetchSlots }()
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), mediaPrefetchTimeout)
+		defer cancel()
+
+		if err := mp.prefetchMediaContent(ctx, obj); err != nil {
+			slog.Warn("failed to prefetch media", "cid", cidHex, "error", err)
+		}
+	}()
 }

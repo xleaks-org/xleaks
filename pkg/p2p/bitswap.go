@@ -30,6 +30,16 @@ const (
 
 	// streamDeadline is the read/write deadline applied to content streams.
 	streamDeadline = 30 * time.Second
+
+	// contentFetchTimeout bounds total remote fetch work per CID.
+	contentFetchTimeout = 45 * time.Second
+
+	// contentFetchFailureBackoff suppresses immediate retries for the same CID
+	// after a failed remote fetch attempt.
+	contentFetchFailureBackoff = 15 * time.Second
+
+	// contentFetchConcurrency limits parallel remote fetches.
+	contentFetchConcurrency = 4
 )
 
 // ContentExchange provides an interface for exchanging content-addressed data
@@ -45,6 +55,19 @@ type ContentExchange struct {
 	fetcher ContentFetcher
 	// server is called to handle incoming content requests.
 	server ContentServer
+
+	fetchStateMu   sync.Mutex
+	fetchInFlight  map[string]*contentFetchCall
+	fetchFailures  map[string]time.Time
+	fetchSemaphore chan struct{}
+	now            func() time.Time
+	fetchRemote    func(ctx context.Context, cidHex string, cidBytes []byte) ([]byte, error)
+}
+
+type contentFetchCall struct {
+	done chan struct{}
+	data []byte
+	err  error
 }
 
 // ContentFetcher is called to retrieve content from local storage.
@@ -58,8 +81,12 @@ type ContentServer func(cidHex string) ([]byte, bool)
 // given host.
 func NewContentExchange(h *Host) *ContentExchange {
 	return &ContentExchange{
-		host:     h,
-		provided: make(map[string]bool),
+		host:           h,
+		provided:       make(map[string]bool),
+		fetchInFlight:  make(map[string]*contentFetchCall),
+		fetchFailures:  make(map[string]time.Time),
+		fetchSemaphore: make(chan struct{}, contentFetchConcurrency),
+		now:            time.Now,
 	}
 }
 

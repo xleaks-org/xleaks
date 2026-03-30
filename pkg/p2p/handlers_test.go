@@ -651,13 +651,13 @@ func TestHandleMessage_MediaObject_AutoFetchesPinnedAuthorContent(t *testing.T) 
 		t.Fatalf("HandleMessage media object: %v", err)
 	}
 
-	if !cas.Has(obj.Cid) {
-		t.Fatal("expected fetched media file in CAS")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cas.Has(obj.Cid) && cas.Has(obj.ThumbnailCid) && db.mediaFetched[string(obj.Cid)] {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if !cas.Has(obj.ThumbnailCid) {
-		t.Fatal("expected fetched thumbnail in CAS")
-	}
-	if !db.mediaFetched[string(obj.Cid)] {
-		t.Fatal("expected media object to be marked fetched")
-	}
+
+	t.Fatal("expected media object to be prefetched asynchronously")
 }

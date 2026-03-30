@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	mh "github.com/multiformats/go-multihash"
 )
+
+var ErrFetchBackoffActive = errors.New("content fetch temporarily backed off after recent failure")
 
 // FindProviders queries the Kademlia DHT for peers that have the given content.
 // It returns up to maxProviders peer IDs as hex strings.
@@ -54,22 +57,92 @@ func (ce *ContentExchange) FetchContent(ctx context.Context, cidHex string, cas 
 		}
 	}
 
-	// Find providers via DHT.
-	providers, err := ce.FindProviders(ctx, cidHex)
-	if err != nil {
-		return nil, fmt.Errorf("finding providers: %w", err)
-	}
-
-	if len(providers) == 0 {
-		return nil, fmt.Errorf("no providers found for CID %s", cidHex)
-	}
-
 	cidBytes, err := hex.DecodeString(cidHex)
 	if err != nil {
 		return nil, fmt.Errorf("decoding CID hex: %w", err)
 	}
 
-	return ce.tryProviders(ctx, providers, cidHex, cidBytes)
+	return ce.fetchShared(ctx, cidHex, func(fetchCtx context.Context) ([]byte, error) {
+		if remote := ce.fetchRemote; remote != nil {
+			return remote(fetchCtx, cidHex, cidBytes)
+		}
+		providers, err := ce.FindProviders(fetchCtx, cidHex)
+		if err != nil {
+			return nil, fmt.Errorf("finding providers: %w", err)
+		}
+		if len(providers) == 0 {
+			return nil, fmt.Errorf("no providers found for CID %s", cidHex)
+		}
+		return ce.tryProviders(fetchCtx, providers, cidHex, cidBytes)
+	})
+}
+
+func (ce *ContentExchange) fetchShared(ctx context.Context, cidHex string, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
+	ce.fetchStateMu.Lock()
+	if ce.now == nil {
+		ce.now = time.Now
+	}
+	now := ce.now()
+	if until, ok := ce.fetchFailures[cidHex]; ok {
+		if now.Before(until) {
+			remaining := until.Sub(now).Round(time.Second)
+			ce.fetchStateMu.Unlock()
+			return nil, fmt.Errorf("%w for CID %s (%s remaining)", ErrFetchBackoffActive, cidHex, remaining)
+		}
+		delete(ce.fetchFailures, cidHex)
+	}
+	if call, ok := ce.fetchInFlight[cidHex]; ok {
+		ce.fetchStateMu.Unlock()
+		select {
+		case <-call.done:
+			return call.data, call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	call := &contentFetchCall{done: make(chan struct{})}
+	ce.fetchInFlight[cidHex] = call
+	ce.fetchStateMu.Unlock()
+
+	call.data, call.err = ce.runRemoteFetch(ctx, fetch)
+
+	ce.fetchStateMu.Lock()
+	delete(ce.fetchInFlight, cidHex)
+	if call.err != nil {
+		ce.fetchFailures[cidHex] = ce.now().Add(contentFetchFailureBackoff)
+	} else {
+		delete(ce.fetchFailures, cidHex)
+	}
+	close(call.done)
+	ce.fetchStateMu.Unlock()
+
+	return call.data, call.err
+}
+
+func (ce *ContentExchange) runRemoteFetch(ctx context.Context, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
+	if ce.fetchSemaphore == nil {
+		return ce.runRemoteFetchWithTimeout(ctx, fetch)
+	}
+
+	select {
+	case ce.fetchSemaphore <- struct{}{}:
+		defer func() { <-ce.fetchSemaphore }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	return ce.runRemoteFetchWithTimeout(ctx, fetch)
+}
+
+func (ce *ContentExchange) runRemoteFetchWithTimeout(ctx context.Context, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
+	fetchCtx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		fetchCtx, cancel = context.WithTimeout(ctx, contentFetchTimeout)
+		defer cancel()
+	}
+	return fetch(fetchCtx)
 }
 
 // tryProviders attempts to fetch content from each provider in order.
