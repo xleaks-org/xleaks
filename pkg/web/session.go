@@ -58,6 +58,23 @@ func (sm *SessionManager) Create(kp *identity.KeyPair) (string, error) {
 	return token, nil
 }
 
+// RotateForRequest creates a replacement session for the given key pair,
+// invalidates any existing session token presented by the request, and sets the
+// new cookie on the response.
+func (sm *SessionManager) RotateForRequest(w http.ResponseWriter, r *http.Request, kp *identity.KeyPair) (string, error) {
+	token, err := sm.Create(kp)
+	if err != nil {
+		return "", err
+	}
+	if r != nil {
+		if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" && cookie.Value != token {
+			sm.Destroy(cookie.Value)
+		}
+	}
+	sm.SetCookie(w, r, token)
+	return token, nil
+}
+
 // Get returns the session for the given token, or nil if not found.
 // Updates the LastSeen timestamp on access.
 func (sm *SessionManager) Get(token string) *UserSession {

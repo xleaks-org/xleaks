@@ -331,16 +331,11 @@ func (h *Handler) handleSwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	h.notifyIdentityChange()
 	h.ensureProfile()
 
-	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		h.sessions.Destroy(cookie.Value)
-	}
-	token, err := h.sessions.Create(h.identity.Get())
-	if err != nil {
+	if _, err := h.sessions.RotateForRequest(w, r, h.identity.Get()); err != nil {
 		slog.Error("failed to create session after identity switch", "error", err)
 		http.Redirect(w, r, "/settings?error=failed+to+create+session", http.StatusSeeOther)
 		return
 	}
-	h.sessions.SetCookie(w, r, token)
 	http.Redirect(w, r, "/settings?success=identity+switched", http.StatusSeeOther)
 }
 

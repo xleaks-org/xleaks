@@ -59,12 +59,9 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	h.notifyIdentityChange()
 	h.ensureProfile()
 
-	// Create a session for the new identity.
-	token, err := h.sessions.Create(kp)
-	if err != nil {
+	// Rotate to a fresh session for the new identity.
+	if _, err := h.sessions.RotateForRequest(w, r, kp); err != nil {
 		slog.Error("failed to create session after identity create", "error", err)
-	} else {
-		h.sessions.SetCookie(w, r, token)
 	}
 
 	data := h.pageData(r, "", "Save Seed Phrase")
@@ -198,12 +195,9 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	h.notifyIdentityChange()
 	h.ensureProfile()
 
-	// Create a session for the imported identity.
-	token, err := h.sessions.Create(kp)
-	if err != nil {
+	// Rotate to a fresh session for the imported identity.
+	if _, err := h.sessions.RotateForRequest(w, r, kp); err != nil {
 		slog.Error("failed to create session after identity import", "error", err)
-	} else {
-		h.sessions.SetCookie(w, r, token)
 	}
 
 	// Only ask for name if profile has default "Anonymous" name
@@ -245,12 +239,9 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	h.notifyIdentityChange()
 	h.ensureProfile()
 
-	// Create a session for the unlocked identity.
-	token, err := h.sessions.Create(kp)
-	if err != nil {
+	// Rotate to a fresh session for the unlocked identity.
+	if _, err := h.sessions.RotateForRequest(w, r, kp); err != nil {
 		slog.Error("failed to create session after unlock", "error", err)
-	} else {
-		h.sessions.SetCookie(w, r, token)
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
