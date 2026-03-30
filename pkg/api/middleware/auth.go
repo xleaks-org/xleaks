@@ -9,25 +9,41 @@ import (
 	"strings"
 )
 
-// LocalOnly restricts API access to requests originating from localhost.
-func LocalOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			logAccessRejection(r, "invalid_remote_addr")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
+// LocalOnly restricts API access to requests originating from localhost. When
+// allowForwarded is false, proxy-forwarding headers are rejected so loopback
+// binds cannot be exposed through a reverse proxy without token auth.
+func LocalOnly(allowForwarded bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			host, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				logAccessRejection(r, "invalid_remote_addr")
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 
-		ip := net.ParseIP(host)
-		if ip == nil || !ip.IsLoopback() {
-			logAccessRejection(r, "non_loopback_remote", "remote_host", host)
-			http.Error(w, "Forbidden: API only accessible from localhost", http.StatusForbidden)
-			return
-		}
+			ip := net.ParseIP(host)
+			if ip == nil || !ip.IsLoopback() {
+				logAccessRejection(r, "non_loopback_remote", "remote_host", host)
+				http.Error(w, "Forbidden: API only accessible from localhost", http.StatusForbidden)
+				return
+			}
+			if !allowForwarded {
+				if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+					logAccessRejection(r, "proxy_forwarding_not_allowed", "header", "X-Forwarded-For")
+					http.Error(w, "Forbidden: proxied API access requires token auth", http.StatusForbidden)
+					return
+				}
+				if forwarded := strings.TrimSpace(r.Header.Get("Forwarded")); forwarded != "" {
+					logAccessRejection(r, "proxy_forwarding_not_allowed", "header", "Forwarded")
+					http.Error(w, "Forbidden: proxied API access requires token auth", http.StatusForbidden)
+					return
+				}
+			}
 
-		next.ServeHTTP(w, r)
-	})
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // TokenAuth middleware validates Bearer token from requests. If the provided

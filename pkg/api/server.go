@@ -49,7 +49,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	// Build the middleware chain (outermost first, innermost last):
 	//   CORS (outermost) -> TokenAuth (optional) -> BrowserGuard -> LocalOnly -> router
 	var handler http.Handler = router
-	handler = middleware.LocalOnly(handler)
+	handler = middleware.LocalOnly(cfg.APIToken != "")(handler)
 	handler = middleware.BrowserGuard(handler)
 
 	if cfg.APIToken != "" {
