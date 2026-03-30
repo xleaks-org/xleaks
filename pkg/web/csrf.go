@@ -27,7 +27,7 @@ func ensureCSRFCookie(next http.Handler) http.Handler {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
-			setCSRFCookie(w, token)
+			setCSRFCookie(w, r, token)
 		}
 		if validCSRFToken(token) {
 			r = r.WithContext(context.WithValue(r.Context(), csrfContextKey{}, token))
@@ -89,14 +89,14 @@ func generateCSRFToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func setCSRFCookie(w http.ResponseWriter, token string) {
+func setCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     csrfCookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(sessionMaxAge.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   requestIsSecure(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 }

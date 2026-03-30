@@ -112,6 +112,14 @@ func (s *Server) WSHub() *WSHub {
 	return s.wsHub
 }
 
+// Handler returns the fully wrapped HTTP handler used by the server.
+func (s *Server) Handler() http.Handler {
+	if s == nil || s.httpServer == nil {
+		return nil
+	}
+	return s.httpServer.Handler
+}
+
 // GetToken returns the API token configured for this server. An empty string
 // means token auth is not enabled.
 func (s *Server) GetToken() string {

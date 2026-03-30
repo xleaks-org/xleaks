@@ -60,7 +60,7 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("failed to create session after identity create", "error", err)
 	} else {
-		h.sessions.SetCookie(w, token)
+		h.sessions.SetCookie(w, r, token)
 	}
 
 	data := h.pageData(r, "", "Save Seed Phrase")
@@ -183,7 +183,7 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("failed to create session after identity import", "error", err)
 	} else {
-		h.sessions.SetCookie(w, token)
+		h.sessions.SetCookie(w, r, token)
 	}
 
 	// Only ask for name if profile has default "Anonymous" name
@@ -226,7 +226,7 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("failed to create session after unlock", "error", err)
 	} else {
-		h.sessions.SetCookie(w, token)
+		h.sessions.SetCookie(w, r, token)
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -241,7 +241,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		h.sessions.Destroy(cookie.Value)
 	}
-	h.sessions.ClearCookie(w)
+	h.sessions.ClearCookie(w, r)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

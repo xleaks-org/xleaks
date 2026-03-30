@@ -37,6 +37,30 @@ func TestEnsureCSRFCookieSetsTokenOnSafeRequest(t *testing.T) {
 	if !validCSRFToken(cookie.Value) {
 		t.Fatalf("csrf cookie %q is invalid", cookie.Value)
 	}
+	if cookie.Secure {
+		t.Fatal("expected csrf cookie to be non-secure for http request")
+	}
+}
+
+func TestEnsureCSRFCookieUsesSecureFlagOnHTTPS(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "https://example.test/settings", nil)
+	rr := httptest.NewRecorder()
+
+	handler := ensureCSRFCookie(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	handler.ServeHTTP(rr, req)
+
+	res := rr.Result()
+	defer res.Body.Close()
+
+	cookie := findResponseCookie(res.Cookies(), csrfCookieName)
+	if cookie == nil {
+		t.Fatal("expected csrf cookie to be set")
+	}
+	if !cookie.Secure {
+		t.Fatal("expected csrf cookie to be secure for https request")
+	}
 }
 
 func TestRequireCSRFRejectsMissingToken(t *testing.T) {
@@ -100,4 +124,13 @@ func TestRequireCSRFAllowsMatchingHeaderToken(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
 	}
+}
+
+func findResponseCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
 }

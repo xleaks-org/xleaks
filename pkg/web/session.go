@@ -89,26 +89,27 @@ func (sm *SessionManager) Destroy(token string) {
 }
 
 // SetCookie sets the session cookie on the response.
-func (sm *SessionManager) SetCookie(w http.ResponseWriter, token string) {
+func (sm *SessionManager) SetCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(sessionMaxAge.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   requestIsSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 // ClearCookie removes the session cookie from the response.
-func (sm *SessionManager) ClearCookie(w http.ResponseWriter) {
+func (sm *SessionManager) ClearCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   requestIsSecure(r),
 	})
 }
 
