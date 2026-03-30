@@ -82,7 +82,7 @@ func (h *Holder) saveKeyAndRegister(kp *KeyPair, passphrase string) error {
 		return fmt.Errorf("encrypt key: %w", err)
 	}
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
-	if err := os.MkdirAll(h.keysDir(), 0o755); err != nil {
+	if err := os.MkdirAll(h.keysDir(), 0o700); err != nil {
 		return fmt.Errorf("create keys directory: %w", err)
 	}
 

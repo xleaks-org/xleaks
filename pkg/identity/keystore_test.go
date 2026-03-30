@@ -132,3 +132,32 @@ func TestSaveEncryptedKeyNilInput(t *testing.T) {
 		t.Error("expected error for nil encrypted key")
 	}
 }
+
+func TestSaveEncryptedKeyTightensExistingPermissions(t *testing.T) {
+	kp, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() error: %v", err)
+	}
+
+	enc, err := EncryptPrivateKey(kp.PrivateKey, "save-load-test")
+	if err != nil {
+		t.Fatalf("EncryptPrivateKey() error: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "key.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	if err := SaveEncryptedKey(enc, path); err != nil {
+		t.Fatalf("SaveEncryptedKey() error: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("os.Stat() error: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("expected file permissions 0600, got %o", perm)
+	}
+}

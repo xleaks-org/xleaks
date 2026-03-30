@@ -40,7 +40,7 @@ func (h *Holder) migrateIfNeeded() error {
 	pubkeyHex := h.migrationPubkeyHex()
 
 	// Ensure keys directory exists.
-	if err := os.MkdirAll(h.keysDir(), 0o755); err != nil {
+	if err := os.MkdirAll(h.keysDir(), 0o700); err != nil {
 		return fmt.Errorf("create keys directory: %w", err)
 	}
 
@@ -55,7 +55,7 @@ func (h *Holder) migrateIfNeeded() error {
 	// Write active file if it doesn't exist and we have a pubkey.
 	if pubkeyHex != "legacy" {
 		if _, err := os.Stat(h.activeFilePath()); os.IsNotExist(err) {
-			_ = os.WriteFile(h.activeFilePath(), []byte(pubkeyHex), 0o644)
+			_ = writeOwnerOnlyFile(h.activeFilePath(), []byte(pubkeyHex))
 		}
 	}
 
@@ -92,7 +92,7 @@ func (h *Holder) copyLegacyKey(legacyPath, newPath string) error {
 	if err != nil {
 		return fmt.Errorf("read legacy key: %w", err)
 	}
-	if err := os.WriteFile(newPath, data, 0o600); err != nil {
+	if err := writeOwnerOnlyFile(newPath, data); err != nil {
 		return fmt.Errorf("write migrated key: %w", err)
 	}
 	return nil
@@ -114,8 +114,8 @@ func (h *Holder) readActivePubkeyHex() (string, error) {
 // writeActivePubkeyHex writes the active identity's pubkey hex to the active file.
 func (h *Holder) writeActivePubkeyHex(pubkeyHex string) error {
 	identityDir := filepath.Join(h.dataDir, "identity")
-	if err := os.MkdirAll(identityDir, 0o755); err != nil {
+	if err := os.MkdirAll(identityDir, 0o700); err != nil {
 		return fmt.Errorf("create identity directory: %w", err)
 	}
-	return os.WriteFile(h.activeFilePath(), []byte(pubkeyHex), 0o644)
+	return writeOwnerOnlyFile(h.activeFilePath(), []byte(pubkeyHex))
 }

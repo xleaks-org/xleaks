@@ -131,7 +131,7 @@ func SaveEncryptedKey(enc *EncryptedKey, path string) error {
 		return fmt.Errorf("failed to marshal encrypted key: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := writeOwnerOnlyFile(path, data); err != nil {
 		return fmt.Errorf("failed to write encrypted key to %s: %w", path, err)
 	}
 
