@@ -36,3 +36,23 @@ func TestSessionCookieSecureFlagMatchesRequestScheme(t *testing.T) {
 		t.Fatal("expected https session cookie to be secure")
 	}
 }
+
+func TestSessionCookieUsesSecureFlagOnForwardedHTTPS(t *testing.T) {
+	t.Parallel()
+
+	sm := NewSessionManager()
+	defer sm.Stop()
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7470/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+	sm.SetCookie(rr, req, "token-forwarded")
+
+	cookie := findResponseCookie(rr.Result().Cookies(), sessionCookieName)
+	if cookie == nil {
+		t.Fatal("expected forwarded session cookie")
+	}
+	if !cookie.Secure {
+		t.Fatal("expected forwarded https session cookie to be secure")
+	}
+}

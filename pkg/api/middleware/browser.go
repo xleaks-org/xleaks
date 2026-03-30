@@ -86,14 +86,79 @@ func sameOriginURL(r *http.Request, rawURL string) bool {
 }
 
 func sameOrigin(r *http.Request, scheme, host string) bool {
-	return strings.EqualFold(requestScheme(r), scheme) && strings.EqualFold(r.Host, host)
+	return strings.EqualFold(requestScheme(r), scheme) && strings.EqualFold(requestHost(r), host)
 }
 
 func requestScheme(r *http.Request) string {
 	if r.TLS != nil {
 		return "https"
 	}
+	if scheme := forwardedScheme(r); scheme != "" {
+		return scheme
+	}
 	return "http"
+}
+
+func requestHost(r *http.Request) string {
+	if host := forwardedHost(r); host != "" {
+		return host
+	}
+	return r.Host
+}
+
+func forwardedScheme(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if scheme := parseForwardedPair(r.Header.Get("Forwarded"), "proto"); scheme != "" {
+		return scheme
+	}
+	scheme := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	if scheme == "" {
+		return ""
+	}
+	if comma := strings.IndexByte(scheme, ','); comma >= 0 {
+		scheme = scheme[:comma]
+	}
+	scheme = strings.ToLower(strings.TrimSpace(scheme))
+	switch scheme {
+	case "http", "https":
+		return scheme
+	default:
+		return ""
+	}
+}
+
+func forwardedHost(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if host := parseForwardedPair(r.Header.Get("Forwarded"), "host"); host != "" {
+		return host
+	}
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		return ""
+	}
+	if comma := strings.IndexByte(host, ','); comma >= 0 {
+		host = host[:comma]
+	}
+	return strings.TrimSpace(host)
+}
+
+func parseForwardedPair(forwarded, key string) string {
+	for _, part := range strings.Split(forwarded, ",") {
+		for _, field := range strings.Split(part, ";") {
+			name, value, ok := strings.Cut(field, "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(name), key) {
+				continue
+			}
+			value = strings.TrimSpace(value)
+			value = strings.Trim(value, `"`)
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func validBrowserCSRFToken(token string) bool {

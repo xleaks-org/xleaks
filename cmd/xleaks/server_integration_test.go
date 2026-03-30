@@ -162,6 +162,70 @@ func TestMountedServerHealthBypassesTokenAuthButAPIRequiresIt(t *testing.T) {
 	}
 }
 
+func TestMountedServerAllowsForwardedHTTPSBrowserFlowWithTokenAuth(t *testing.T) {
+	t.Parallel()
+
+	const (
+		apiToken   = "integration-token"
+		publicHost = "app.example"
+		publicURL  = "https://" + publicHost
+	)
+
+	testServer := newMountedTestServer(t, apiToken)
+	defer testServer.Close()
+
+	client := testServer.Client()
+
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/signup", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(GET /signup) error = %v", err)
+	}
+	req.Host = publicHost
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /signup via forwarded https error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /signup via forwarded https status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	csrfCookie := findCookie(resp.Cookies(), "xleaks_csrf")
+	if csrfCookie == nil || csrfCookie.Value == "" {
+		t.Fatal("expected xleaks_csrf cookie from forwarded https web route")
+	}
+	if !csrfCookie.Secure {
+		t.Fatal("expected forwarded https csrf cookie to be secure")
+	}
+
+	createBody := `{"passphrase":"correct horse battery staple"}`
+	req, err = http.NewRequest(http.MethodPost, testServer.URL+"/api/identity/create", strings.NewReader(createBody))
+	if err != nil {
+		t.Fatalf("NewRequest(POST /api/identity/create) error = %v", err)
+	}
+	req.Host = publicHost
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", publicURL)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-CSRF-Token", csrfCookie.Value)
+	req.AddCookie(&http.Cookie{Name: "xleaks_csrf", Value: csrfCookie.Value})
+
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/identity/create via forwarded https error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /api/identity/create via forwarded https status = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+}
+
 func newMountedTestServer(t *testing.T, apiToken string) *httptest.Server {
 	t.Helper()
 

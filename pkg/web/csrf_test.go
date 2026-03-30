@@ -63,6 +63,28 @@ func TestEnsureCSRFCookieUsesSecureFlagOnHTTPS(t *testing.T) {
 	}
 }
 
+func TestEnsureCSRFCookieUsesSecureFlagOnForwardedHTTPS(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7470/settings", nil)
+	req.Header.Set("Forwarded", `proto=https;host="app.example"`)
+	rr := httptest.NewRecorder()
+
+	handler := ensureCSRFCookie(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	handler.ServeHTTP(rr, req)
+
+	res := rr.Result()
+	defer res.Body.Close()
+
+	cookie := findResponseCookie(res.Cookies(), csrfCookieName)
+	if cookie == nil {
+		t.Fatal("expected csrf cookie to be set")
+	}
+	if !cookie.Secure {
+		t.Fatal("expected csrf cookie to be secure for forwarded https request")
+	}
+}
+
 func TestRequireCSRFRejectsMissingToken(t *testing.T) {
 	t.Parallel()
 
