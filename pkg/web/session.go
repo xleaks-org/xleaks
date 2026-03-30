@@ -110,6 +110,7 @@ func (sm *SessionManager) ClearCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   requestIsSecure(r),
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 

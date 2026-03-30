@@ -341,7 +341,7 @@ func (h *Handler) handleToggleTheme(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "theme", Value: theme, Path: "/",
-		MaxAge: 365 * 24 * 60 * 60, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		MaxAge: 365 * 24 * 60 * 60, Secure: requestIsSecure(r), SameSite: http.SameSiteLaxMode,
 	})
 	referer := r.Header.Get("Referer")
 	redirectTo := "/settings"
