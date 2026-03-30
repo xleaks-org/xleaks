@@ -57,18 +57,25 @@ type ContentExchange struct {
 	// server is called to handle incoming content requests.
 	server ContentServer
 
-	fetchStateMu   sync.Mutex
-	fetchInFlight  map[string]*contentFetchCall
-	fetchFailures  map[string]time.Time
-	fetchSemaphore chan struct{}
-	now            func() time.Time
-	fetchRemote    func(ctx context.Context, cidHex string, cidBytes []byte) ([]byte, error)
+	fetchStateMu      sync.Mutex
+	fetchInFlight     map[string]*contentFetchCall
+	fetchFailures     map[string]time.Time
+	fetchSemaphore    chan struct{}
+	now               func() time.Time
+	fetchRemote       func(ctx context.Context, cidHex string, cidBytes []byte) ([]byte, error)
+	fetchRemoteToFile func(ctx context.Context, cidHex string, cidBytes []byte) (*FetchedContentFile, error)
 }
 
 type contentFetchCall struct {
 	done chan struct{}
 	data []byte
 	err  error
+}
+
+// FetchedContentFile describes content fetched into a private temp file.
+type FetchedContentFile struct {
+	Path string
+	Size int64
 }
 
 // ContentSource describes streamed content available for remote serving.

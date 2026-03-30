@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -606,19 +605,10 @@ func signMediaObject(kp *identity.KeyPair, cid []byte, mimeType string, chunks [
 }
 
 func (h *Handler) openContent(ctx context.Context, cidBytes []byte) (*contentSource, error) {
-	file, err := h.cas.Open(cidBytes)
+	source, err := h.openStoredContent(cidBytes)
 	if err == nil {
-		info, statErr := file.Stat()
-		if statErr != nil {
-			file.Close()
-			return nil, statErr
-		}
 		h.trackContentAccess(cidBytes)
-		return &contentSource{
-			ReadSeeker: file,
-			size:       info.Size(),
-			closeFn:    file.Close,
-		}, nil
+		return source, nil
 	}
 	if h.p2pHost == nil {
 		return nil, err
@@ -628,33 +618,72 @@ func (h *Handler) openContent(ctx context.Context, cidBytes []byte) (*contentSou
 		return nil, err
 	}
 	cidHex := hex.EncodeToString(cidBytes)
-	data, fetchErr := ce.FetchContent(ctx, cidHex, nil)
+	fetched, fetchErr := ce.FetchContentToTempFile(ctx, cidHex)
 	if fetchErr != nil {
 		return nil, fetchErr
 	}
-	if putErr := h.cas.PutReader(cidBytes, bytes.NewReader(data)); putErr == nil {
-		file, openErr := h.cas.Open(cidBytes)
+	if putErr := h.cacheFetchedContent(cidBytes, fetched.Path); putErr == nil {
+		source, openErr := h.openStoredContent(cidBytes)
 		if openErr == nil {
-			info, statErr := file.Stat()
-			if statErr == nil {
-				h.trackContentAccess(cidBytes)
-				return &contentSource{
-					ReadSeeker: file,
-					size:       info.Size(),
-					closeFn:    file.Close,
-				}, nil
+			if removeErr := os.Remove(fetched.Path); removeErr != nil && !os.IsNotExist(removeErr) {
+				slog.Warn("failed to remove fetched temp media", "cid", cidHex, "error", removeErr)
 			}
-			file.Close()
+			h.trackContentAccess(cidBytes)
+			return source, nil
 		}
 	} else {
 		slog.Warn("failed to cache fetched media", "cid", cidHex, "error", putErr)
 	}
 
 	h.trackContentAccess(cidBytes)
+	file, openErr := os.Open(fetched.Path)
+	if openErr != nil {
+		if removeErr := os.Remove(fetched.Path); removeErr != nil && !os.IsNotExist(removeErr) {
+			slog.Warn("failed to remove fetched temp media after open error", "cid", cidHex, "error", removeErr)
+		}
+		return nil, openErr
+	}
 	return &contentSource{
-		ReadSeeker: bytes.NewReader(data),
-		size:       int64(len(data)),
+		ReadSeeker: file,
+		size:       fetched.Size,
+		closeFn: func() error {
+			closeErr := file.Close()
+			removeErr := os.Remove(fetched.Path)
+			if closeErr != nil {
+				return closeErr
+			}
+			if removeErr != nil && !os.IsNotExist(removeErr) {
+				return removeErr
+			}
+			return nil
+		},
 	}, nil
+}
+
+func (h *Handler) openStoredContent(cidBytes []byte) (*contentSource, error) {
+	file, err := h.cas.Open(cidBytes)
+	if err != nil {
+		return nil, err
+	}
+	info, statErr := file.Stat()
+	if statErr != nil {
+		file.Close()
+		return nil, statErr
+	}
+	return &contentSource{
+		ReadSeeker: file,
+		size:       info.Size(),
+		closeFn:    file.Close,
+	}, nil
+}
+
+func (h *Handler) cacheFetchedContent(cidBytes []byte, path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return h.cas.PutReader(cidBytes, file)
 }
 
 func (h *Handler) trackContentAccess(cidBytes []byte) {
