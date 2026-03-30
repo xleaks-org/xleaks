@@ -91,14 +91,17 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 
 	r.Route("/api", func(r chi.Router) {
 		// Identity
-		r.Post("/identity/create", h.CreateIdentity)
-		r.Post("/identity/import", h.ImportIdentity)
-		r.Post("/identity/unlock", h.UnlockIdentity)
-		r.Get("/identity/active", h.GetActiveIdentity)
-		r.Post("/identity/lock", h.LockIdentity)
-		r.Get("/identity/list", h.ListIdentities)
-		r.Put("/identity/switch/{pubkey}", h.SwitchIdentity)
-		r.Get("/identity/export", h.ExportIdentity)
+		r.Route("/identity", func(r chi.Router) {
+			r.Use(middleware.NoStore)
+			r.Post("/create", h.CreateIdentity)
+			r.Post("/import", h.ImportIdentity)
+			r.Post("/unlock", h.UnlockIdentity)
+			r.Get("/active", h.GetActiveIdentity)
+			r.Post("/lock", h.LockIdentity)
+			r.Get("/list", h.ListIdentities)
+			r.Put("/switch/{pubkey}", h.SwitchIdentity)
+			r.Get("/export", h.ExportIdentity)
+		})
 
 		// Posts
 		r.Post("/posts", h.CreatePost)

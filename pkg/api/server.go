@@ -64,10 +64,12 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	topMux.HandleFunc("GET /metrics", metrics.Handler())
 	topMux.Handle("/", handler)
 
+	serverHandler := middleware.SecurityHeaders(topMux)
+
 	s := &Server{
 		httpServer: &http.Server{
 			Addr:         cfg.ListenAddr,
-			Handler:      topMux,
+			Handler:      serverHandler,
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,

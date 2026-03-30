@@ -201,6 +201,7 @@ func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline, sm
 // Routes returns a chi.Router with all web UI routes.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
+	r.Use(noStoreResponses)
 	r.Use(ensureCSRFCookie)
 	r.Use(requireCSRF)
 
