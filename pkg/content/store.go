@@ -2,6 +2,7 @@ package content
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -35,6 +36,19 @@ func (cs *ContentStore) Put(cid []byte, data []byte) error {
 		return fmt.Errorf("failed to create shard directory: %w", err)
 	}
 	if err := writeFileAtomic(path, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write content: %w", err)
+	}
+	return nil
+}
+
+// PutReader stores streamed data under the given CID.
+func (cs *ContentStore) PutReader(cid []byte, r io.Reader) error {
+	path := cs.objectPath(cid)
+	dir := filepath.Dir(path)
+	if err := ensureDirectory(dir, 0o700); err != nil {
+		return fmt.Errorf("failed to create shard directory: %w", err)
+	}
+	if err := writeFileAtomicFromReader(path, r, 0o644); err != nil {
 		return fmt.Errorf("failed to write content: %w", err)
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	_ "image/png"
+	"io"
 	"strings"
 
 	_ "golang.org/x/image/webp"
@@ -27,9 +28,15 @@ func GenerateThumbnail(imageData []byte) ([]byte, []byte, error) {
 
 // GenerateMediaThumbnail creates a JPEG thumbnail for supported image or video data.
 func GenerateMediaThumbnail(data []byte, mimeType string, quality int) ([]byte, []byte, error) {
+	return GenerateMediaThumbnailReader(bytes.NewReader(data), mimeType, quality)
+}
+
+// GenerateMediaThumbnailReader creates a JPEG thumbnail for supported image or
+// video data from a seekable reader.
+func GenerateMediaThumbnailReader(r io.ReadSeeker, mimeType string, quality int) ([]byte, []byte, error) {
 	switch {
 	case strings.HasPrefix(mimeType, "image/"):
-		return GenerateThumbnailWithQuality(data, quality)
+		return GenerateThumbnailWithQualityReader(r, quality)
 	case strings.HasPrefix(mimeType, "video/"):
 		return generateVideoPlaceholderThumbnail(quality)
 	default:
@@ -41,7 +48,17 @@ func GenerateMediaThumbnail(data []byte, mimeType string, quality int) ([]byte, 
 // The thumbnail is resized to ThumbnailMaxWidth pixels wide, maintaining aspect ratio.
 // Returns the thumbnail JPEG data and its CID.
 func GenerateThumbnailWithQuality(imageData []byte, quality int) ([]byte, []byte, error) {
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(imageData))
+	return GenerateThumbnailWithQualityReader(bytes.NewReader(imageData), quality)
+}
+
+// GenerateThumbnailWithQualityReader creates a JPEG thumbnail from a seekable
+// image stream.
+func GenerateThumbnailWithQualityReader(r io.ReadSeeker, quality int) ([]byte, []byte, error) {
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return nil, nil, fmt.Errorf("failed to rewind image: %w", err)
+	}
+
+	cfg, _, err := image.DecodeConfig(r)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to decode image config: %w", err)
 	}
@@ -49,7 +66,11 @@ func GenerateThumbnailWithQuality(imageData []byte, quality int) ([]byte, []byte
 		return nil, nil, err
 	}
 
-	src, _, err := image.Decode(bytes.NewReader(imageData))
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return nil, nil, fmt.Errorf("failed to rewind image: %w", err)
+	}
+
+	src, _, err := image.Decode(r)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to decode image: %w", err)
 	}

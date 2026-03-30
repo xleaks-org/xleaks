@@ -689,6 +689,103 @@ func TestUploadMediaRejectsOversizedImageDimensions(t *testing.T) {
 	}
 }
 
+func TestUploadMediaStoresStreamedUpload(t *testing.T) {
+	t.Parallel()
+
+	h, db := testHandler(t)
+
+	png := testPNGWithDimensions(640, 480)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fileWriter, err := writer.CreateFormFile("file", "upload.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fileWriter.Write(png); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/media", &body)
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	h.UploadMedia(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusCreated)
+	}
+
+	var resp struct {
+		CID      string `json:"cid"`
+		MimeType string `json:"mime_type"`
+		Size     int64  `json:"size"`
+		Filename string `json:"filename"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if resp.MimeType != "image/png" {
+		t.Fatalf("mime_type = %q, want %q", resp.MimeType, "image/png")
+	}
+	if resp.Size != int64(len(png)) {
+		t.Fatalf("size = %d, want %d", resp.Size, len(png))
+	}
+	if resp.Filename != "upload.png" {
+		t.Fatalf("filename = %q, want %q", resp.Filename, "upload.png")
+	}
+
+	cid, err := content.HexToCID(resp.CID)
+	if err != nil {
+		t.Fatalf("HexToCID() error: %v", err)
+	}
+	media, err := db.GetMediaObject(cid)
+	if err != nil {
+		t.Fatalf("GetMediaObject() error: %v", err)
+	}
+	if media == nil {
+		t.Fatal("expected uploaded media object in DB")
+	}
+	if media.Size != uint64(len(png)) {
+		t.Fatalf("media size = %d, want %d", media.Size, len(png))
+	}
+}
+
+func TestUploadMediaRejectsConfiguredUploadLimit(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	h.cfg = config.DefaultConfig()
+	h.cfg.Media.MaxUploadSizeMB = 1
+
+	fileData := bytes.Repeat([]byte("a"), 1024*1024+1)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fileWriter, err := writer.CreateFormFile("file", "big.bin")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fileWriter.Write(fileData); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/media", &body)
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	h.UploadMedia(w, r)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusRequestEntityTooLarge)
+	}
+	if !strings.Contains(w.Body.String(), "uploaded file too large") {
+		t.Fatalf("body = %q, want upload-too-large error", w.Body.String())
+	}
+}
+
 func TestUpdateProfileRejectsTooLongDisplayName(t *testing.T) {
 	t.Parallel()
 	h, _ := testHandler(t)

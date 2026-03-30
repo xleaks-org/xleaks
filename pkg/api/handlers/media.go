@@ -3,9 +3,13 @@ package handlers
 import (
 	"context"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -14,6 +18,21 @@ import (
 	pb "github.com/xleaks-org/xleaks/proto/gen"
 	"google.golang.org/protobuf/proto"
 )
+
+const multipartUploadOverheadBytes = 1 << 20
+
+var (
+	errUploadedFileTooLarge = errors.New("uploaded file too large")
+	errMissingUploadedFile  = errors.New("missing file upload")
+	errEmptyUploadedFile    = errors.New("empty file")
+)
+
+type stagedUpload struct {
+	Path     string
+	Filename string
+	Size     int64
+	Sniff    []byte
+}
 
 // UploadMedia handles POST /api/media (multipart file upload).
 func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
@@ -28,29 +47,24 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 			maxUploadBytes = configured
 		}
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+multipartUploadOverheadBytes)
 
-	file, header, err := r.FormFile("file")
+	upload, err := stageUploadedFile(r, maxUploadBytes)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+		switch {
+		case errors.Is(err, errUploadedFileTooLarge):
+			respondError(w, http.StatusRequestEntityTooLarge, errUploadedFileTooLarge.Error())
+		case errors.Is(err, errMissingUploadedFile), errors.Is(err, errEmptyUploadedFile):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			respondError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+		}
 		return
 	}
-	defer file.Close()
+	defer os.Remove(upload.Path)
 
-	// Read the entire file into memory.
-	data, err := io.ReadAll(file)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "failed to read file data: "+err.Error())
-		return
-	}
-
-	if len(data) == 0 {
-		respondError(w, http.StatusBadRequest, "empty file")
-		return
-	}
-
-	// Detect mime type.
-	mimeType := http.DetectContentType(data)
+	// Detect mime type from the initial bytes without buffering the full upload.
+	mimeType := http.DetectContentType(upload.Sniff)
 	if err := content.ValidateMediaType(mimeType); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -59,43 +73,38 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	// Extract and validate metadata before any expensive image decoding.
 	var width, height, duration uint32
 	if isImageMime(mimeType) {
-		meta, err := content.ExtractImageMetadata(data)
+		metaReader, err := os.Open(upload.Path)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to inspect uploaded media")
+			return
+		}
+		meta, err := content.ExtractImageMetadataReader(metaReader)
+		metaReader.Close()
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid image: "+err.Error())
 			return
 		}
 		width = meta.Width
 		height = meta.Height
-	} else if meta := content.ExtractMediaMetadata(data, mimeType); meta != nil {
-		width = meta.Width
-		height = meta.Height
-		duration = meta.Duration
 	}
 
-	// Chunk the file.
-	chunks, err := content.ChunkFile(data)
+	// Stream chunk storage from the staged file so large uploads do not remain
+	// resident in memory after multipart parsing.
+	chunks, err := h.storeMediaChunksFromFile(upload.Path)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, http.StatusInternalServerError, "failed to store media chunks")
 		return
 	}
 
-	// Compute a CID for the full file data.
-	fileCID, err := content.ComputeCID(data)
+	// Compute the full-file CID from the staged upload stream.
+	fileCID, err := computeFileCID(upload.Path)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to compute file CID")
 		return
 	}
 
-	// Store each chunk in CAS.
-	for _, chunk := range chunks {
-		if err := h.cas.Put(chunk.CID, chunk.Data); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to store chunk")
-			return
-		}
-	}
-
-	// Store the full file data in CAS as well.
-	if err := h.cas.Put(fileCID, data); err != nil {
+	// Store the full file stream in CAS without reloading it into memory.
+	if err := h.storeMediaFileFromPath(fileCID, upload.Path); err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to store media file")
 		return
 	}
@@ -108,7 +117,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	// Try to generate a thumbnail for images and videos.
 	var thumbnailCID []byte
 	if isImageMime(mimeType) || isVideoMime(mimeType) {
-		thumbData, thumbCID, err := content.GenerateMediaThumbnail(data, mimeType, thumbnailQuality)
+		thumbData, thumbCID, err := generateMediaThumbnailFromPath(upload.Path, mimeType, thumbnailQuality)
 		if err == nil {
 			if err := h.cas.Put(thumbCID, thumbData); err != nil {
 				slog.Error("failed to store thumbnail in CAS", "error", err)
@@ -124,7 +133,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		fileCID,
 		kp.PublicKeyBytes(),
 		mimeType,
-		uint64(len(data)),
+		uint64(upload.Size),
 		uint32(len(chunks)),
 		width, height, duration,
 		thumbnailCID,
@@ -156,7 +165,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mediaObj, err := signMediaObject(kp, fileCID, mimeType, chunks, thumbnailCID, width, height, duration, timestamp, uint64(len(data)))
+	mediaObj, err := signMediaObject(kp, fileCID, mimeType, chunks, thumbnailCID, width, height, duration, timestamp, uint64(upload.Size))
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to sign media metadata")
 		return
@@ -171,14 +180,209 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"cid":           hex.EncodeToString(fileCID),
 		"mime_type":     mimeType,
-		"size":          len(data),
+		"size":          upload.Size,
 		"chunk_count":   len(chunks),
 		"width":         width,
 		"height":        height,
 		"duration":      duration,
 		"thumbnail_cid": hexOrEmpty(thumbnailCID),
-		"filename":      header.Filename,
+		"filename":      upload.Filename,
 	})
+}
+
+func stageUploadedFile(r *http.Request, maxUploadBytes int64) (*stagedUpload, error) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		if isRequestTooLarge(err) {
+			return nil, errUploadedFileTooLarge
+		}
+		return nil, err
+	}
+
+	var upload *stagedUpload
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			if isRequestTooLarge(err) {
+				return nil, errUploadedFileTooLarge
+			}
+			return nil, err
+		}
+
+		if part.FormName() != "file" || part.FileName() == "" {
+			if err := discardMultipartPart(part); err != nil {
+				part.Close()
+				if isRequestTooLarge(err) {
+					return nil, errUploadedFileTooLarge
+				}
+				return nil, err
+			}
+			part.Close()
+			continue
+		}
+
+		if upload != nil {
+			part.Close()
+			return nil, fmt.Errorf("multiple file uploads are not supported")
+		}
+
+		upload, err = copyMultipartPartToTempFile(part, maxUploadBytes)
+		part.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if upload == nil {
+		return nil, errMissingUploadedFile
+	}
+	if upload.Size == 0 {
+		return nil, errEmptyUploadedFile
+	}
+
+	return upload, nil
+}
+
+func copyMultipartPartToTempFile(part *multipart.Part, maxUploadBytes int64) (*stagedUpload, error) {
+	temp, err := os.CreateTemp("", "xleaks-upload-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temp upload file: %w", err)
+	}
+	tempPath := temp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			temp.Close()
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	sniff := make([]byte, 0, 512)
+	buf := make([]byte, 32*1024)
+	var size int64
+
+	for {
+		n, err := part.Read(buf)
+		if n > 0 {
+			size += int64(n)
+			if size > maxUploadBytes {
+				return nil, errUploadedFileTooLarge
+			}
+			if len(sniff) < cap(sniff) {
+				sniffCount := n
+				if remaining := cap(sniff) - len(sniff); sniffCount > remaining {
+					sniffCount = remaining
+				}
+				sniff = append(sniff, buf[:sniffCount]...)
+			}
+			if _, writeErr := temp.Write(buf[:n]); writeErr != nil {
+				return nil, fmt.Errorf("write temp upload file: %w", writeErr)
+			}
+		}
+
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			if isRequestTooLarge(err) {
+				return nil, errUploadedFileTooLarge
+			}
+			return nil, fmt.Errorf("read uploaded file: %w", err)
+		}
+	}
+
+	if err := temp.Sync(); err != nil {
+		return nil, fmt.Errorf("sync temp upload file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return nil, fmt.Errorf("close temp upload file: %w", err)
+	}
+
+	cleanup = false
+	return &stagedUpload{
+		Path:     tempPath,
+		Filename: part.FileName(),
+		Size:     size,
+		Sniff:    sniff,
+	}, nil
+}
+
+func discardMultipartPart(part *multipart.Part) error {
+	_, err := io.Copy(io.Discard, part)
+	return err
+}
+
+func isRequestTooLarge(err error) bool {
+	var maxErr *http.MaxBytesError
+	return errors.As(err, &maxErr)
+}
+
+func (h *Handler) storeMediaChunksFromFile(path string) ([]content.Chunk, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var chunks []content.Chunk
+	buf := make([]byte, content.ChunkSize)
+	index := 0
+	for {
+		n, err := io.ReadFull(file, buf)
+		if n > 0 {
+			chunkData := append([]byte(nil), buf[:n]...)
+			cid, cidErr := content.ComputeCID(chunkData)
+			if cidErr != nil {
+				return nil, cidErr
+			}
+			if putErr := h.cas.Put(cid, chunkData); putErr != nil {
+				return nil, putErr
+			}
+			chunks = append(chunks, content.Chunk{CID: cid, Index: index})
+			index++
+		}
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return chunks, nil
+}
+
+func computeFileCID(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return content.ComputeCIDReader(file)
+}
+
+func (h *Handler) storeMediaFileFromPath(cid []byte, path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return h.cas.PutReader(cid, file)
+}
+
+func generateMediaThumbnailFromPath(path, mimeType string, quality int) ([]byte, []byte, error) {
+	if isVideoMime(mimeType) {
+		return content.GenerateMediaThumbnailReader(nil, mimeType, quality)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer file.Close()
+	return content.GenerateMediaThumbnailReader(file, mimeType, quality)
 }
 
 // GetMedia handles GET /api/media/{cid}.

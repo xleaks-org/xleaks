@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
 
 	mh "github.com/multiformats/go-multihash"
 )
@@ -11,6 +12,15 @@ import (
 // ComputeCID computes a SHA-256 multihash CID of the given raw data.
 func ComputeCID(data []byte) ([]byte, error) {
 	hash, err := mh.Sum(data, mh.SHA2_256, -1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute multihash: %w", err)
+	}
+	return []byte(hash), nil
+}
+
+// ComputeCIDReader computes a SHA-256 multihash CID of the data read from r.
+func ComputeCIDReader(r io.Reader) ([]byte, error) {
+	hash, err := mh.SumStream(r, mh.SHA2_256, -1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute multihash: %w", err)
 	}

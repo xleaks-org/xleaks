@@ -36,6 +36,23 @@ func TestComputeCID(t *testing.T) {
 	}
 }
 
+func TestComputeCIDReader(t *testing.T) {
+	data := []byte("hello xleaks")
+	cid, err := ComputeCID(data)
+	if err != nil {
+		t.Fatalf("ComputeCID() error: %v", err)
+	}
+
+	readerCID, err := ComputeCIDReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("ComputeCIDReader() error: %v", err)
+	}
+
+	if !bytes.Equal(cid, readerCID) {
+		t.Fatal("ComputeCIDReader() should match ComputeCID()")
+	}
+}
+
 func TestCIDHexRoundTrip(t *testing.T) {
 	data := []byte("test data")
 	cid, err := ComputeCID(data)
@@ -130,6 +147,29 @@ func TestContentStore(t *testing.T) {
 	}
 }
 
+func TestContentStorePutReader(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewContentStore(dir)
+	if err != nil {
+		t.Fatalf("NewContentStore() error: %v", err)
+	}
+
+	data := []byte("streamed content")
+	cid, _ := ComputeCID(data)
+
+	if err := store.PutReader(cid, bytes.NewReader(data)); err != nil {
+		t.Fatalf("PutReader() error: %v", err)
+	}
+
+	retrieved, err := store.Get(cid)
+	if err != nil {
+		t.Fatalf("Get() error: %v", err)
+	}
+	if !bytes.Equal(data, retrieved) {
+		t.Fatal("Get() returned different data than PutReader()")
+	}
+}
+
 func TestContentStorePutCleansTempFileOnFinalizeFailure(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewContentStore(dir)
@@ -151,6 +191,38 @@ func TestContentStorePutCleansTempFileOnFinalizeFailure(t *testing.T) {
 
 	if err := store.Put(cid, data); err == nil {
 		t.Fatal("Put() should fail when final content path is a directory")
+	}
+
+	tempMatches, err := filepath.Glob(filepath.Join(shardDir, filepath.Base(objectPath)+".tmp-*"))
+	if err != nil {
+		t.Fatalf("Glob() error: %v", err)
+	}
+	if len(tempMatches) != 0 {
+		t.Fatalf("expected no temporary CAS files after failed finalize, got %v", tempMatches)
+	}
+}
+
+func TestContentStorePutReaderCleansTempFileOnFinalizeFailure(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewContentStore(dir)
+	if err != nil {
+		t.Fatalf("NewContentStore() error: %v", err)
+	}
+
+	data := []byte("stored content")
+	cid, _ := ComputeCID(data)
+	objectPath := store.objectPath(cid)
+	shardDir := filepath.Dir(objectPath)
+
+	if err := os.MkdirAll(shardDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+	if err := os.Mkdir(objectPath, 0o755); err != nil {
+		t.Fatalf("Mkdir() error: %v", err)
+	}
+
+	if err := store.PutReader(cid, bytes.NewReader(data)); err == nil {
+		t.Fatal("PutReader() should fail when final content path is a directory")
 	}
 
 	tempMatches, err := filepath.Glob(filepath.Join(shardDir, filepath.Base(objectPath)+".tmp-*"))

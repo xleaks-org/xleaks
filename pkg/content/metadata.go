@@ -6,6 +6,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"strings"
 
 	_ "golang.org/x/image/webp"
@@ -22,7 +23,13 @@ type MediaMetadata struct {
 // ExtractImageMetadata reads image dimensions from the data without decoding
 // the full image. It uses image.DecodeConfig which only reads the header.
 func ExtractImageMetadata(data []byte) (*MediaMetadata, error) {
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	return ExtractImageMetadataReader(bytes.NewReader(data))
+}
+
+// ExtractImageMetadataReader reads image dimensions from the reader without
+// decoding the full image.
+func ExtractImageMetadataReader(r io.Reader) (*MediaMetadata, error) {
+	cfg, format, err := image.DecodeConfig(r)
 	if err != nil {
 		return nil, err
 	}

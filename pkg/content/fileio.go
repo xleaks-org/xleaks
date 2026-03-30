@@ -3,6 +3,7 @@ package content
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -51,6 +52,39 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("set file permissions: %w", err)
 	}
 	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return fmt.Errorf("write file: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("sync file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close file: %w", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("replace file: %w", err)
+	}
+	if err := syncDirectory(dir); err != nil {
+		return fmt.Errorf("sync directory: %w", err)
+	}
+	return nil
+}
+
+func writeFileAtomicFromReader(path string, r io.Reader, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tempPath := f.Name()
+	defer os.Remove(tempPath)
+
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		return fmt.Errorf("set file permissions: %w", err)
+	}
+	if _, err := io.Copy(f, r); err != nil {
 		f.Close()
 		return fmt.Errorf("write file: %w", err)
 	}
