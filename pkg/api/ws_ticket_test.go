@@ -43,6 +43,40 @@ func TestWSTicketManagerRejectsExpiredTickets(t *testing.T) {
 	}
 }
 
+func TestWSTicketManagerEvictsOldestTicketWhenAtCapacity(t *testing.T) {
+	t.Parallel()
+
+	now := time.Unix(1_700_000_000, 0)
+	m := NewWSTicketManager(time.Minute)
+	m.now = func() time.Time { return now }
+	m.maxCount = 2
+
+	first, err := m.Issue()
+	if err != nil {
+		t.Fatalf("Issue() first error = %v", err)
+	}
+	now = now.Add(time.Second)
+	second, err := m.Issue()
+	if err != nil {
+		t.Fatalf("Issue() second error = %v", err)
+	}
+	now = now.Add(time.Second)
+	third, err := m.Issue()
+	if err != nil {
+		t.Fatalf("Issue() third error = %v", err)
+	}
+
+	if m.ValidateAndConsume(first) {
+		t.Fatal("expected oldest websocket ticket to be evicted")
+	}
+	if !m.ValidateAndConsume(second) {
+		t.Fatal("expected newer websocket ticket to remain valid")
+	}
+	if !m.ValidateAndConsume(third) {
+		t.Fatal("expected newest websocket ticket to remain valid")
+	}
+}
+
 func TestWSTicketIssueHandlerDisablesCaching(t *testing.T) {
 	t.Parallel()
 

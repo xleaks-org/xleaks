@@ -48,6 +48,43 @@ func TestBrowserAuthManagerRejectsExpiredCookieSession(t *testing.T) {
 	}
 }
 
+func TestBrowserAuthManagerEvictsOldestSessionWhenAtCapacity(t *testing.T) {
+	t.Parallel()
+
+	now := time.Unix(1_700_000_000, 0)
+	m := NewBrowserAuthManager(time.Minute)
+	m.now = func() time.Time { return now }
+	m.maxCount = 2
+
+	first, err := m.Issue()
+	if err != nil {
+		t.Fatalf("Issue() first error = %v", err)
+	}
+	now = now.Add(time.Second)
+	second, err := m.Issue()
+	if err != nil {
+		t.Fatalf("Issue() second error = %v", err)
+	}
+	now = now.Add(time.Second)
+	third, err := m.Issue()
+	if err != nil {
+		t.Fatalf("Issue() third error = %v", err)
+	}
+
+	if m.Validate(first) {
+		t.Fatal("expected oldest browser auth session to be evicted")
+	}
+	if !m.Validate(second) {
+		t.Fatal("expected newer browser auth session to remain valid")
+	}
+	if !m.Validate(third) {
+		t.Fatal("expected newest browser auth session to remain valid")
+	}
+	if got := len(m.sessions); got != 2 {
+		t.Fatalf("session count = %d, want %d", got, 2)
+	}
+}
+
 func TestBrowserAuthManagerSetsSecureCookieOnForwardedHTTPS(t *testing.T) {
 	t.Parallel()
 

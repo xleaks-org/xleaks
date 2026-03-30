@@ -9,15 +9,19 @@ import (
 	"time"
 )
 
-const defaultWSTicketTTL = time.Minute
+const (
+	defaultWSTicketTTL = time.Minute
+	maxWSTickets       = 4096
+)
 
 // WSTicketManager issues short-lived, one-time tickets for authenticating
 // browser WebSocket upgrades without exposing the shared API token in URLs.
 type WSTicketManager struct {
-	mu      sync.Mutex
-	tickets map[string]time.Time
-	ttl     time.Duration
-	now     func() time.Time
+	mu       sync.Mutex
+	tickets  map[string]time.Time
+	ttl      time.Duration
+	maxCount int
+	now      func() time.Time
 }
 
 // NewWSTicketManager creates a new WebSocket ticket manager.
@@ -26,9 +30,10 @@ func NewWSTicketManager(ttl time.Duration) *WSTicketManager {
 		ttl = defaultWSTicketTTL
 	}
 	return &WSTicketManager{
-		tickets: make(map[string]time.Time),
-		ttl:     ttl,
-		now:     time.Now,
+		tickets:  make(map[string]time.Time),
+		ttl:      ttl,
+		maxCount: maxWSTickets,
+		now:      time.Now,
 	}
 }
 
@@ -45,6 +50,12 @@ func (m *WSTicketManager) Issue() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cleanupExpiredLocked(now)
+	if m.maxCount <= 0 {
+		m.maxCount = maxWSTickets
+	}
+	if len(m.tickets) >= m.maxCount {
+		m.evictOldestLocked()
+	}
 	m.tickets[ticket] = now.Add(m.ttl)
 	return ticket, nil
 }
@@ -95,5 +106,23 @@ func (m *WSTicketManager) cleanupExpiredLocked(now time.Time) {
 		if !now.Before(expiresAt) {
 			delete(m.tickets, ticket)
 		}
+	}
+}
+
+func (m *WSTicketManager) evictOldestLocked() {
+	var (
+		oldestTicket  string
+		oldestExpires time.Time
+		found         bool
+	)
+	for ticket, expiresAt := range m.tickets {
+		if !found || expiresAt.Before(oldestExpires) {
+			oldestTicket = ticket
+			oldestExpires = expiresAt
+			found = true
+		}
+	}
+	if found {
+		delete(m.tickets, oldestTicket)
 	}
 }

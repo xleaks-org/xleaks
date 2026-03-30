@@ -179,7 +179,11 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully stops the server.
 func (s *Server) Shutdown(ctx context.Context) error {
-	return s.httpServer.Shutdown(ctx)
+	err := s.httpServer.Shutdown(ctx)
+	if s.wsHub != nil {
+		s.wsHub.Close()
+	}
+	return err
 }
 
 // WSHub returns the WebSocket hub for broadcasting events.

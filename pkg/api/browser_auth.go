@@ -15,6 +15,7 @@ import (
 const (
 	browserAuthCookieName    = "xleaks_browser_auth"
 	defaultBrowserAuthTTL    = 24 * time.Hour
+	maxBrowserAuthSessions   = 4096
 	browserAuthExpiredHeader = "X-XLeaks-Browser-Auth"
 	browserAuthExpiredValue  = "expired"
 )
@@ -31,6 +32,7 @@ type BrowserAuthManager struct {
 	mu       sync.Mutex
 	sessions map[string]time.Time
 	ttl      time.Duration
+	maxCount int
 	now      func() time.Time
 }
 
@@ -41,6 +43,7 @@ func NewBrowserAuthManager(ttl time.Duration) *BrowserAuthManager {
 	return &BrowserAuthManager{
 		sessions: make(map[string]time.Time),
 		ttl:      ttl,
+		maxCount: maxBrowserAuthSessions,
 		now:      time.Now,
 	}
 }
@@ -57,6 +60,12 @@ func (m *BrowserAuthManager) Issue() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cleanupExpiredLocked(now)
+	if m.maxCount <= 0 {
+		m.maxCount = maxBrowserAuthSessions
+	}
+	if len(m.sessions) >= m.maxCount {
+		m.evictOldestLocked()
+	}
 	m.sessions[token] = now.Add(m.ttl)
 	return token, nil
 }
@@ -123,6 +132,24 @@ func (m *BrowserAuthManager) cleanupExpiredLocked(now time.Time) {
 		if !now.Before(expiresAt) {
 			delete(m.sessions, token)
 		}
+	}
+}
+
+func (m *BrowserAuthManager) evictOldestLocked() {
+	var (
+		oldestToken   string
+		oldestExpires time.Time
+		found         bool
+	)
+	for token, expiresAt := range m.sessions {
+		if !found || expiresAt.Before(oldestExpires) {
+			oldestToken = token
+			oldestExpires = expiresAt
+			found = true
+		}
+	}
+	if found {
+		delete(m.sessions, oldestToken)
 	}
 }
 

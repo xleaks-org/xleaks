@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/identity"
 )
@@ -109,5 +110,59 @@ func TestSessionManagerRotateForRequestInvalidatesPreviousToken(t *testing.T) {
 	}
 	if cookie.Value != newToken {
 		t.Fatalf("cookie value = %q, want %q", cookie.Value, newToken)
+	}
+}
+
+func TestSessionManagerEvictsLeastRecentlySeenSessionWhenAtCapacity(t *testing.T) {
+	t.Parallel()
+
+	now := time.Unix(1_700_000_000, 0)
+	sm := NewSessionManager()
+	defer sm.Stop()
+	sm.maxCount = 2
+	sm.now = func() time.Time { return now }
+
+	firstKeyPair, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() first error = %v", err)
+	}
+	secondKeyPair, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() second error = %v", err)
+	}
+	thirdKeyPair, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() third error = %v", err)
+	}
+
+	firstToken, err := sm.Create(firstKeyPair)
+	if err != nil {
+		t.Fatalf("Create() first error = %v", err)
+	}
+	now = now.Add(time.Second)
+	secondToken, err := sm.Create(secondKeyPair)
+	if err != nil {
+		t.Fatalf("Create() second error = %v", err)
+	}
+
+	now = now.Add(time.Second)
+	if sm.Get(firstToken) == nil {
+		t.Fatal("expected first session to exist before eviction")
+	}
+
+	now = now.Add(time.Second)
+	thirdToken, err := sm.Create(thirdKeyPair)
+	if err != nil {
+		t.Fatalf("Create() third error = %v", err)
+	}
+
+	if sm.Get(secondToken) != nil {
+		t.Fatal("expected least recently seen session to be evicted")
+	}
+	if sm.Get(firstToken) == nil {
+		t.Fatal("expected refreshed session to remain present")
+	}
+	if sm.Get(thirdToken) == nil {
+		t.Fatal("expected newest session to remain present")
 	}
 }
