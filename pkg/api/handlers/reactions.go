@@ -24,7 +24,7 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createReactionRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -67,7 +67,7 @@ func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createRepostRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}

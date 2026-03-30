@@ -24,7 +24,7 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createPostRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}

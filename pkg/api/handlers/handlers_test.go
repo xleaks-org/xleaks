@@ -190,9 +190,10 @@ func TestParseJSON(t *testing.T) {
 		t.Parallel()
 		body := strings.NewReader(`{"content":"hello"}`)
 		r := httptest.NewRequest("POST", "/test", body)
+		w := httptest.NewRecorder()
 
 		var req createPostRequest
-		if err := parseJSON(r, &req); err != nil {
+		if err := parseJSON(w, r, &req); err != nil {
 			t.Fatalf("parseJSON: %v", err)
 		}
 		if req.Content != "hello" {
@@ -204,10 +205,51 @@ func TestParseJSON(t *testing.T) {
 		t.Parallel()
 		body := strings.NewReader(`{broken`)
 		r := httptest.NewRequest("POST", "/test", body)
+		w := httptest.NewRecorder()
 
 		var req createPostRequest
-		if err := parseJSON(r, &req); err == nil {
+		if err := parseJSON(w, r, &req); err == nil {
 			t.Fatal("expected error for invalid JSON")
+		}
+	})
+
+	t.Run("rejects unknown fields", func(t *testing.T) {
+		t.Parallel()
+		body := strings.NewReader(`{"content":"hello","unexpected":true}`)
+		r := httptest.NewRequest("POST", "/test", body)
+		w := httptest.NewRecorder()
+
+		var req createPostRequest
+		if err := parseJSON(w, r, &req); err == nil {
+			t.Fatal("expected error for unknown field")
+		}
+	})
+
+	t.Run("rejects trailing data", func(t *testing.T) {
+		t.Parallel()
+		body := strings.NewReader(`{"content":"hello"}{"content":"again"}`)
+		r := httptest.NewRequest("POST", "/test", body)
+		w := httptest.NewRecorder()
+
+		var req createPostRequest
+		if err := parseJSON(w, r, &req); err == nil {
+			t.Fatal("expected error for trailing JSON data")
+		}
+	})
+
+	t.Run("rejects oversized bodies", func(t *testing.T) {
+		t.Parallel()
+		body := strings.NewReader(`{"content":"` + strings.Repeat("a", maxJSONBodyBytes) + `"}`)
+		r := httptest.NewRequest("POST", "/test", body)
+		w := httptest.NewRecorder()
+
+		var req createPostRequest
+		err := parseJSON(w, r, &req)
+		if err == nil {
+			t.Fatal("expected error for oversized JSON body")
+		}
+		if err.Error() != "JSON body too large" {
+			t.Fatalf("error = %q, want %q", err.Error(), "JSON body too large")
 		}
 	})
 }
@@ -947,6 +989,35 @@ func TestUpdateNodeConfigRejectsFractionalNumbers(t *testing.T) {
 	}
 	if cfg.Network.MaxPeers != 42 {
 		t.Fatalf("max peers mutated to %d after fractional update", cfg.Network.MaxPeers)
+	}
+}
+
+func TestUpdateNodeConfigRejectsUnknownFields(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	cfg.Network.MaxPeers = 42
+	h.SetConfig(cfg, "")
+
+	body := strings.NewReader(`{"max_connections": 100, "surprise": true}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if cfg.Network.MaxPeers != 42 {
+		t.Fatalf("max peers mutated to %d after rejected update", cfg.Network.MaxPeers)
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !strings.Contains(resp["error"], "surprise") {
+		t.Fatalf("error = %q, want to mention surprise", resp["error"])
 	}
 }
 

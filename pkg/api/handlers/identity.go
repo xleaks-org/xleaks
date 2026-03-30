@@ -32,7 +32,7 @@ type switchIdentityRequest struct {
 // CreateIdentity handles POST /api/identity/create.
 func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	var req createIdentityRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -81,7 +81,7 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 // ImportIdentity handles POST /api/identity/import.
 func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 	var req importIdentityRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -140,7 +140,7 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 // UnlockIdentity handles POST /api/identity/unlock.
 func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 	var req unlockIdentityRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -270,7 +270,7 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 
 	// Read passphrase from request body.
 	var req switchIdentityRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}

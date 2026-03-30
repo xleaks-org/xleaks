@@ -131,7 +131,7 @@ func (h *Handler) SendDM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req sendDMRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}

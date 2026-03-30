@@ -36,6 +36,24 @@ const (
 	maxThumbnailQuality = 100
 )
 
+var allowedNodeConfigUpdateKeys = map[string]struct{}{
+	"max_connections":      {},
+	"storage_limit_gb":     {},
+	"enable_relay":         {},
+	"enable_mdns":          {},
+	"enable_hole_punching": {},
+	"bandwidth_limit_mbps": {},
+	"bootstrap_peers":      {},
+	"known_indexers":       {},
+	"enable_websocket":     {},
+	"enable_web_ui":        {},
+	"allow_remote_web_ui":  {},
+	"auto_fetch_media":     {},
+	"max_upload_size_mb":   {},
+	"thumbnail_quality":    {},
+	"log_level":            {},
+}
+
 // GetNodeStatus handles GET /api/node/status.
 func (h *Handler) GetNodeStatus(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(nodeStartTime).Seconds()
@@ -230,7 +248,11 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var updates map[string]interface{}
-	if err := parseJSON(r, &updates); err != nil {
+	if err := parseJSON(w, r, &updates); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateAllowedUpdateKeys(updates, allowedNodeConfigUpdateKeys); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -593,4 +615,18 @@ func sortedUpdateKeys(updates map[string]interface{}) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func validateAllowedUpdateKeys(updates map[string]interface{}, allowed map[string]struct{}) error {
+	var unknown []string
+	for key := range updates {
+		if _, ok := allowed[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	return fmt.Errorf("unknown config fields: %s", strings.Join(unknown, ", "))
 }

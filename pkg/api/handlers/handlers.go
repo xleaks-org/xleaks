@@ -3,7 +3,9 @@ package handlers
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -20,6 +22,8 @@ import (
 
 // DefaultDisplayName is the fallback name for users who haven't set a profile.
 const DefaultDisplayName = "Anonymous"
+
+const maxJSONBodyBytes = 1 << 20
 
 // WebSocket event type constants.
 const (
@@ -220,8 +224,19 @@ func parsePagination(r *http.Request, defaultLimit int) (before int64, limit int
 }
 
 // parseJSON decodes the request body as JSON into v.
-func parseJSON(r *http.Request, v interface{}) error {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+func parseJSON(w http.ResponseWriter, r *http.Request, v interface{}) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return fmt.Errorf("JSON body too large")
+		}
+		return fmt.Errorf("invalid JSON body")
+	}
+	var trailing struct{}
+	if err := dec.Decode(&trailing); err != io.EOF {
 		return fmt.Errorf("invalid JSON body")
 	}
 	return nil
