@@ -28,6 +28,10 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := social.ValidatePostContent(req.Content); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// Decode media CIDs from hex strings.
 	var mediaCIDs [][]byte

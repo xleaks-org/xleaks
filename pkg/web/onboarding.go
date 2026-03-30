@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/xleaks-org/xleaks/pkg/social"
 )
 
 // onboardingPage serves the create/import identity page.
@@ -124,6 +126,13 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
 	if displayName == "" {
 		displayName = "Anonymous"
+	}
+	if err := social.ValidateProfileFields(displayName, "", ""); err != nil {
+		data := h.pageData(r, "", "Set Your Name")
+		data["SetProfile"] = true
+		data["Error"] = err.Error()
+		h.renderPage(w, "onboarding.html", data)
+		return
 	}
 
 	// Try session key pair first, then fall back to global identity.

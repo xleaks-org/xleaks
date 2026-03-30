@@ -163,6 +163,7 @@ components:
       properties:
         content:
           type: string
+          maxLength: 5000
         media_cids:
           type: array
           items:
@@ -292,10 +293,13 @@ components:
       properties:
         display_name:
           type: string
+          maxLength: 50
         bio:
           type: string
+          maxLength: 500
         website:
           type: string
+          maxLength: 200
         avatar_cid:
           type: string
         banner_cid:
@@ -309,10 +313,13 @@ components:
           type: string
         display_name:
           type: string
+          maxLength: 50
         bio:
           type: string
+          maxLength: 500
         website:
           type: string
+          maxLength: 200
         avatar_cid:
           type: string
         banner_cid:

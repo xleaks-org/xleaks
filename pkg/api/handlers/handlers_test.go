@@ -569,6 +569,34 @@ func TestCreatePostInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestCreatePostRejectsTooLongContent(t *testing.T) {
+	t.Parallel()
+	h, _ := testHandler(t)
+
+	body := strings.NewReader(`{"content":"` + strings.Repeat("a", 5001) + `"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/posts", body)
+	h.CreatePost(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestUpdateProfileRejectsTooLongDisplayName(t *testing.T) {
+	t.Parallel()
+	h, _ := testHandler(t)
+
+	body := strings.NewReader(`{"display_name":"` + strings.Repeat("b", 51) + `"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/profile", body)
+	h.UpdateProfile(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestGetFeedEmpty(t *testing.T) {
 	t.Parallel()
 	h, _ := testHandler(t)

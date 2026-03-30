@@ -59,6 +59,10 @@ func (s *ProfileService) CreateProfileAs(ctx context.Context, kp *identity.KeyPa
 }
 
 func (s *ProfileService) createProfileWith(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
+	if err := ValidateProfileFields(displayName, bio, website); err != nil {
+		return nil, err
+	}
+
 	profile := &pb.Profile{
 		Author:      kp.PublicKeyBytes(),
 		DisplayName: displayName,
@@ -146,6 +150,10 @@ func (s *ProfileService) UpdateProfileAs(ctx context.Context, kp *identity.KeyPa
 }
 
 func (s *ProfileService) updateProfileWith(ctx context.Context, kp *identity.KeyPair, displayName, bio, website string, avatarCID, bannerCID []byte) (*pb.Profile, error) {
+	if err := ValidateProfileFields(displayName, bio, website); err != nil {
+		return nil, err
+	}
+
 	// Get current version.
 	var currentVersion uint64
 	existing, err := s.storage.GetProfile(kp.PublicKeyBytes())

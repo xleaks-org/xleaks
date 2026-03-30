@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/feed"
+	"github.com/xleaks-org/xleaks/pkg/social"
 )
 
 // feedPartial returns feed items as an htmx partial.
@@ -160,6 +161,10 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	content := strings.TrimSpace(r.FormValue("content"))
 	mediaCIDs := r.Form["media_cids"]
 	replyTo := strings.TrimSpace(r.FormValue("reply_to"))
+	if err := social.ValidatePostContent(content); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if content == "" && len(mediaCIDs) == 0 {
 		http.Error(w, "Post content or media is required", http.StatusBadRequest)
 		return

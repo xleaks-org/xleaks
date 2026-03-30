@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	"github.com/xleaks-org/xleaks/pkg/social"
 )
 
 // getKeyPair returns the key pair from the current session, or nil if not authenticated.
@@ -258,6 +259,10 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	bannerHex := strings.TrimSpace(r.FormValue("banner_cid"))
 	if displayName == "" {
 		displayName = "Anonymous"
+	}
+	if err := social.ValidateProfileFields(displayName, bio, website); err != nil {
+		http.Redirect(w, r, "/settings?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
 	}
 
 	var avatarCID, bannerCID []byte

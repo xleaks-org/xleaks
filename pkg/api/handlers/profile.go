@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"net/http"
 	"time"
+
+	"github.com/xleaks-org/xleaks/pkg/social"
 )
 
 // updateProfileRequest is the JSON body for PUT /api/profile.
@@ -82,16 +84,16 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	displayName := req.getDisplayName()
+	if err := social.ValidateProfileFields(displayName, req.Bio, req.Website); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Check if profile exists; if not, create it; otherwise update.
 	existing, err := h.profiles.GetProfile(kp.PublicKeyBytes())
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	displayName := req.getDisplayName()
-	if displayName == "" {
-		respondError(w, http.StatusBadRequest, "display_name is required")
 		return
 	}
 

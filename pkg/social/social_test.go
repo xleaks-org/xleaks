@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +145,18 @@ func TestCreatePostRequiresUnlockedIdentity(t *testing.T) {
 	}
 }
 
+func TestCreatePostRejectsTooLongContent(t *testing.T) {
+	s := setup(t)
+	ctx := context.Background()
+
+	postSvc := social.NewPostService(s.db, s.cas, s.kp)
+
+	_, err := postSvc.CreatePost(ctx, strings.Repeat("a", social.MaxPostContentChars+1), nil, nil)
+	if !errors.Is(err, social.ErrPostContentTooLong) {
+		t.Fatalf("CreatePost error = %v, want ErrPostContentTooLong", err)
+	}
+}
+
 func TestCreateRepostSetsRepostOf(t *testing.T) {
 	s := setup(t)
 	ctx := context.Background()
@@ -263,6 +277,18 @@ func TestProfileVersionIncrement(t *testing.T) {
 	}
 	if row.DisplayName != "TestUserV3" {
 		t.Errorf("DB DisplayName = %q, want 'TestUserV3'", row.DisplayName)
+	}
+}
+
+func TestProfileRejectsTooLongBio(t *testing.T) {
+	s := setup(t)
+	ctx := context.Background()
+
+	profileSvc := social.NewProfileService(s.db, s.kp)
+
+	_, err := profileSvc.UpdateProfile(ctx, "TestUser", strings.Repeat("b", social.MaxBioChars+1), "", nil, nil)
+	if !errors.Is(err, social.ErrBioTooLong) {
+		t.Fatalf("UpdateProfile error = %v, want ErrBioTooLong", err)
 	}
 }
 

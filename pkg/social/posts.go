@@ -61,6 +61,9 @@ func (s *PostService) CreatePost(ctx context.Context, text string, mediaCIDs [][
 	if err != nil {
 		return nil, err
 	}
+	if err := ValidatePostContent(text); err != nil {
+		return nil, err
+	}
 
 	// Extract hashtags from the text.
 	tags := extractHashtags(text)
