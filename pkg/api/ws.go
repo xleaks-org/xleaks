@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/xleaks-org/xleaks/pkg/api/middleware"
@@ -21,6 +22,17 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+var (
+	wsClientReadLimit = int64(4 << 10)
+	wsMaxClients      = 256
+)
+
+const (
+	wsWriteWait  = 10 * time.Second
+	wsPongWait   = 60 * time.Second
+	wsPingPeriod = (wsPongWait * 9) / 10
+)
+
 // WSEvent represents a real-time event pushed to the frontend.
 type WSEvent struct {
 	Type string      `json:"type"`
@@ -31,6 +43,7 @@ type WSEvent struct {
 type WSHub struct {
 	mu      sync.RWMutex
 	clients map[*wsClient]bool
+	pending int
 }
 
 type wsClient struct {
@@ -47,11 +60,26 @@ func NewWSHub() *WSHub {
 
 // HandleWebSocket upgrades an HTTP connection to WebSocket and registers the client.
 func (hub *WSHub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	if !hub.reserveSlot() {
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		hub.releasePendingSlot()
 		slog.Error("websocket upgrade failed", "error", err)
 		return
 	}
+	conn.SetReadLimit(wsClientReadLimit)
+	if err := conn.SetReadDeadline(time.Now().Add(wsPongWait)); err != nil {
+		hub.releasePendingSlot()
+		conn.Close()
+		return
+	}
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	})
 
 	client := &wsClient{
 		conn: conn,
@@ -59,6 +87,7 @@ func (hub *WSHub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hub.mu.Lock()
+	hub.pending--
 	hub.clients[client] = true
 	hub.mu.Unlock()
 
@@ -123,11 +152,53 @@ func (hub *WSHub) ClientCount() int {
 	return len(hub.clients)
 }
 
+func (hub *WSHub) reserveSlot() bool {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+
+	if len(hub.clients)+hub.pending >= wsMaxClients {
+		return false
+	}
+	hub.pending++
+	return true
+}
+
+func (hub *WSHub) releasePendingSlot() {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+
+	if hub.pending > 0 {
+		hub.pending--
+	}
+}
+
 func (c *wsClient) writePump() {
-	defer c.conn.Close()
-	for message := range c.send {
-		if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-			return
+	ticker := time.NewTicker(wsPingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+
+	for {
+		select {
+		case message, ok := <-c.send:
+			if err := c.conn.SetWriteDeadline(time.Now().Add(wsWriteWait)); err != nil {
+				return
+			}
+			if !ok {
+				_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				return
+			}
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := c.conn.SetWriteDeadline(time.Now().Add(wsWriteWait)); err != nil {
+				return
+			}
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
