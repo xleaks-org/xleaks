@@ -15,6 +15,11 @@ func ensureDirectory(path string, mode os.FileMode) error {
 		if !info.IsDir() {
 			return fmt.Errorf("%s is not a directory", path)
 		}
+		if info.Mode().Perm() != mode {
+			if err := os.Chmod(path, mode); err != nil {
+				return fmt.Errorf("set directory permissions: %w", err)
+			}
+		}
 		return nil
 	case !os.IsNotExist(err):
 		return fmt.Errorf("stat directory: %w", err)
@@ -22,6 +27,9 @@ func ensureDirectory(path string, mode os.FileMode) error {
 
 	if err := os.MkdirAll(path, mode); err != nil {
 		return fmt.Errorf("create directory: %w", err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		return fmt.Errorf("set directory permissions: %w", err)
 	}
 	if err := syncDirectory(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("sync parent directory: %w", err)

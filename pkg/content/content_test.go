@@ -106,6 +106,13 @@ func TestContentStore(t *testing.T) {
 	if info.Mode().Perm() != 0o644 {
 		t.Errorf("stored content mode = %o, want 644", info.Mode().Perm())
 	}
+	shardInfo, err := os.Stat(filepath.Join(dir, hexCID[:2]))
+	if err != nil {
+		t.Fatalf("Stat(shard dir) error: %v", err)
+	}
+	if shardInfo.Mode().Perm() != 0o700 {
+		t.Errorf("shard dir mode = %o, want 700", shardInfo.Mode().Perm())
+	}
 	tempMatches, err := filepath.Glob(filepath.Join(dir, hexCID[:2], hexCID+".tmp-*"))
 	if err != nil {
 		t.Fatalf("Glob() error: %v", err)

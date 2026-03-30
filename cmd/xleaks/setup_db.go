@@ -19,13 +19,16 @@ func setupDatabase(cfg *config.Config) (*storage.DB, *content.ContentStore, erro
 	for _, dir := range []string{
 		dataDir,
 		filepath.Join(dataDir, "identity"),
+		filepath.Join(dataDir, "identity", "keys"),
 		filepath.Join(dataDir, "identity", "identities"),
+		filepath.Join(dataDir, "data"),
 		filepath.Join(dataDir, "data", "objects"),
 		filepath.Join(dataDir, "data", "media"),
 		filepath.Join(dataDir, "logs"),
+		filepath.Join(dataDir, "cache"),
 		filepath.Join(dataDir, "cache", "thumbnails"),
 	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := ensureOwnerOnlyDir(dir); err != nil {
 			return nil, nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
@@ -51,4 +54,11 @@ func setupDatabase(cfg *config.Config) (*storage.DB, *content.ContentStore, erro
 	}
 
 	return db, cas, nil
+}
+
+func ensureOwnerOnlyDir(path string) error {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o700)
 }
