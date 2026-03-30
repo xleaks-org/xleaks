@@ -74,8 +74,8 @@ func TokenAuth(token string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Also check query parameter for WebSocket connections.
-			if r.URL.Query().Get("token") == token {
+			// Allow query-string tokens only on actual WebSocket handshakes.
+			if isWebSocketHandshake(r) && r.URL.Query().Get("token") == token {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -160,4 +160,19 @@ func syncParentDirectory(path string) error {
 		return fmt.Errorf("sync directory: %w", err)
 	}
 	return nil
+}
+
+func isWebSocketHandshake(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
+		return false
+	}
+	for _, part := range strings.Split(r.Header.Get("Connection"), ",") {
+		if strings.EqualFold(strings.TrimSpace(part), "upgrade") {
+			return true
+		}
+	}
+	return false
 }

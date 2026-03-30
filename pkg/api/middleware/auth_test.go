@@ -46,6 +46,42 @@ func TestLocalOnlyAllowsForwardedRequestsWhenTokenAuthEnabled(t *testing.T) {
 	}
 }
 
+func TestTokenAuthRejectsQueryTokenOnNonWebSocketRequests(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7470/api/node/status?token=secret", nil)
+	rr := httptest.NewRecorder()
+
+	TokenAuth("secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("non-websocket query token should not reach handler")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestTokenAuthAllowsQueryTokenOnWebSocketHandshake(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7470/ws?token=secret", nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	rr := httptest.NewRecorder()
+	called := false
+
+	TokenAuth("secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})).ServeHTTP(rr, req)
+
+	if !called {
+		t.Fatal("websocket query token should reach handler")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
 func TestSaveTokenCreatesOwnerOnlyFile(t *testing.T) {
 	t.Parallel()
 
