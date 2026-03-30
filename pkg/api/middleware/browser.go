@@ -68,6 +68,9 @@ func OriginAllowed(r *http.Request, origin string) bool {
 }
 
 func requiresBrowserCSRF(r *http.Request) bool {
+	if r == nil || !strings.HasPrefix(r.URL.Path, "/api/") {
+		return false
+	}
 	if isSafeMethod(r.Method) {
 		return false
 	}

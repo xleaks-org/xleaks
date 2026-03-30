@@ -43,6 +43,23 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script>
         window.xleaksCSRFToken = '{{.CSRFToken}}';
+        window.xleaksBrowserAuthRedirect = function(reason) {
+            var next = window.location.pathname + window.location.search + window.location.hash;
+            if (!next) {
+                next = '/';
+            }
+            window.location.assign('/auth/token?error=' + encodeURIComponent(reason || 'expired') + '&next=' + encodeURIComponent(next));
+        };
+        window.xleaksHandleExpiredBrowserAuth = function(response) {
+            if (!response || response.status !== 401 || !response.headers) {
+                return false;
+            }
+            if (response.headers.get('X-XLeaks-Browser-Auth') !== 'expired') {
+                return false;
+            }
+            window.xleaksBrowserAuthRedirect('expired');
+            return true;
+        };
         window.xleaksFetch = function(input, init) {
             var options = init ? Object.assign({}, init) : {};
             options.credentials = options.credentials || 'same-origin';
@@ -54,12 +71,30 @@
             }
             options.headers = headers;
 
-            return fetch(input, options);
+            return fetch(input, options).then(function(response) {
+                if (window.xleaksHandleExpiredBrowserAuth(response)) {
+                    var err = new Error('browser auth expired');
+                    err.code = 'BROWSER_AUTH_EXPIRED';
+                    throw err;
+                }
+                return response;
+            });
         };
         document.addEventListener('htmx:configRequest', function(event) {
             if (window.xleaksCSRFToken) {
                 event.detail.headers[{{printf "%q" "X-CSRF-Token"}}] = window.xleaksCSRFToken;
             }
+        });
+        document.addEventListener('htmx:beforeSwap', function(event) {
+            var xhr = event.detail && event.detail.xhr;
+            if (!xhr || xhr.status !== 401) {
+                return;
+            }
+            if (xhr.getResponseHeader('X-XLeaks-Browser-Auth') !== 'expired') {
+                return;
+            }
+            event.detail.shouldSwap = false;
+            window.xleaksBrowserAuthRedirect('expired');
         });
     </script>
     <style>
@@ -418,7 +453,10 @@
                     }
                     openRealtimeSocket(wsURL + '?ws_ticket=' + encodeURIComponent(payload.ticket));
                 })
-                .catch(function() {
+                .catch(function(err) {
+                    if (err && err.code === 'BROWSER_AUTH_EXPIRED') {
+                        return;
+                    }
                     openRealtimeSocket(wsURL);
                 });
         }

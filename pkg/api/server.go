@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -88,13 +89,21 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 		topMux.HandleFunc("GET /auth/token", func(w http.ResponseWriter, r *http.Request) {
 			nextPath := safeBrowserRedirectPath(r.URL.Query().Get("next"))
-			if browserAuth.ValidateRequest(r) {
+			state, _ := browserAuth.CookieState(r)
+			if state == browserAuthSessionValid {
 				http.Redirect(w, r, nextPath, http.StatusSeeOther)
 				return
 			}
-			renderBrowserAuthPage(w, nextPath, strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("error")), "invalid"))
+			errorCode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("error")))
+			if state == browserAuthSessionStale {
+				browserAuth.ClearCookie(w, r)
+				if errorCode == "" {
+					errorCode = "expired"
+				}
+			}
+			renderBrowserAuthPage(w, nextPath, errorCode)
 		})
-		topMux.Handle("POST /auth/token", authLimiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loginHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 			if err := r.ParseForm(); err != nil {
 				http.Error(w, "Bad request", http.StatusBadRequest)
@@ -103,18 +112,26 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 			nextPath := safeBrowserRedirectPath(r.FormValue("next"))
 			if !authTokensEqual(r.FormValue("token"), cfg.APIToken) {
+				logBrowserAuthWarn(r, "browser auth login failed", "reason", "invalid_token", "next", nextPath)
 				http.Redirect(w, r, "/auth/token?error=invalid&next="+url.QueryEscape(nextPath), http.StatusSeeOther)
 				return
 			}
 
 			sessionToken, err := browserAuth.Issue()
 			if err != nil {
+				slog.Error("browser auth session issue failed", "path", r.URL.Path, "remote_addr", r.RemoteAddr, "error", err)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
 			browserAuth.SetCookie(w, r, sessionToken)
+			logBrowserAuthInfo(r, "browser auth login succeeded", "next", nextPath)
 			http.Redirect(w, r, nextPath, http.StatusSeeOther)
-		})))
+		})
+		topMux.Handle("POST /auth/token", observeStatus(authLimiter.Middleware(loginHandler), func(r *http.Request, status int) {
+			if status == http.StatusTooManyRequests {
+				logBrowserAuthWarn(r, "browser auth login rate limited")
+			}
+		}))
 	}
 	topMux.HandleFunc("GET /health", handleHealth)
 	topMux.Handle("GET /metrics", metricsHandler)
@@ -192,21 +209,56 @@ func browserSessionAuth(apiToken string, browserAuth *BrowserAuthManager) func(h
 				return
 			}
 
+			sessionState, sessionToken := browserAuth.CookieState(r)
+
 			if r.Header.Get("Authorization") == "Bearer "+apiToken {
-				if shouldBootstrapBrowserSession(r) && !browserAuth.ValidateRequest(r) {
+				if shouldBootstrapBrowserSession(r) && sessionState != browserAuthSessionValid {
 					if token, err := browserAuth.Issue(); err == nil {
 						browserAuth.SetCookie(w, r, token)
+					} else {
+						slog.Error("browser auth bootstrap failed", "path", r.URL.Path, "remote_addr", r.RemoteAddr, "error", err)
 					}
 				}
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			if browserAuth.ValidateRequest(r) {
+			if sessionState == browserAuthSessionValid {
 				clone := r.Clone(r.Context())
 				clone.Header = r.Header.Clone()
 				clone.Header.Set("Authorization", "Bearer "+apiToken)
+				if r.Method == http.MethodPost && r.URL.Path == "/logout" {
+					buffered := newBufferedResponseWriter()
+					next.ServeHTTP(buffered, clone)
+					if buffered.StatusCode() < http.StatusBadRequest {
+						browserAuth.Revoke(sessionToken)
+						browserAuth.ClearCookie(buffered, r)
+						if buffered.StatusCode() == http.StatusSeeOther {
+							buffered.Header().Set("Location", "/auth/token?error=logged_out&next=%2F")
+						}
+						logBrowserAuthInfo(r, "browser auth session revoked", "reason", "logout")
+					}
+					buffered.FlushTo(w)
+					return
+				}
 				next.ServeHTTP(w, clone)
+				return
+			}
+
+			if sessionState == browserAuthSessionStale {
+				nextPath := safeBrowserRedirectPath(r.URL.RequestURI())
+				browserAuth.ClearCookie(w, r)
+				if shouldBootstrapBrowserSession(r) {
+					logBrowserAuthInfo(r, "browser auth session expired", "mode", "navigation", "next", nextPath)
+					http.Redirect(w, r, "/auth/token?error=expired&next="+url.QueryEscape(nextPath), http.StatusSeeOther)
+					return
+				}
+				w.Header().Set("Cache-Control", "no-store, max-age=0")
+				w.Header().Set("Pragma", "no-cache")
+				w.Header().Set("Expires", "0")
+				w.Header().Set(browserAuthExpiredHeader, browserAuthExpiredValue)
+				logBrowserAuthInfo(r, "browser auth session expired", "mode", "background", "next", nextPath)
+				http.Error(w, "Browser access expired", http.StatusUnauthorized)
 				return
 			}
 
@@ -218,4 +270,106 @@ func browserSessionAuth(apiToken string, browserAuth *BrowserAuthManager) func(h
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	if r.wroteHeader {
+		return
+	}
+	r.status = status
+	r.wroteHeader = true
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(p []byte) (int, error) {
+	if !r.wroteHeader {
+		r.WriteHeader(http.StatusOK)
+	}
+	return r.ResponseWriter.Write(p)
+}
+
+func (r *statusRecorder) StatusCode() int {
+	if !r.wroteHeader {
+		return http.StatusOK
+	}
+	return r.status
+}
+
+func observeStatus(next http.Handler, after func(*http.Request, int)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+		if after != nil {
+			after(r, recorder.StatusCode())
+		}
+	})
+}
+
+type bufferedResponseWriter struct {
+	header      http.Header
+	body        bytes.Buffer
+	status      int
+	wroteHeader bool
+}
+
+func newBufferedResponseWriter() *bufferedResponseWriter {
+	return &bufferedResponseWriter{
+		header: make(http.Header),
+		status: http.StatusOK,
+	}
+}
+
+func (w *bufferedResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *bufferedResponseWriter) WriteHeader(status int) {
+	if w.wroteHeader {
+		return
+	}
+	w.status = status
+	w.wroteHeader = true
+}
+
+func (w *bufferedResponseWriter) Write(p []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.body.Write(p)
+}
+
+func (w *bufferedResponseWriter) StatusCode() int {
+	return w.status
+}
+
+func (w *bufferedResponseWriter) FlushTo(dst http.ResponseWriter) {
+	for key, values := range w.header {
+		dst.Header()[key] = append([]string(nil), values...)
+	}
+	dst.WriteHeader(w.status)
+	_, _ = dst.Write(w.body.Bytes())
+}
+
+func logBrowserAuthInfo(r *http.Request, message string, attrs ...any) {
+	slog.Info(message, browserAuthLogAttrs(r, attrs...)...)
+}
+
+func logBrowserAuthWarn(r *http.Request, message string, attrs ...any) {
+	slog.Warn(message, browserAuthLogAttrs(r, attrs...)...)
+}
+
+func browserAuthLogAttrs(r *http.Request, attrs ...any) []any {
+	base := []any{
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	}
+	base = append(base, attrs...)
+	return base
 }

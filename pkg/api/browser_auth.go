@@ -13,8 +13,18 @@ import (
 )
 
 const (
-	browserAuthCookieName = "xleaks_browser_auth"
-	defaultBrowserAuthTTL = 24 * time.Hour
+	browserAuthCookieName    = "xleaks_browser_auth"
+	defaultBrowserAuthTTL    = 24 * time.Hour
+	browserAuthExpiredHeader = "X-XLeaks-Browser-Auth"
+	browserAuthExpiredValue  = "expired"
+)
+
+type browserAuthSessionState uint8
+
+const (
+	browserAuthSessionMissing browserAuthSessionState = iota
+	browserAuthSessionValid
+	browserAuthSessionStale
 )
 
 type BrowserAuthManager struct {
@@ -52,35 +62,36 @@ func (m *BrowserAuthManager) Issue() (string, error) {
 }
 
 func (m *BrowserAuthManager) Validate(token string) bool {
+	return m.sessionState(token) == browserAuthSessionValid
+}
+
+func (m *BrowserAuthManager) ValidateRequest(r *http.Request) bool {
+	state, _ := m.CookieState(r)
+	return state == browserAuthSessionValid
+}
+
+func (m *BrowserAuthManager) CookieState(r *http.Request) (browserAuthSessionState, string) {
+	if m == nil || r == nil {
+		return browserAuthSessionMissing, ""
+	}
+	cookie, err := r.Cookie(browserAuthCookieName)
+	if err != nil || cookie.Value == "" {
+		return browserAuthSessionMissing, ""
+	}
+	return m.sessionState(cookie.Value), cookie.Value
+}
+
+func (m *BrowserAuthManager) Revoke(token string) bool {
 	if m == nil || token == "" {
 		return false
 	}
 
-	now := m.now()
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.cleanupExpiredLocked(now)
 
-	expiresAt, ok := m.sessions[token]
-	if !ok || !now.Before(expiresAt) {
-		delete(m.sessions, token)
-		return false
-	}
-
-	m.sessions[token] = now.Add(m.ttl)
-	return true
-}
-
-func (m *BrowserAuthManager) ValidateRequest(r *http.Request) bool {
-	if m == nil || r == nil {
-		return false
-	}
-	cookie, err := r.Cookie(browserAuthCookieName)
-	if err != nil || cookie.Value == "" {
-		return false
-	}
-	return m.Validate(cookie.Value)
+	_, ok := m.sessions[token]
+	delete(m.sessions, token)
+	return ok
 }
 
 func (m *BrowserAuthManager) SetCookie(w http.ResponseWriter, r *http.Request, token string) {
@@ -113,6 +124,27 @@ func (m *BrowserAuthManager) cleanupExpiredLocked(now time.Time) {
 			delete(m.sessions, token)
 		}
 	}
+}
+
+func (m *BrowserAuthManager) sessionState(token string) browserAuthSessionState {
+	if m == nil || token == "" {
+		return browserAuthSessionMissing
+	}
+
+	now := m.now()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cleanupExpiredLocked(now)
+
+	expiresAt, ok := m.sessions[token]
+	if !ok || !now.Before(expiresAt) {
+		delete(m.sessions, token)
+		return browserAuthSessionStale
+	}
+
+	m.sessions[token] = now.Add(m.ttl)
+	return browserAuthSessionValid
 }
 
 func browserAuthRequestIsSecure(r *http.Request) bool {
@@ -177,6 +209,12 @@ func isBrowserHTMLRequest(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("HX-Request")), "true") {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Requested-With")), "XMLHttpRequest") {
+		return false
+	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
@@ -221,15 +259,20 @@ func safeBrowserRedirectPath(raw string) string {
 	return u.RequestURI()
 }
 
-func renderBrowserAuthPage(w http.ResponseWriter, nextPath string, invalid bool) {
+func renderBrowserAuthPage(w http.ResponseWriter, nextPath, errorCode string) {
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	var errorHTML string
-	if invalid {
+	switch strings.ToLower(strings.TrimSpace(errorCode)) {
+	case "invalid":
 		errorHTML = `<p style="color:#ef4444;margin:0 0 16px 0;">Invalid access token.</p>`
+	case "expired":
+		errorHTML = `<p style="color:#f59e0b;margin:0 0 16px 0;">Browser access expired. Enter the access token again.</p>`
+	case "logged_out":
+		errorHTML = `<p style="color:#10b981;margin:0 0 16px 0;">Browser access locked. Enter the access token again to continue.</p>`
 	}
 
 	_, _ = w.Write([]byte(`<!DOCTYPE html>

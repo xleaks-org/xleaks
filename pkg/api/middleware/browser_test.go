@@ -81,6 +81,27 @@ func TestBrowserGuardAllowsSameOriginUnsafeRequestWithCSRF(t *testing.T) {
 	}
 }
 
+func TestBrowserGuardAllowsSameOriginUnsafeWebFormRequestWithoutAPIHeaderCSRF(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:7470/logout", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:7470")
+	req.AddCookie(&http.Cookie{Name: browserCSRFCookieName, Value: strings.Repeat("b", browserCSRFTokenLen*2)})
+	rr := httptest.NewRecorder()
+	called := false
+
+	BrowserGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})).ServeHTTP(rr, req)
+
+	if !called {
+		t.Fatal("expected same-origin web form request to reach handler")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
 func TestBrowserGuardAllowsForwardedHTTPSOriginWithCSRF(t *testing.T) {
 	t.Parallel()
 

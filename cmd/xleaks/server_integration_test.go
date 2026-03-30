@@ -491,6 +491,108 @@ func TestMountedServerBrowserAuthLoginRateLimited(t *testing.T) {
 	}
 }
 
+func TestMountedServerBrowserAuthLogoutRevokesAccessAndAcceptsSameOriginWebForm(t *testing.T) {
+	t.Parallel()
+
+	const apiToken = "integration-token"
+	testServer := newMountedTestServerWithWebSocket(t, apiToken, false)
+	defer testServer.Close()
+
+	client := testServer.Client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	resp, err := client.PostForm(testServer.URL+"/auth/token", url.Values{
+		"token": []string{apiToken},
+		"next":  []string{"/signup"},
+	})
+	if err != nil {
+		t.Fatalf("POST /auth/token error = %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /auth/token status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+
+	resp, err = client.Get(testServer.URL + "/signup")
+	if err != nil {
+		t.Fatalf("GET /signup error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /signup status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	csrfCookie := findCookie(resp.Cookies(), "xleaks_csrf")
+	if csrfCookie == nil || csrfCookie.Value == "" {
+		t.Fatal("expected csrf cookie from signup page")
+	}
+
+	logoutBody := strings.NewReader(url.Values{
+		"csrf_token": []string{csrfCookie.Value},
+	}.Encode())
+	req, err := http.NewRequest(http.MethodPost, testServer.URL+"/logout", logoutBody)
+	if err != nil {
+		t.Fatalf("NewRequest(POST /logout) error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", testServer.URL)
+	req.Header.Set("Referer", testServer.URL+"/signup")
+
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /logout error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /logout status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+	if got := resp.Header.Get("Location"); got != "/auth/token?error=logged_out&next=%2F" {
+		t.Fatalf("POST /logout Location = %q, want %q", got, "/auth/token?error=logged_out&next=%2F")
+	}
+
+	browserAuthCookie := findCookie(resp.Cookies(), "xleaks_browser_auth")
+	if browserAuthCookie == nil {
+		t.Fatal("expected cleared browser auth cookie on logout")
+	}
+	if browserAuthCookie.MaxAge != -1 {
+		t.Fatalf("browser auth cookie MaxAge = %d, want %d", browserAuthCookie.MaxAge, -1)
+	}
+
+	resp, err = client.Get(testServer.URL + "/api/node/status")
+	if err != nil {
+		t.Fatalf("GET /api/node/status after logout error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("GET /api/node/status after logout status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, testServer.URL+"/signup", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(GET /signup) error = %v", err)
+	}
+	req.Header.Set("Accept", "text/html")
+
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /signup after logout error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("GET /signup after logout status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+	if got := resp.Header.Get("Location"); got != "/auth/token?next=%2Fsignup" {
+		t.Fatalf("GET /signup after logout Location = %q, want %q", got, "/auth/token?next=%2Fsignup")
+	}
+}
+
 func newMountedTestServer(t *testing.T, apiToken string) *httptest.Server {
 	return newMountedTestServerWithWebSocket(t, apiToken, false)
 }
