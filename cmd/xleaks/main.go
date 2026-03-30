@@ -213,16 +213,24 @@ func wireContentExchange(host *p2p.Host, cas *content.ContentStore) {
 		}
 		return cas.Get(cidBytes)
 	})
-	ce.ServeContent(func(cidHex string) ([]byte, bool) {
+	ce.ServeContent(func(cidHex string) (*p2p.ContentSource, bool) {
 		cidBytes, err := content.HexToCID(cidHex)
 		if err != nil {
 			return nil, false
 		}
-		data, err := cas.Get(cidBytes)
+		file, err := cas.Open(cidBytes)
 		if err != nil {
 			return nil, false
 		}
-		return data, true
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return nil, false
+		}
+		return &p2p.ContentSource{
+			Reader: file,
+			Size:   info.Size(),
+		}, true
 	})
 }
 

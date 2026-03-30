@@ -49,13 +49,16 @@ func (ce *ContentExchange) handleContentStream(stream network.Stream) {
 		return
 	}
 
-	data, found := srv(cidHex)
-	if !found {
+	source, found := srv(cidHex)
+	if !found || source == nil || source.Reader == nil {
 		ce.writeEmptyResponse(stream)
 		return
 	}
+	defer source.Reader.Close()
 
-	writeContentResponse(stream, data)
+	if err := writeContentResponse(stream, source.Reader, source.Size); err != nil {
+		slog.Warn("content exchange: failed to write response", "cid", cidHex, "error", err)
+	}
 }
 
 // readCIDFromStream reads the 4-byte length prefix and CID bytes from a stream.
@@ -80,21 +83,32 @@ func readCIDFromStream(stream network.Stream) ([]byte, error) {
 }
 
 // writeContentResponse sends a length-prefixed content response to a stream.
-func writeContentResponse(stream network.Stream, data []byte) {
-	dataLen := uint32(len(data))
+func writeContentResponse(w io.Writer, r io.Reader, size int64) error {
+	if size <= 0 {
+		return fmt.Errorf("invalid content size: %d", size)
+	}
+	if size > int64(maxContentSize) {
+		return fmt.Errorf("content too large to serve: %d > %d", size, maxContentSize)
+	}
+
+	dataLen := uint32(size)
 	respHeader := []byte{
 		byte(dataLen >> 24),
 		byte(dataLen >> 16),
 		byte(dataLen >> 8),
 		byte(dataLen),
 	}
-	if _, err := stream.Write(respHeader); err != nil {
-		slog.Warn("content exchange: failed to write response length", "error", err)
-		return
+	if _, err := w.Write(respHeader); err != nil {
+		return fmt.Errorf("writing response length: %w", err)
 	}
-	if _, err := stream.Write(data); err != nil {
-		slog.Warn("content exchange: failed to write response data", "error", err)
+	written, err := io.CopyN(w, r, size)
+	if err != nil {
+		return fmt.Errorf("writing response data: %w", err)
 	}
+	if written != size {
+		return fmt.Errorf("short content write: wrote %d bytes, want %d", written, size)
+	}
+	return nil
 }
 
 // writeEmptyResponse sends a zero-length response to indicate "not found".

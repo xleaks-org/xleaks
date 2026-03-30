@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -70,12 +71,18 @@ type contentFetchCall struct {
 	err  error
 }
 
+// ContentSource describes streamed content available for remote serving.
+type ContentSource struct {
+	Reader io.ReadCloser
+	Size   int64
+}
+
 // ContentFetcher is called to retrieve content from local storage.
 type ContentFetcher func(cidHex string) ([]byte, error)
 
 // ContentServer is called to handle incoming content requests.
 // It returns the content and a boolean indicating whether the content was found.
-type ContentServer func(cidHex string) ([]byte, bool)
+type ContentServer func(cidHex string) (*ContentSource, bool)
 
 // NewContentExchange creates a new ContentExchange instance attached to the
 // given host.
