@@ -3,10 +3,14 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // LocalOnly restricts API access to requests originating from localhost. When
@@ -94,7 +98,43 @@ func GenerateToken() (string, error) {
 
 // SaveToken writes the token to a file with mode 0600 (owner-only read/write).
 func SaveToken(token, path string) error {
-	return os.WriteFile(path, []byte(token), 0600)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create token directory: %w", err)
+	}
+	if err := syncParentDirectory(dir); err != nil {
+		return fmt.Errorf("sync token directory parent: %w", err)
+	}
+
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp token file: %w", err)
+	}
+	tempPath := f.Name()
+	defer os.Remove(tempPath)
+
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return fmt.Errorf("set token permissions: %w", err)
+	}
+	if _, err := f.Write([]byte(token)); err != nil {
+		f.Close()
+		return fmt.Errorf("write token: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("sync token: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close token file: %w", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("replace token file: %w", err)
+	}
+	if err := syncParentDirectory(dir); err != nil {
+		return fmt.Errorf("sync token directory: %w", err)
+	}
+	return nil
 }
 
 // LoadToken reads the token from a file and trims whitespace.
@@ -104,4 +144,20 @@ func LoadToken(path string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+func syncParentDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open directory: %w", err)
+	}
+	defer dir.Close()
+
+	if err := dir.Sync(); err != nil {
+		if errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) {
+			return nil
+		}
+		return fmt.Errorf("sync directory: %w", err)
+	}
+	return nil
 }
