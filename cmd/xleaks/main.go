@@ -37,8 +37,19 @@ func run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	apiToken, err := loadAPIToken()
+	if err != nil {
+		return fmt.Errorf("failed to load API token: %w", err)
+	}
+	if err := validateAPIExposure(cfg.API.ListenAddress, apiToken); err != nil {
+		return err
+	}
+
 	if err := logging.Setup(cfg.Logging.Level, cfg.Logging.File); err != nil {
 		return fmt.Errorf("failed to set up logging: %w", err)
+	}
+	if apiToken != "" {
+		slog.Info("API token auth enabled", "listen_addr", cfg.API.ListenAddress)
 	}
 
 	db, cas, err := setupDatabase(cfg)
@@ -103,6 +114,7 @@ func run() error {
 
 	server := api.NewServerWithConfig(api.ServerConfig{
 		ListenAddr:      cfg.API.ListenAddress,
+		APIToken:        apiToken,
 		EnableWebSocket: cfg.API.EnableWebSocket,
 	}, deps)
 	if wsHub := server.WSHub(); wsHub != nil {

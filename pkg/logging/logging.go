@@ -17,11 +17,15 @@ func Setup(level, filePath string) error {
 	if filePath != "" {
 		filePath = expandHome(filePath)
 		dir := filepath.Dir(filePath)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
-		f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
+			return err
+		}
+		if err := f.Chmod(0o600); err != nil {
+			f.Close()
 			return err
 		}
 		w = io.MultiWriter(os.Stderr, f)

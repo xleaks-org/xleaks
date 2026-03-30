@@ -18,6 +18,7 @@ bandwidth_limit_mbps = 0            # 0 = unlimited
 
 [api]
 listen_address = "127.0.0.1:7470"  # Local API (localhost only!)
+# If you bind this beyond loopback, set XLEAKS_API_TOKEN or XLEAKS_API_TOKEN_FILE before startup.
 enable_websocket = true
 
 [indexer]
