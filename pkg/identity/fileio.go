@@ -1,9 +1,11 @@
 package identity
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 func writeOwnerOnlyFile(path string, data []byte) error {
@@ -36,6 +38,45 @@ func writeOwnerOnlyFile(path string, data []byte) error {
 	}
 	if err := os.Rename(tempPath, path); err != nil {
 		return fmt.Errorf("replace file: %w", err)
+	}
+	if err := syncDirectory(dir); err != nil {
+		return fmt.Errorf("sync directory: %w", err)
+	}
+	return nil
+}
+
+func renameFileAndSync(oldPath, newPath string) error {
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return fmt.Errorf("rename file: %w", err)
+	}
+	if err := syncDirectory(filepath.Dir(newPath)); err != nil {
+		return fmt.Errorf("sync directory: %w", err)
+	}
+	return nil
+}
+
+func removeFileAndSync(path string) error {
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove file: %w", err)
+	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("sync directory: %w", err)
+	}
+	return nil
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open directory: %w", err)
+	}
+	defer dir.Close()
+
+	if err := dir.Sync(); err != nil {
+		if errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) {
+			return nil
+		}
+		return fmt.Errorf("sync directory: %w", err)
 	}
 	return nil
 }

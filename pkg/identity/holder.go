@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -117,7 +118,9 @@ func (h *Holder) Unlock(passphrase string) (*KeyPair, error) {
 	}
 
 	kp := KeyPairFromPrivateKey(privKey)
-	h.fixMigratedKeyName(kp, pubkeyHex, keyPath)
+	if err := h.fixMigratedKeyName(kp, pubkeyHex, keyPath); err != nil {
+		return nil, fmt.Errorf("finalize migrated key path: %w", err)
+	}
 	h.ensureIdentityRegistered(kp)
 
 	h.mu.Lock()
@@ -143,14 +146,51 @@ func (h *Holder) resolveActivePubkey() (string, error) {
 	return "", fmt.Errorf("no active identity set: %w", err)
 }
 
-// fixMigratedKeyName renames the key file if it was migrated with a placeholder name.
-func (h *Holder) fixMigratedKeyName(kp *KeyPair, pubkeyHex, keyPath string) {
+// fixMigratedKeyName renames a placeholder migrated key file to the actual
+// pubkey-derived path without overwriting an existing different key file.
+func (h *Holder) fixMigratedKeyName(kp *KeyPair, pubkeyHex, keyPath string) error {
 	actualPubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 	if pubkeyHex != actualPubkeyHex {
 		newPath := h.keyFilePath(actualPubkeyHex)
-		_ = os.Rename(keyPath, newPath)
-		_ = h.writeActivePubkeyHex(actualPubkeyHex)
+		sameContents, err := filesEqual(keyPath, newPath)
+		switch {
+		case err == nil:
+			if !sameContents {
+				return fmt.Errorf("destination key file already exists with different contents: %s", newPath)
+			}
+			if err := h.writeActivePubkeyHex(actualPubkeyHex); err != nil {
+				return fmt.Errorf("update active identity: %w", err)
+			}
+			if err := removeFileAndSync(keyPath); err != nil {
+				return fmt.Errorf("remove duplicate migrated key: %w", err)
+			}
+		case os.IsNotExist(err):
+			if err := renameFileAndSync(keyPath, newPath); err != nil {
+				return fmt.Errorf("rename migrated key: %w", err)
+			}
+			if err := h.writeActivePubkeyHex(actualPubkeyHex); err != nil {
+				if rollbackErr := renameFileAndSync(newPath, keyPath); rollbackErr != nil {
+					return fmt.Errorf("update active identity: %w (rollback failed: %v)", err, rollbackErr)
+				}
+				return fmt.Errorf("update active identity: %w", err)
+			}
+		default:
+			return fmt.Errorf("inspect existing key destination: %w", err)
+		}
 	}
+	return nil
+}
+
+func filesEqual(pathA, pathB string) (bool, error) {
+	dataA, err := os.ReadFile(pathA)
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", pathA, err)
+	}
+	dataB, err := os.ReadFile(pathB)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(dataA, dataB), nil
 }
 
 // ensureIdentityRegistered makes sure the identity exists in the DB.
