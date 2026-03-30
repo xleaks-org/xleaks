@@ -73,6 +73,54 @@ func TestSaveCreatesOwnerOnlyConfigFile(t *testing.T) {
 	}
 }
 
+func TestSaveCreatesOwnerOnlyConfigDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	configDir := filepath.Join(root, "nested", "config")
+	path := filepath.Join(configDir, "config.toml")
+	cfg := DefaultConfig()
+
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	info, err := os.Stat(configDir)
+	if err != nil {
+		t.Fatalf("Stat config dir: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("config dir permissions = %o, want 700", perm)
+	}
+}
+
+func TestSaveTightensExistingConfigDirectoryPermissions(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Chmod(configDir, 0o755); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	path := filepath.Join(configDir, "config.toml")
+	cfg := DefaultConfig()
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	info, err := os.Stat(configDir)
+	if err != nil {
+		t.Fatalf("Stat config dir: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("config dir permissions = %o, want 700", perm)
+	}
+}
+
 func TestSavePreservesExistingConfigFileMode(t *testing.T) {
 	t.Parallel()
 

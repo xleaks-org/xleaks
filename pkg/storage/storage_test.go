@@ -115,6 +115,14 @@ func TestBackupCreatesOwnerOnlyDatabaseCopy(t *testing.T) {
 		t.Fatalf("backup dir = %s, want %s", filepath.Dir(backupPath), backupDir)
 	}
 
+	dirInfo, err := os.Stat(backupDir)
+	if err != nil {
+		t.Fatalf("Stat backup dir: %v", err)
+	}
+	if perm := dirInfo.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("backup dir permissions = %o, want 700", perm)
+	}
+
 	info, err := os.Stat(backupPath)
 	if err != nil {
 		t.Fatalf("Stat backup: %v", err)
@@ -146,6 +154,29 @@ func TestBackupCreatesOwnerOnlyDatabaseCopy(t *testing.T) {
 	}
 	if table != "posts" {
 		t.Fatalf("backup schema lookup = %q, want posts", table)
+	}
+}
+
+func TestBackupTightensExistingDirectoryPermissions(t *testing.T) {
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Chmod(backupDir, 0o755); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	if _, err := db.Backup(backupDir); err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+
+	info, err := os.Stat(backupDir)
+	if err != nil {
+		t.Fatalf("Stat backup dir: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("backup dir permissions = %o, want 700", perm)
 	}
 }
 

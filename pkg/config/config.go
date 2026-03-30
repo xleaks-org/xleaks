@@ -152,7 +152,7 @@ func (c *Config) Save(path string) error {
 	}
 
 	dir := filepath.Dir(savePath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := ensurePrivateDir(dir); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -186,6 +186,9 @@ func (c *Config) Save(path string) error {
 	}
 	if err := os.Rename(tempPath, savePath); err != nil {
 		return fmt.Errorf("failed to replace config file: %w", err)
+	}
+	if err := syncDirectory(dir); err != nil {
+		return fmt.Errorf("failed to sync config directory: %w", err)
 	}
 
 	return nil
@@ -222,6 +225,47 @@ func configFileMode(path string) (os.FileMode, error) {
 		return 0, fmt.Errorf("config path must be a regular file")
 	}
 	return info.Mode().Perm(), nil
+}
+
+func ensurePrivateDir(path string) error {
+	info, err := os.Stat(path)
+	switch {
+	case err == nil:
+		if !info.IsDir() {
+			return fmt.Errorf("%s is not a directory", path)
+		}
+		if info.Mode().Perm() != 0o700 {
+			if err := os.Chmod(path, 0o700); err != nil {
+				return fmt.Errorf("set directory permissions: %w", err)
+			}
+		}
+		return nil
+	case !os.IsNotExist(err):
+		return fmt.Errorf("stat directory: %w", err)
+	}
+
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		return fmt.Errorf("set directory permissions: %w", err)
+	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("sync parent directory: %w", err)
+	}
+	return nil
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open directory: %w", err)
+	}
+	defer dir.Close()
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("sync directory: %w", err)
+	}
+	return nil
 }
 
 // DataDir returns the expanded data directory path.
