@@ -43,6 +43,19 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script>
         window.xleaksCSRFToken = '{{.CSRFToken}}';
+        window.xleaksFetch = function(input, init) {
+            var options = init ? Object.assign({}, init) : {};
+            options.credentials = options.credentials || 'same-origin';
+
+            var headers = new Headers(options.headers || {});
+            var method = String(options.method || 'GET').toUpperCase();
+            if (window.xleaksCSRFToken && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+                headers.set('X-CSRF-Token', window.xleaksCSRFToken);
+            }
+            options.headers = headers;
+
+            return fetch(input, options);
+        };
         document.addEventListener('htmx:configRequest', function(event) {
             if (window.xleaksCSRFToken) {
                 event.detail.headers[{{printf "%q" "X-CSRF-Token"}}] = window.xleaksCSRFToken;
@@ -275,7 +288,7 @@
             if (!currentUser) {
                 return;
             }
-            fetch('/api/notifications/unread-count', { credentials: 'same-origin' })
+            window.xleaksFetch('/api/notifications/unread-count')
                 .then(function(response) {
                     if (!response.ok) {
                         throw new Error('notification count request failed');

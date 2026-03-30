@@ -7,12 +7,17 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/xleaks-org/xleaks/pkg/api/middleware"
 	"github.com/xleaks-org/xleaks/pkg/metrics"
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Local-only API, CORS handled by middleware.
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		return middleware.OriginAllowed(r, origin)
 	},
 }
 

@@ -47,15 +47,16 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	router := NewRouter(deps, wsHub)
 
 	// Build the middleware chain (outermost first, innermost last):
-	//   CORS (outermost) -> TokenAuth (optional) -> LocalOnly (innermost) -> router
+	//   CORS (outermost) -> TokenAuth (optional) -> BrowserGuard -> LocalOnly -> router
 	var handler http.Handler = router
 	handler = middleware.LocalOnly(handler)
+	handler = middleware.BrowserGuard(handler)
 
 	if cfg.APIToken != "" {
 		handler = middleware.TokenAuth(cfg.APIToken)(handler)
 	}
 
-	handler = middleware.CORS("*")(handler)
+	handler = middleware.CORS()(handler)
 
 	// Create a top-level mux so /health and /metrics bypass all auth/local middleware.
 	topMux := http.NewServeMux()

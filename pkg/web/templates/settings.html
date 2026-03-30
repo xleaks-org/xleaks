@@ -307,10 +307,9 @@
         var body = new FormData();
         body.append('file', file, file.name);
 
-        var response = await fetch('/api/media', {
+        var response = await window.xleaksFetch('/api/media', {
             method: 'POST',
-            body: body,
-            credentials: 'same-origin'
+            body: body
         });
 
         if (!response.ok) {
@@ -378,7 +377,7 @@
     }
 
     async function loadNodeConfig() {
-        var response = await fetch('/api/node/config', { credentials: 'same-origin' });
+        var response = await window.xleaksFetch('/api/node/config');
         if (!response.ok) {
             throw new Error('Failed to load node config');
         }
@@ -456,10 +455,9 @@
             return;
         }
 
-        fetch('/api/node/config', {
+        window.xleaksFetch('/api/node/config', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
             body: JSON.stringify(payload)
         }).then(async function(response) {
             if (!response.ok) {
