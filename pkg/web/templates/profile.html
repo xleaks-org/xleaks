@@ -32,10 +32,12 @@
             {{else}}
                 {{if .IsFollowing}}
                 <form method="POST" action="/web/unfollow/{{.ProfileUser.Pubkey}}" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
                     <button class="bg-gray-700 hover:bg-red-600 text-white text-sm font-bold px-4 py-2 rounded-full transition-colors">Unfollow</button>
                 </form>
                 {{else}}
                 <form method="POST" action="/web/follow/{{.ProfileUser.Pubkey}}" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
                     <button class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-full transition-colors">Follow</button>
                 </form>
                 {{end}}

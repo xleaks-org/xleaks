@@ -8,6 +8,7 @@
             <p class="text-xs text-gray-500 mt-2">Your identity is a cryptographic key pair. No email. No phone. No tracking.</p>
         </div>
         <form method="POST" action="/onboarding/create" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <div class="relative">
                 <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 <input type="password" name="passphrase" placeholder="Choose a passphrase (8+ chars)" required minlength="8"
@@ -25,6 +26,7 @@
             <div class="relative flex justify-center"><span class="bg-[#0a0a0a] px-4 text-gray-500 text-sm">or</span></div>
         </div>
         <form method="POST" action="/onboarding/import" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <p class="text-center text-gray-400 text-sm">Import existing identity</p>
             <textarea name="mnemonic" rows="3" placeholder="Enter your 24-word seed phrase"
                 class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none resize-none"></textarea>
@@ -42,6 +44,7 @@
             <p class="text-gray-400">Enter your passphrase to unlock</p>
         </div>
         <form method="POST" action="/unlock" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <div class="relative">
                 <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 <input type="password" name="passphrase" placeholder="Passphrase" required autofocus
@@ -63,6 +66,7 @@
             {{end}}
         </div>
         <form method="POST" action="/onboarding/verify-step">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <input type="hidden" name="seed" value="{{.SeedPhrase}}">
             <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">I've Saved It -- Continue</button>
         </form>
@@ -74,6 +78,7 @@
             <p class="text-gray-400 text-sm">Fill in the missing words to confirm you saved your seed phrase.</p>
         </div>
         <form method="POST" action="/onboarding/confirm-seed" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <input type="hidden" name="seed" value="{{.HiddenSeed}}">
             <div class="grid grid-cols-3 gap-2 p-4 bg-gray-900 rounded-xl border border-gray-700 mb-4">
                 {{range $i, $item := .WordSlots}}
@@ -103,6 +108,7 @@
             <p class="text-gray-400 text-sm">Choose a display name for your profile.</p>
         </div>
         <form method="POST" action="/onboarding/set-profile" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <input type="text" name="display_name" placeholder="Display name" required autofocus maxlength="50"
                 class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
             <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Finish Setup</button>

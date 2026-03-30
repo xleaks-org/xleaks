@@ -9,6 +9,7 @@
         <div class="bg-red-900/30 border border-red-700 text-red-300 rounded-xl p-3 mb-4 text-sm">{{.Error}}</div>
         {{end}}
         <form method="POST" action="/terms/accept" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <div class="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-4">
                 <label class="flex items-start gap-3 cursor-pointer">
                     <input type="checkbox" name="node" required class="mt-1 accent-blue-500">

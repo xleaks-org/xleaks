@@ -201,6 +201,8 @@ func NewHandler(db *storage.DB, idHolder *identity.Holder, tl *feed.Timeline, sm
 // Routes returns a chi.Router with all web UI routes.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
+	r.Use(ensureCSRFCookie)
+	r.Use(requireCSRF)
 
 	r.Get("/", h.homePage)
 	r.Get("/signup", h.signupPage)
@@ -214,7 +216,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/onboarding/set-profile", h.handleSetProfile)
 	r.Post("/onboarding/import", h.handleImport)
 	r.Post("/unlock", h.handleUnlock)
-	r.Get("/logout", h.handleLogout)
+	r.Post("/logout", h.handleLogout)
 	r.Get("/settings", h.settingsPage)
 	r.Post("/settings/switch", h.handleSwitchIdentity)
 	r.Get("/post/{id}", h.postPage)
@@ -226,7 +228,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/explore", h.explorePage)
 	r.Get("/trending", h.trendingPage)
 	r.Post("/settings/profile", h.handleUpdateProfile)
-	r.Get("/settings/toggle-theme", h.handleToggleTheme)
+	r.Post("/settings/toggle-theme", h.handleToggleTheme)
 
 	r.Get("/web/feed", h.feedPartial)
 	r.Post("/web/post", h.handlePost)
@@ -289,12 +291,16 @@ func (h *Handler) currentUser(r *http.Request) *UserInfo {
 
 // pageData returns the base template data for a page.
 func (h *Handler) pageData(r *http.Request, active, title string) map[string]interface{} {
-	return map[string]interface{}{
+	data := map[string]interface{}{
 		"Active":           active,
 		"Title":            title,
 		"User":             h.currentUser(r),
 		"WebSocketEnabled": h.enableWebSocket,
 	}
+	if token := csrfTokenFromRequest(r); token != "" {
+		data["CSRFToken"] = token
+	}
+	return data
 }
 
 // renderLanding renders the standalone landing page for unauthenticated visitors.

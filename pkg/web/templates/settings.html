@@ -35,7 +35,10 @@
             </div>
             <div class="mt-4 flex flex-wrap gap-3">
                 <a href="/api/identity/export" class="inline-flex items-center justify-center rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 transition-colors">Export Encrypted Key</a>
-                <a href="/logout" class="inline-flex items-center justify-center rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-300 hover:bg-red-500/10 transition-colors">Lock Identity</a>
+                <form method="POST" action="/logout">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                    <button type="submit" class="inline-flex items-center justify-center rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-300 hover:bg-red-500/10 transition-colors">Lock Identity</button>
+                </form>
             </div>
             <p class="mt-3 text-xs text-gray-500">Seed phrases are only shown during onboarding. Export the encrypted key file here for recoverable backups.</p>
         </div>
@@ -44,6 +47,7 @@
     <section class="rounded-xl bg-gray-900 border border-gray-800 p-4">
         <h2 class="font-semibold mb-3">Edit Profile</h2>
         <form method="POST" action="/settings/profile" class="space-y-3">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <div>
                 <label class="text-xs text-gray-400 block mb-1">Display Name</label>
                 <input type="text" name="display_name" value="{{.DisplayName}}" maxlength="50"
@@ -94,6 +98,7 @@
         <div class="space-y-3">
             {{range .Identities}}
             <form method="POST" action="/settings/switch" class="rounded-lg border border-gray-800 p-3 space-y-3">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                 <input type="hidden" name="pubkey" value="{{.Pubkey}}">
                 <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
@@ -232,9 +237,12 @@
         <h2 class="font-semibold mb-3">Display</h2>
         <div class="flex items-center justify-between">
             <span class="text-sm text-gray-400">Theme</span>
-            <a href="/settings/toggle-theme" class="text-sm text-blue-500 hover:text-blue-400">
-                {{if .DarkMode}}Switch to Light{{else}}Switch to Dark{{end}}
-            </a>
+            <form method="POST" action="/settings/toggle-theme">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <button type="submit" class="text-sm text-blue-500 hover:text-blue-400">
+                    {{if .DarkMode}}Switch to Light{{else}}Switch to Dark{{end}}
+                </button>
+            </form>
         </div>
     </section>
     {{end}}

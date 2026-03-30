@@ -41,6 +41,14 @@
         }
     </script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script>
+        window.xleaksCSRFToken = '{{.CSRFToken}}';
+        document.addEventListener('htmx:configRequest', function(event) {
+            if (window.xleaksCSRFToken) {
+                event.detail.headers[{{printf "%q" "X-CSRF-Token"}}] = window.xleaksCSRFToken;
+            }
+        });
+    </script>
     <style>
         body { background: #0a0a0a; color: #ededed; font-family: Inter, system-ui, -apple-system, sans-serif; }
         .card { background: #111; border: 1px solid #1f1f1f; border-radius: 12px; }
@@ -126,9 +134,12 @@
                     <p class="text-sm font-medium truncate">{{.User.DisplayName}}</p>
                     <p class="text-xs text-gray-400 truncate font-mono">{{.User.ShortPubkey}}</p>
                 </a>
-                <a href="/logout" class="text-gray-400 hover:text-red-400 transition-colors" title="Logout">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-                </a>
+                <form method="POST" action="/logout">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                    <button type="submit" class="text-gray-400 hover:text-red-400 transition-colors" title="Logout">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    </button>
+                </form>
             </div>
             {{end}}
         </aside>
