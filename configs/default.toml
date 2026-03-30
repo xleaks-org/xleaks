@@ -20,6 +20,8 @@ bandwidth_limit_mbps = 0            # 0 = unlimited
 listen_address = "127.0.0.1:7470"  # Local API (localhost only!)
 # If you bind this beyond loopback, set XLEAKS_API_TOKEN or XLEAKS_API_TOKEN_FILE before startup.
 enable_websocket = true
+enable_web_ui = true
+allow_remote_web_ui = false        # Explicit opt-in required before exposing the embedded web UI beyond loopback.
 
 [indexer]
 # Public indexer settings. `public_api_address` is only used when mode = "indexer".

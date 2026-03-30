@@ -217,6 +217,17 @@
                     <span>Enable WebSocket</span>
                     <input id="node-enable-websocket" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
                 </label>
+                <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300">
+                    <span>Enable Web UI</span>
+                    <input id="node-enable-web-ui" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
+                </label>
+                <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300 sm:col-span-2">
+                    <div>
+                        <span class="block">Allow remote Web UI</span>
+                        <span class="block text-xs text-gray-500">Required before the embedded web UI can be exposed on a non-loopback API bind.</span>
+                    </div>
+                    <input id="node-allow-remote-web-ui" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
+                </label>
                 <label class="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2.5 text-sm text-gray-300 sm:col-span-2">
                     <div>
                         <span class="block">Auto-fetch media</span>
@@ -371,6 +382,8 @@
         document.getElementById('node-enable-mdns').checked = !!cfg.enable_mdns;
         document.getElementById('node-enable-hole-punching').checked = !!cfg.enable_hole_punching;
         document.getElementById('node-enable-websocket').checked = !!cfg.enable_websocket;
+        document.getElementById('node-enable-web-ui').checked = cfg.enable_web_ui !== false;
+        document.getElementById('node-allow-remote-web-ui').checked = !!cfg.allow_remote_web_ui;
         document.getElementById('node-auto-fetch-media').checked = !!cfg.auto_fetch_media;
         state.defaultBootstrapPeers = cfg.default_bootstrap_peers || [];
         state.defaultKnownIndexers = cfg.default_known_indexers || [];
@@ -446,6 +459,8 @@
             enable_mdns: document.getElementById('node-enable-mdns').checked,
             enable_hole_punching: document.getElementById('node-enable-hole-punching').checked,
             enable_websocket: document.getElementById('node-enable-websocket').checked,
+            enable_web_ui: document.getElementById('node-enable-web-ui').checked,
+            allow_remote_web_ui: document.getElementById('node-allow-remote-web-ui').checked,
             auto_fetch_media: document.getElementById('node-auto-fetch-media').checked
         };
 

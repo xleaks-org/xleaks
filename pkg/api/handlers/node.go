@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -187,6 +188,8 @@ func (h *Handler) GetNodeConfig(w http.ResponseWriter, r *http.Request) {
 			"enable_mdns":             true,
 			"enable_hole_punching":    true,
 			"enable_websocket":        true,
+			"enable_web_ui":           true,
+			"allow_remote_web_ui":     false,
 			"auto_fetch_media":        false,
 			"max_upload_size_mb":      config.DefaultConfig().Media.MaxUploadSizeMB,
 			"thumbnail_quality":       config.DefaultConfig().Media.ThumbnailQuality,
@@ -207,6 +210,8 @@ func (h *Handler) GetNodeConfig(w http.ResponseWriter, r *http.Request) {
 		"bandwidth_limit_mbps":    h.cfg.Network.BandwidthLimitMbps,
 		"storage_limit_gb":        h.cfg.Node.MaxStorageGB,
 		"enable_websocket":        h.cfg.API.EnableWebSocket,
+		"enable_web_ui":           h.cfg.API.EnableWebUI,
+		"allow_remote_web_ui":     h.cfg.API.AllowRemoteWebUI,
 		"auto_fetch_media":        h.cfg.Media.AutoFetchMedia,
 		"max_upload_size_mb":      h.cfg.Media.MaxUploadSizeMB,
 		"thumbnail_quality":       h.cfg.Media.ThumbnailQuality,
@@ -310,6 +315,18 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	} else if ok {
 		next.API.EnableWebSocket = b
 	}
+	if b, ok, err := optionalBoolField(updates, "enable_web_ui"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		next.API.EnableWebUI = b
+	}
+	if b, ok, err := optionalBoolField(updates, "allow_remote_web_ui"); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		next.API.AllowRemoteWebUI = b
+	}
 	if b, ok, err := optionalBoolField(updates, "auto_fetch_media"); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -342,6 +359,10 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	} else if ok {
 		next.Logging.Level = level
 	}
+	if err := validateWebUIConfig(next.API.ListenAddress, h.apiTokenConfigured, next.API.EnableWebUI, next.API.AllowRemoteWebUI); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// Persist to disk if we have a config path.
 	if h.cfgPath != "" {
@@ -364,6 +385,35 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "updated",
 	})
+}
+
+func validateWebUIConfig(listenAddr string, apiTokenConfigured, enableWebUI, allowRemoteWebUI bool) error {
+	if !enableWebUI || isLoopbackAPIAddress(listenAddr) {
+		return nil
+	}
+	if !apiTokenConfigured {
+		return fmt.Errorf("enable_web_ui on a non-loopback api_address requires API token auth")
+	}
+	if !allowRemoteWebUI {
+		return fmt.Errorf("enable_web_ui on a non-loopback api_address requires allow_remote_web_ui to be true")
+	}
+	return nil
+}
+
+func isLoopbackAPIAddress(listenAddr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(listenAddr))
+	if err != nil {
+		return false
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func cloneConfig(cfg *config.Config) *config.Config {

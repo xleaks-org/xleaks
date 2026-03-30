@@ -669,6 +669,10 @@ components:
           type: boolean
         enable_websocket:
           type: boolean
+        enable_web_ui:
+          type: boolean
+        allow_remote_web_ui:
+          type: boolean
         auto_fetch_media:
           type: boolean
         max_upload_size_mb:
@@ -715,6 +719,10 @@ components:
           items:
             type: string
         enable_websocket:
+          type: boolean
+        enable_web_ui:
+          type: boolean
+        allow_remote_web_ui:
           type: boolean
         auto_fetch_media:
           type: boolean

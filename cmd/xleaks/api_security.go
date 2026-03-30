@@ -52,6 +52,27 @@ func validateAPIExposure(listenAddr, token string) error {
 	)
 }
 
+func validateWebUIExposure(listenAddr string, apiTokenConfigured, enableWebUI, allowRemoteWebUI bool) error {
+	if !enableWebUI || isLoopbackListenAddress(listenAddr) {
+		return nil
+	}
+	if !apiTokenConfigured {
+		return fmt.Errorf(
+			"refusing to expose web UI on non-loopback listen address %q without API token auth; disable the web UI, bind to loopback, or configure %s/%s",
+			listenAddr,
+			apiTokenEnvVar,
+			apiTokenFileEnvVar,
+		)
+	}
+	if allowRemoteWebUI {
+		return nil
+	}
+	return fmt.Errorf(
+		"refusing to expose web UI on non-loopback listen address %q without api.allow_remote_web_ui = true; disable the web UI, bind to loopback, or explicitly allow remote web UI",
+		listenAddr,
+	)
+}
+
 func isLoopbackListenAddress(listenAddr string) bool {
 	host, _, err := net.SplitHostPort(strings.TrimSpace(listenAddr))
 	if err != nil {

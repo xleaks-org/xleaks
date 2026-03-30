@@ -762,6 +762,7 @@ func TestUpdateNodeConfigValidatedAndNormalized(t *testing.T) {
 	h, _ := testHandler(t)
 	cfg := config.DefaultConfig()
 	h.SetConfig(cfg, "")
+	h.SetAPITokenConfigured(true)
 
 	idxClient := indexer.NewIndexerClient(context.Background())
 	t.Cleanup(idxClient.Close)
@@ -776,6 +777,8 @@ func TestUpdateNodeConfigValidatedAndNormalized(t *testing.T) {
 		"enable_mdns": false,
 		"enable_hole_punching": false,
 		"enable_websocket": false,
+		"enable_web_ui": false,
+		"allow_remote_web_ui": false,
 		"auto_fetch_media": true,
 		"max_upload_size_mb": 256,
 		"thumbnail_quality": 90,
@@ -806,6 +809,12 @@ func TestUpdateNodeConfigValidatedAndNormalized(t *testing.T) {
 	}
 	if cfg.API.EnableWebSocket {
 		t.Fatal("expected websocket to be disabled")
+	}
+	if cfg.API.EnableWebUI {
+		t.Fatal("expected web UI to be disabled")
+	}
+	if cfg.API.AllowRemoteWebUI {
+		t.Fatal("expected remote web UI exposure to remain disabled")
 	}
 	if !cfg.Media.AutoFetchMedia {
 		t.Fatal("expected auto_fetch_media to be enabled")
@@ -860,6 +869,63 @@ func TestUpdateNodeConfigRejectsInvalidUpdateAtomically(t *testing.T) {
 	}
 	if !strings.Contains(resp["error"], "storage_limit_gb") {
 		t.Fatalf("error = %q, want to mention storage_limit_gb", resp["error"])
+	}
+}
+
+func TestUpdateNodeConfigRejectsRemoteWebUIWithoutOptIn(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	cfg.API.ListenAddress = "0.0.0.0:7470"
+	cfg.API.EnableWebUI = false
+	h.SetConfig(cfg, "")
+	h.SetAPITokenConfigured(true)
+
+	body := strings.NewReader(`{"enable_web_ui": true}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if cfg.API.EnableWebUI {
+		t.Fatal("enable_web_ui mutated after rejected update")
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !strings.Contains(resp["error"], "allow_remote_web_ui") {
+		t.Fatalf("error = %q, want to mention allow_remote_web_ui", resp["error"])
+	}
+}
+
+func TestUpdateNodeConfigAllowsRemoteWebUIWithTokenAndOptIn(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	cfg.API.ListenAddress = "0.0.0.0:7470"
+	cfg.API.EnableWebUI = false
+	h.SetConfig(cfg, "")
+	h.SetAPITokenConfigured(true)
+
+	body := strings.NewReader(`{"enable_web_ui": true, "allow_remote_web_ui": true}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if !cfg.API.EnableWebUI {
+		t.Fatal("expected web UI to be enabled")
+	}
+	if !cfg.API.AllowRemoteWebUI {
+		t.Fatal("expected remote web UI exposure to be enabled")
 	}
 }
 

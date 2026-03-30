@@ -35,6 +35,11 @@ func setupWebHandler(
 	identitySync func(*identity.KeyPair),
 	ensureTopic func(string) error,
 ) chi.Router {
+	if cfg == nil || !cfg.API.EnableWebUI {
+		slog.Info("web UI disabled")
+		return nil
+	}
+
 	sessionMgr := web.NewSessionManager()
 	webHandler, err := web.NewHandler(db, idHolder, svc.Timeline, sessionMgr)
 	if err != nil {
@@ -170,30 +175,33 @@ func buildAPIDeps(
 	cfg *config.Config,
 	cfgPath string,
 	webRoutes chi.Router,
+	apiTokenConfigured bool,
 	identitySync func(*identity.KeyPair),
 	ensureTopic func(string) error,
 ) *api.HandlerDeps {
 	deps := &api.HandlerDeps{
-		DB:             db,
-		CAS:            cas,
-		KeyPair:        kp,
-		IdentityHolder: idHolder,
-		Posts:          svc.Posts,
-		Reactions:      svc.Reactions,
-		Profiles:       svc.Profiles,
-		DMs:            svc.DMs,
-		Follows:        svc.Follows,
-		Notifs:         svc.Notifs,
-		Feed:           svc.Feed,
-		Timeline:       svc.Timeline,
-		P2PHost:        p2pHost,
-		Config:         cfg,
-		ConfigPath:     cfgPath,
-		IndexerClient:  svc.Indexer,
-		IdentityChange: identitySync,
-		EnsureTopic:    ensureTopic,
-		WebHandler:     webRoutes,
+		DB:                 db,
+		CAS:                cas,
+		KeyPair:            kp,
+		IdentityHolder:     idHolder,
+		Posts:              svc.Posts,
+		Reactions:          svc.Reactions,
+		Profiles:           svc.Profiles,
+		DMs:                svc.DMs,
+		Follows:            svc.Follows,
+		Notifs:             svc.Notifs,
+		Feed:               svc.Feed,
+		Timeline:           svc.Timeline,
+		P2PHost:            p2pHost,
+		Config:             cfg,
+		ConfigPath:         cfgPath,
+		APITokenConfigured: false,
+		IndexerClient:      svc.Indexer,
+		IdentityChange:     identitySync,
+		EnsureTopic:        ensureTopic,
+		WebHandler:         webRoutes,
 	}
+	deps.APITokenConfigured = apiTokenConfigured
 	return deps
 }
 

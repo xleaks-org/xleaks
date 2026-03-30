@@ -17,6 +17,12 @@ func TestDefaultConfigIncludesKnownIndexers(t *testing.T) {
 	if !slices.Equal(cfg.Indexer.KnownIndexers, DefaultKnownIndexers()) {
 		t.Fatalf("expected default config known indexers %v, got %v", DefaultKnownIndexers(), cfg.Indexer.KnownIndexers)
 	}
+	if !cfg.API.EnableWebUI {
+		t.Fatal("expected web UI to be enabled by default")
+	}
+	if cfg.API.AllowRemoteWebUI {
+		t.Fatal("expected remote web UI exposure to be disabled by default")
+	}
 }
 
 func TestMaxStorageBytes(t *testing.T) {

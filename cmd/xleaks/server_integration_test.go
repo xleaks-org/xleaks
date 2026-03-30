@@ -254,7 +254,7 @@ func newMountedTestServer(t *testing.T, apiToken string) *httptest.Server {
 	svc := setupServices(ctx, db, cas, kp, idHolder)
 	webRoutes := setupWebHandler(db, idHolder, svc, cfg, nil, cfg.DataDir(), nil, func(*identity.KeyPair) {}, nil)
 	cfgPath := filepath.Join(cfg.DataDir(), "config.toml")
-	deps := buildAPIDeps(db, cas, kp, idHolder, svc, nil, cfg, cfgPath, webRoutes, func(*identity.KeyPair) {}, nil)
+	deps := buildAPIDeps(db, cas, kp, idHolder, svc, nil, cfg, cfgPath, webRoutes, apiToken != "", func(*identity.KeyPair) {}, nil)
 	server := api.NewServerWithConfig(api.ServerConfig{
 		ListenAddr:      cfg.API.ListenAddress,
 		APIToken:        apiToken,

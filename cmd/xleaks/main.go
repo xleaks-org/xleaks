@@ -44,12 +44,18 @@ func run() error {
 	if err := validateAPIExposure(cfg.API.ListenAddress, apiToken); err != nil {
 		return err
 	}
+	if err := validateWebUIExposure(cfg.API.ListenAddress, apiToken != "", cfg.API.EnableWebUI, cfg.API.AllowRemoteWebUI); err != nil {
+		return err
+	}
 
 	if err := logging.Setup(cfg.Logging.Level, cfg.Logging.File); err != nil {
 		return fmt.Errorf("failed to set up logging: %w", err)
 	}
 	if apiToken != "" {
 		slog.Info("API token auth enabled", "listen_addr", cfg.API.ListenAddress)
+	}
+	if cfg.API.EnableWebUI && !isLoopbackListenAddress(cfg.API.ListenAddress) && cfg.API.AllowRemoteWebUI {
+		slog.Warn("remote web UI exposure explicitly enabled", "listen_addr", cfg.API.ListenAddress)
 	}
 
 	db, cas, err := setupDatabase(cfg)
@@ -110,7 +116,7 @@ func run() error {
 
 	cfgPath := defaultConfigPath
 	webRoutes := setupWebHandler(db, idHolder, svc, cfg, p2pHost, dataDir, idx, identitySync, ensureTopicSubscription)
-	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes, identitySync, ensureTopicSubscription)
+	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes, apiToken != "", identitySync, ensureTopicSubscription)
 
 	server := api.NewServerWithConfig(api.ServerConfig{
 		ListenAddr:      cfg.API.ListenAddress,

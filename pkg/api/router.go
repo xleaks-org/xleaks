@@ -20,25 +20,26 @@ import (
 
 // HandlerDeps contains all dependencies needed by API handlers.
 type HandlerDeps struct {
-	DB             *storage.DB
-	CAS            *content.ContentStore
-	KeyPair        *identity.KeyPair
-	IdentityHolder *identity.Holder
-	Posts          *social.PostService
-	Reactions      *social.ReactionService
-	Profiles       *social.ProfileService
-	DMs            *social.DMService
-	Follows        *social.FollowService
-	Notifs         *social.NotificationService
-	Feed           *feed.Manager
-	Timeline       *feed.Timeline
-	P2PHost        *p2p.Host
-	Config         *config.Config
-	ConfigPath     string
-	IndexerClient  *indexer.IndexerClient
-	IdentityChange func(*identity.KeyPair)
-	EnsureTopic    func(string) error
-	WebHandler     chi.Router // optional: Go-based web UI routes
+	DB                 *storage.DB
+	CAS                *content.ContentStore
+	KeyPair            *identity.KeyPair
+	IdentityHolder     *identity.Holder
+	Posts              *social.PostService
+	Reactions          *social.ReactionService
+	Profiles           *social.ProfileService
+	DMs                *social.DMService
+	Follows            *social.FollowService
+	Notifs             *social.NotificationService
+	Feed               *feed.Manager
+	Timeline           *feed.Timeline
+	P2PHost            *p2p.Host
+	Config             *config.Config
+	ConfigPath         string
+	APITokenConfigured bool
+	IndexerClient      *indexer.IndexerClient
+	IdentityChange     func(*identity.KeyPair)
+	EnsureTopic        func(string) error
+	WebHandler         chi.Router // optional: Go-based web UI routes
 }
 
 // NewRouter creates the chi router with all API routes.
@@ -79,6 +80,7 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 	if deps.Config != nil {
 		h.SetConfig(deps.Config, deps.ConfigPath)
 	}
+	h.SetAPITokenConfigured(deps.APITokenConfigured)
 	if deps.IndexerClient != nil {
 		h.SetIndexerClient(deps.IndexerClient)
 	}

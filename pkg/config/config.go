@@ -38,8 +38,10 @@ type NetworkConfig struct {
 }
 
 type APIConfig struct {
-	ListenAddress   string `toml:"listen_address"`
-	EnableWebSocket bool   `toml:"enable_websocket"`
+	ListenAddress    string `toml:"listen_address"`
+	EnableWebSocket  bool   `toml:"enable_websocket"`
+	EnableWebUI      bool   `toml:"enable_web_ui"`
+	AllowRemoteWebUI bool   `toml:"allow_remote_web_ui"`
 }
 
 type IndexerConfig struct {
@@ -93,8 +95,10 @@ func DefaultConfig() *Config {
 			BandwidthLimitMbps: 0,
 		},
 		API: APIConfig{
-			ListenAddress:   "127.0.0.1:7470",
-			EnableWebSocket: true,
+			ListenAddress:    "127.0.0.1:7470",
+			EnableWebSocket:  true,
+			EnableWebUI:      true,
+			AllowRemoteWebUI: false,
 		},
 		Indexer: IndexerConfig{
 			PublicAPIAddress:     "0.0.0.0:7471",

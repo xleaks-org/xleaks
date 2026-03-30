@@ -31,6 +31,8 @@ make proto
 
 The node listens on `127.0.0.1:7470` for the local API/web UI and `7460` for P2P networking by default. Configuration is loaded from `~/.xleaks/config.toml`.
 
+Remote API exposure now requires API token auth, and remote exposure of the embedded web UI is a separate explicit opt-in via `api.allow_remote_web_ui = true`. The default listener is still loopback-only, which keeps the API and embedded web UI local by default.
+
 Default configs now ship with a working public bootstrap peer on `xleaks.org`
 plus a built-in public indexer at `http://xleaks.org:7471`, so clean installs
 can discover WAN peers and immediately use search/explore/trending without

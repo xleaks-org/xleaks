@@ -35,25 +35,26 @@ type EventBroadcaster func(eventType string, data interface{})
 
 // Handler holds all dependencies for HTTP API handlers.
 type Handler struct {
-	db               *storage.DB
-	cas              *content.ContentStore
-	kp               *identity.KeyPair
-	identity         *identity.Holder
-	posts            *social.PostService
-	reactions        *social.ReactionService
-	profiles         *social.ProfileService
-	dms              *social.DMService
-	follows          *social.FollowService
-	notifs           *social.NotificationService
-	feed             *feed.Manager
-	timeline         *feed.Timeline
-	indexerClient    *indexer.IndexerClient
-	p2pHost          *p2p.Host
-	cfg              *config.Config
-	cfgPath          string
-	broadcast        EventBroadcaster
-	onIdentityChange func(*identity.KeyPair)
-	ensureTopic      func(string) error
+	db                 *storage.DB
+	cas                *content.ContentStore
+	kp                 *identity.KeyPair
+	identity           *identity.Holder
+	posts              *social.PostService
+	reactions          *social.ReactionService
+	profiles           *social.ProfileService
+	dms                *social.DMService
+	follows            *social.FollowService
+	notifs             *social.NotificationService
+	feed               *feed.Manager
+	timeline           *feed.Timeline
+	indexerClient      *indexer.IndexerClient
+	p2pHost            *p2p.Host
+	cfg                *config.Config
+	cfgPath            string
+	apiTokenConfigured bool
+	broadcast          EventBroadcaster
+	onIdentityChange   func(*identity.KeyPair)
+	ensureTopic        func(string) error
 }
 
 // SetBroadcaster sets the WebSocket event broadcaster.
@@ -112,6 +113,11 @@ func (h *Handler) SetP2PHost(host *p2p.Host) {
 func (h *Handler) SetConfig(cfg *config.Config, cfgPath string) {
 	h.cfg = cfg
 	h.cfgPath = cfgPath
+}
+
+// SetAPITokenConfigured records whether the running server has token auth enabled.
+func (h *Handler) SetAPITokenConfigured(configured bool) {
+	h.apiTokenConfigured = configured
 }
 
 // SetIdentityChangeFunc registers the shared runtime hook for create, unlock,

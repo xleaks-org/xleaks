@@ -80,3 +80,33 @@ func TestValidateAPIExposure(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateWebUIExposure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		listenAddr         string
+		apiTokenConfigured bool
+		enableWebUI        bool
+		allowRemoteWebUI   bool
+		wantErr            bool
+	}{
+		{name: "loopback web ui allowed", listenAddr: "127.0.0.1:7470", enableWebUI: true},
+		{name: "loopback web ui disabled", listenAddr: "127.0.0.1:7470", enableWebUI: false},
+		{name: "public bind api only", listenAddr: "0.0.0.0:7470", enableWebUI: false},
+		{name: "public bind without token rejected", listenAddr: "0.0.0.0:7470", enableWebUI: true, wantErr: true},
+		{name: "public bind without explicit remote web opt in rejected", listenAddr: "0.0.0.0:7470", apiTokenConfigured: true, enableWebUI: true, wantErr: true},
+		{name: "public bind with token and remote web opt in", listenAddr: "0.0.0.0:7470", apiTokenConfigured: true, enableWebUI: true, allowRemoteWebUI: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateWebUIExposure(tt.listenAddr, tt.apiTokenConfigured, tt.enableWebUI, tt.allowRemoteWebUI)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateWebUIExposure() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
