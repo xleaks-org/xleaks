@@ -27,11 +27,11 @@ type routeLimit struct {
 // has its own limit configuration, and each IP address is tracked independently.
 type RouteRateLimiter struct {
 	mu       sync.Mutex
-	limits   map[string]*routeLimit            // path prefix -> limit config
-	visitors map[string]map[string]*visitor     // path prefix -> IP -> visitor
-	global   *routeLimit                        // global fallback limit
-	globalV  map[string]*visitor                // IP -> visitor for global limit
-	stop     chan struct{}                       // signals the cleanup goroutine to exit
+	limits   map[string]*routeLimit         // path prefix -> limit config
+	visitors map[string]map[string]*visitor // path prefix -> IP -> visitor
+	global   *routeLimit                    // global fallback limit
+	globalV  map[string]*visitor            // IP -> visitor for global limit
+	stop     chan struct{}                  // signals the cleanup goroutine to exit
 }
 
 // NewRouteRateLimiter creates a new per-route rate limiter.
@@ -226,21 +226,23 @@ func (rl *RouteRateLimiter) cleanup() {
 
 // extractIP extracts the client IP from the request, stripping the port.
 func extractIP(r *http.Request) string {
-	// Check X-Forwarded-For first (for reverse proxy setups).
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-
-	// Check X-Real-IP.
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-
-	// Fall back to RemoteAddr.
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
+
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+			parts := strings.SplitN(xff, ",", 2)
+			if candidate := strings.TrimSpace(parts[0]); net.ParseIP(candidate) != nil {
+				return candidate
+			}
+		}
+
+		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" && net.ParseIP(xri) != nil {
+			return xri
+		}
+	}
+
 	return host
 }
