@@ -69,6 +69,7 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis()); err != nil {
 		slog.Error("failed to upsert profile", "error", err)
 	}
+	slog.Info("identity created", "pubkey", pubkeyHex, "address", address)
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"pubkey":   pubkeyHex,
@@ -127,6 +128,7 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis()); err != nil {
 		slog.Error("failed to upsert profile", "error", err)
 	}
+	slog.Info("identity imported", "pubkey", pubkeyHex, "address", address)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"pubkey":  pubkeyHex,
@@ -155,6 +157,7 @@ func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 
 	kp, err := h.identity.Unlock(req.Passphrase)
 	if err != nil {
+		slog.Warn("identity unlock failed", "error", err)
 		respondError(w, http.StatusUnauthorized, "failed to unlock: "+err.Error())
 		return
 	}
@@ -164,6 +167,7 @@ func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
+	slog.Info("identity unlocked", "pubkey", pubkeyHex, "address", address)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "unlocked",
@@ -220,10 +224,15 @@ func (h *Handler) GetActiveIdentity(w http.ResponseWriter, r *http.Request) {
 
 // LockIdentity handles POST /api/identity/lock.
 func (h *Handler) LockIdentity(w http.ResponseWriter, r *http.Request) {
+	pubkeyHex := ""
+	if kp := h.currentKeyPair(); kp != nil {
+		pubkeyHex = hex.EncodeToString(kp.PublicKeyBytes())
+	}
 	if h.identity != nil {
 		h.identity.Lock()
 	}
 	h.updateIdentity(nil)
+	slog.Info("identity locked", "pubkey", pubkeyHex)
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "locked",
 	})
@@ -277,6 +286,7 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.identity.SwitchIdentity(pubkeyHex, req.Passphrase); err != nil {
+		slog.Warn("identity switch failed", "pubkey", pubkeyHex, "error", err)
 		respondError(w, http.StatusUnauthorized, "failed to switch identity: "+err.Error())
 		return
 	}
@@ -285,6 +295,7 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	h.updateIdentity(h.identity.Get())
 
 	address, _ := identity.PubKeyToAddress(pubkeyBytes)
+	slog.Info("identity switched", "pubkey", pubkeyHex, "address", address)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "switched",
@@ -306,6 +317,7 @@ func (h *Handler) ExportIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	address, _ := identity.PubKeyToAddress(mustDecodeHexString(pubkeyHex))
+	slog.Info("identity exported", "pubkey", pubkeyHex, "address", address)
 	body, err := json.MarshalIndent(map[string]interface{}{
 		"pubkey":        pubkeyHex,
 		"address":       address,

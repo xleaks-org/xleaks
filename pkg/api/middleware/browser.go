@@ -19,16 +19,19 @@ const (
 func BrowserGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if site := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))); site == "cross-site" {
+			logAccessRejection(r, "cross_site_browser_request", "sec_fetch_site", site)
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
 		if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && !OriginAllowed(r, origin) {
+			logAccessRejection(r, "cross_origin_request", "origin", origin)
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
 		if referer := strings.TrimSpace(r.Header.Get("Referer")); referer != "" && !sameOriginURL(r, referer) {
+			logAccessRejection(r, "cross_origin_referer", "referer", referer)
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -36,11 +39,13 @@ func BrowserGuard(next http.Handler) http.Handler {
 		if requiresBrowserCSRF(r) {
 			cookie, err := r.Cookie(browserCSRFCookieName)
 			if err != nil || !validBrowserCSRFToken(cookie.Value) {
+				logAccessRejection(r, "missing_browser_csrf_cookie")
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
 			token := strings.TrimSpace(r.Header.Get(browserCSRFHeaderName))
 			if !validBrowserCSRFToken(token) || subtle.ConstantTimeCompare([]byte(token), []byte(cookie.Value)) != 1 {
+				logAccessRejection(r, "invalid_browser_csrf", "has_header_token", token != "")
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}

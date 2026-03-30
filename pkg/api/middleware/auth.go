@@ -14,12 +14,14 @@ func LocalOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
+			logAccessRejection(r, "invalid_remote_addr")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
 		ip := net.ParseIP(host)
 		if ip == nil || !ip.IsLoopback() {
+			logAccessRejection(r, "non_loopback_remote", "remote_host", host)
 			http.Error(w, "Forbidden: API only accessible from localhost", http.StatusForbidden)
 			return
 		}
@@ -58,6 +60,7 @@ func TokenAuth(token string) func(http.Handler) http.Handler {
 				return
 			}
 
+			logAccessRejection(r, "invalid_api_token", "has_authorization", auth != "", "has_query_token", r.URL.Query().Has("token"))
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		})
 	}

@@ -3,11 +3,13 @@ package handlers
 import (
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -344,6 +346,7 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	// Persist to disk if we have a config path.
 	if h.cfgPath != "" {
 		if err := next.Save(h.cfgPath); err != nil {
+			slog.Error("failed to save node config", "path", h.cfgPath, "error", err)
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save config: %v", err))
 			return
 		}
@@ -352,6 +355,11 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	if refreshIndexers && h.indexerClient != nil {
 		h.indexerClient.SetIndexers(next.Indexer.KnownIndexers)
 	}
+	slog.Info("node config updated",
+		"updated_fields", sortedUpdateKeys(updates),
+		"saved_to_disk", h.cfgPath != "",
+		"refreshed_indexers", refreshIndexers,
+	)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "updated",
@@ -492,15 +500,18 @@ func (h *Handler) CreateBackup(w http.ResponseWriter, r *http.Request) {
 	backupDir := filepath.Dir(h.db.Path())
 	path, err := h.db.Backup(backupDir)
 	if err != nil {
+		slog.Error("database backup failed", "dir", backupDir, "error", err)
 		respondError(w, http.StatusInternalServerError, "backup failed: "+err.Error())
 		return
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
+		slog.Error("database backup stat failed", "path", path, "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to stat backup: "+err.Error())
 		return
 	}
+	slog.Info("database backup created", "path", path, "size", info.Size())
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"path":      path,
@@ -523,4 +534,13 @@ func toStringSlice(v interface{}) ([]string, bool) {
 		out = append(out, s)
 	}
 	return out, true
+}
+
+func sortedUpdateKeys(updates map[string]interface{}) []string {
+	keys := make([]string, 0, len(updates))
+	for key := range updates {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
