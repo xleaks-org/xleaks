@@ -58,10 +58,16 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 	handler = middleware.CORS()(handler)
 
-	// Create a top-level mux so /health and /metrics bypass all auth/local middleware.
+	metricsHandler := middleware.LocalOnly(cfg.APIToken != "")(metrics.Handler())
+	if cfg.APIToken != "" {
+		metricsHandler = middleware.TokenAuth(cfg.APIToken)(metricsHandler)
+	}
+
+	// Create a top-level mux so /health bypasses all auth/local middleware while
+	// /metrics still follows the server's local/token exposure policy.
 	topMux := http.NewServeMux()
 	topMux.HandleFunc("GET /health", handleHealth)
-	topMux.HandleFunc("GET /metrics", metrics.Handler())
+	topMux.Handle("GET /metrics", metricsHandler)
 	topMux.Handle("/", handler)
 
 	serverHandler := middleware.SecurityHeaders(topMux)
@@ -83,7 +89,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 }
 
 // handleHealth responds with the node's health status, version, and uptime.
-// This endpoint is unauthenticated and bypasses all middleware.
+// This endpoint is unauthenticated and bypasses the main auth/local middleware.
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

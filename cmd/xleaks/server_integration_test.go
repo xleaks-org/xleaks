@@ -135,6 +135,16 @@ func TestMountedServerHealthBypassesTokenAuthButAPIRequiresIt(t *testing.T) {
 		t.Fatalf("GET /health status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
+	resp, err = client.Get(testServer.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("GET /metrics without token error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("GET /metrics without token status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+
 	resp, err = client.Get(testServer.URL + "/api/node/status")
 	if err != nil {
 		t.Fatalf("GET /api/node/status without token error = %v", err)
@@ -159,6 +169,39 @@ func TestMountedServerHealthBypassesTokenAuthButAPIRequiresIt(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/node/status with token status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, testServer.URL+"/metrics", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(authenticated metrics) error = %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /metrics with token error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /metrics with token status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
+func TestMountedServerMetricsRemainLocalWithoutToken(t *testing.T) {
+	t.Parallel()
+
+	testServer := newMountedTestServer(t, "")
+	defer testServer.Close()
+
+	resp, err := testServer.Client().Get(testServer.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("GET /metrics error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /metrics status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 }
 
