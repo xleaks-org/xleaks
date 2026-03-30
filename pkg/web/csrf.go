@@ -51,7 +51,11 @@ func requireCSRF(next http.Handler) http.Handler {
 
 		token := strings.TrimSpace(r.Header.Get(csrfHeaderName))
 		if token == "" {
-			if err := r.ParseForm(); err != nil {
+			if err := parseRequestForm(r); err != nil {
+				if formBodyTooLarge(err) {
+					http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+					return
+				}
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}

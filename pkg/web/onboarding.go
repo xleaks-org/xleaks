@@ -32,7 +32,11 @@ func (h *Handler) onboardingPage(w http.ResponseWriter, r *http.Request) {
 
 // handleCreate processes the identity creation form.
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		h.renderOnboardingError(w, r, "Invalid form data", true)
 		return
 	}
@@ -71,7 +75,11 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 // handleVerifyStep shows the seed confirmation page.
 func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -86,7 +94,11 @@ func (h *Handler) handleVerifyStep(w http.ResponseWriter, r *http.Request) {
 
 // handleConfirmSeed verifies the user filled in the correct words.
 func (h *Handler) handleConfirmSeed(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -119,7 +131,11 @@ func (h *Handler) handleConfirmSeed(w http.ResponseWriter, r *http.Request) {
 
 // handleSetProfile sets the user's display name.
 func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -155,7 +171,11 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 
 // handleImport processes the identity import form.
 func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		h.renderOnboardingError(w, r, "Invalid form data", true)
 		return
 	}
@@ -201,7 +221,11 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 
 // handleUnlock processes the unlock form.
 func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		h.renderOnboardingError(w, r, "Invalid form data", false)
 		return
 	}

@@ -203,6 +203,7 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Use(noStoreResponses)
 	r.Use(ensureCSRFCookie)
+	r.Use(limitFormBody)
 	r.Use(requireCSRF)
 
 	r.Get("/", h.homePage)

@@ -12,7 +12,11 @@ func (h *Handler) termsPage(w http.ResponseWriter, r *http.Request) {
 
 // handleAcceptTerms processes the terms acceptance form.
 func (h *Handler) handleAcceptTerms(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}

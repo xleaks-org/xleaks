@@ -154,7 +154,11 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 
 // handlePost creates a new post from form data using the callback.
 func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -346,7 +350,11 @@ func (h *Handler) trendingPostsPartial(w http.ResponseWriter, r *http.Request) {
 
 // handleLike creates a like reaction and returns the updated button HTML.
 func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -390,7 +398,11 @@ func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
 // handleRepost creates a repost (a new post with repost_of set) and returns updated button HTML.
 // Per XLeaks protocol, reposts are immutable -- once reposted, it cannot be undone.
 func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}

@@ -211,7 +211,11 @@ func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Direct messaging not configured", http.StatusInternalServerError)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -248,7 +252,11 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Profile updates not configured", http.StatusInternalServerError)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -300,7 +308,11 @@ func (h *Handler) handleSwitchIdentity(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings?error=identity+system+not+available", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseRequestForm(r); err != nil {
+		if formBodyTooLarge(err) {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Redirect(w, r, "/settings?error=invalid+form+data", http.StatusSeeOther)
 		return
 	}
