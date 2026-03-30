@@ -41,6 +41,14 @@ func GenerateMediaThumbnail(data []byte, mimeType string, quality int) ([]byte, 
 // The thumbnail is resized to ThumbnailMaxWidth pixels wide, maintaining aspect ratio.
 // Returns the thumbnail JPEG data and its CID.
 func GenerateThumbnailWithQuality(imageData []byte, quality int) ([]byte, []byte, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(imageData))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode image config: %w", err)
+	}
+	if err := ValidateImageDimensions(cfg.Width, cfg.Height); err != nil {
+		return nil, nil, err
+	}
+
 	src, _, err := image.Decode(bytes.NewReader(imageData))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to decode image: %w", err)

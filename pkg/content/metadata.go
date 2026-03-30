@@ -26,6 +26,9 @@ func ExtractImageMetadata(data []byte) (*MediaMetadata, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ValidateImageDimensions(cfg.Width, cfg.Height); err != nil {
+		return nil, err
+	}
 	mimeType := "image/" + format
 	return &MediaMetadata{
 		Width:    uint32(cfg.Width),

@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +16,7 @@ import (
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/config"
+	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/indexer"
@@ -32,6 +37,11 @@ func testHandler(t *testing.T) (*Handler, *storage.DB) {
 	}
 	t.Cleanup(func() { db.Close() })
 
+	cas, err := content.NewContentStore(filepath.Join(dir, "cas"))
+	if err != nil {
+		t.Fatalf("NewContentStore: %v", err)
+	}
+
 	kp, err := identity.GenerateKeyPair()
 	if err != nil {
 		t.Fatalf("GenerateKeyPair: %v", err)
@@ -48,10 +58,33 @@ func testHandler(t *testing.T) (*Handler, *storage.DB) {
 	fm := feed.NewManager(db)
 	tl := feed.NewTimeline(db, idHolder)
 
-	h := New(db, nil, kp, nil, nil, nil, nil, nil, nil, fm, tl)
+	h := New(db, cas, kp, nil, nil, nil, nil, nil, nil, fm, tl)
 	h.SetIdentityHolder(idHolder)
 
 	return h, db
+}
+
+func testPNGWithDimensions(width, height uint32) []byte {
+	var buf bytes.Buffer
+	buf.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+
+	writeChunk := func(name string, data []byte) {
+		_ = binary.Write(&buf, binary.BigEndian, uint32(len(data)))
+		buf.WriteString(name)
+		buf.Write(data)
+		crc := crc32.ChecksumIEEE(append([]byte(name), data...))
+		_ = binary.Write(&buf, binary.BigEndian, crc)
+	}
+
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], width)
+	binary.BigEndian.PutUint32(ihdr[4:8], height)
+	ihdr[8] = 8
+	ihdr[9] = 2
+	writeChunk("IHDR", ihdr)
+	writeChunk("IEND", nil)
+
+	return buf.Bytes()
 }
 
 // ---------- Utility function tests ----------
@@ -580,6 +613,37 @@ func TestCreatePostRejectsTooLongContent(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestUploadMediaRejectsOversizedImageDimensions(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fileWriter, err := writer.CreateFormFile("file", "huge.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fileWriter.Write(testPNGWithDimensions(content.MaxImageWidth, content.MaxImageHeight)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/media", &body)
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	h.UploadMedia(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(w.Body.String(), "invalid image") {
+		t.Fatalf("body = %q, want invalid image error", w.Body.String())
 	}
 }
 

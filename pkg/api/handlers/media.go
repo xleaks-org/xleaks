@@ -56,6 +56,22 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Extract and validate metadata before any expensive image decoding.
+	var width, height, duration uint32
+	if isImageMime(mimeType) {
+		meta, err := content.ExtractImageMetadata(data)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid image: "+err.Error())
+			return
+		}
+		width = meta.Width
+		height = meta.Height
+	} else if meta := content.ExtractMediaMetadata(data, mimeType); meta != nil {
+		width = meta.Width
+		height = meta.Height
+		duration = meta.Duration
+	}
+
 	// Chunk the file.
 	chunks, err := content.ChunkFile(data)
 	if err != nil {
@@ -82,14 +98,6 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	if err := h.cas.Put(fileCID, data); err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to store media file")
 		return
-	}
-
-	// Extract media metadata (width, height, duration).
-	var width, height, duration uint32
-	if meta := content.ExtractMediaMetadata(data, mimeType); meta != nil {
-		width = meta.Width
-		height = meta.Height
-		duration = meta.Duration
 	}
 
 	thumbnailQuality := content.ThumbnailJPEGQuality

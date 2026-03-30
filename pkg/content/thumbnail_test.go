@@ -2,6 +2,7 @@ package content
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -46,5 +47,14 @@ func TestGenerateThumbnailWithQuality_Image(t *testing.T) {
 	}
 	if !ValidateCID(cid, thumb) {
 		t.Fatal("expected thumbnail CID to match bytes")
+	}
+}
+
+func TestGenerateThumbnailWithQualityRejectsOversizedImage(t *testing.T) {
+	data := testPNGWithDimensions(MaxImageWidth, MaxImageHeight)
+
+	_, _, err := GenerateThumbnailWithQuality(data, 60)
+	if !errors.Is(err, ErrImageDimensionsTooLarge) {
+		t.Fatalf("GenerateThumbnailWithQuality error = %v, want ErrImageDimensionsTooLarge", err)
 	}
 }

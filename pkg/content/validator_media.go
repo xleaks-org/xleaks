@@ -2,6 +2,7 @@ package content
 
 import (
 	"fmt"
+	"strings"
 
 	pb "github.com/xleaks-org/xleaks/proto/gen"
 	"google.golang.org/protobuf/proto"
@@ -26,6 +27,11 @@ func ValidateMediaObject(obj *pb.MediaObject, verify SignatureVerifier) error {
 	}
 	if obj.Size > MaxMediaSize {
 		return fmt.Errorf("size exceeds maximum of %d bytes", MaxMediaSize)
+	}
+	if strings.HasPrefix(obj.MimeType, "image/") && (obj.Width != 0 || obj.Height != 0) {
+		if err := ValidateImageMetadataFields(obj.Width, obj.Height); err != nil {
+			return fmt.Errorf("invalid image dimensions: %w", err)
+		}
 	}
 	if obj.ChunkCount == 0 {
 		return fmt.Errorf("chunk_count must be greater than zero")
