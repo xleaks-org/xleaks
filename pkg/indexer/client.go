@@ -12,15 +12,25 @@ import (
 	"time"
 )
 
+const (
+	defaultIndexerClientCacheTTL = 60 * time.Second
+	maxIndexerClientCacheEntries = 1024
+	indexerClientCleanupInterval = 5 * time.Minute
+)
+
 // IndexerClient is an HTTP client for querying remote indexer nodes.
 // It tries each known indexer in order, skipping unavailable ones,
 // and caches responses for 60 seconds.
 type IndexerClient struct {
-	mu            sync.RWMutex
-	httpClient    *http.Client
-	knownIndexers []string // base URLs like "http://host:7471"
-	cache         map[string]*cachedResponse
-	cancel        context.CancelFunc
+	mu              sync.RWMutex
+	httpClient      *http.Client
+	knownIndexers   []string // base URLs like "http://host:7471"
+	cache           map[string]*cachedResponse
+	cancel          context.CancelFunc
+	stopOnce        sync.Once
+	cacheTTL        time.Duration
+	maxCacheEntries int
+	now             func() time.Time
 }
 
 type cachedResponse struct {
@@ -90,9 +100,12 @@ func NewIndexerClient(ctx context.Context) *IndexerClient {
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
-		knownIndexers: make([]string, 0),
-		cache:         make(map[string]*cachedResponse),
-		cancel:        cancel,
+		knownIndexers:   make([]string, 0),
+		cache:           make(map[string]*cachedResponse),
+		cancel:          cancel,
+		cacheTTL:        defaultIndexerClientCacheTTL,
+		maxCacheEntries: maxIndexerClientCacheEntries,
+		now:             time.Now,
 	}
 	go c.cacheCleanupLoop(ctx)
 	return c
@@ -100,13 +113,18 @@ func NewIndexerClient(ctx context.Context) *IndexerClient {
 
 // Close stops the background cache cleanup goroutine.
 func (c *IndexerClient) Close() {
-	c.cancel()
+	if c == nil {
+		return
+	}
+	c.stopOnce.Do(func() {
+		c.cancel()
+	})
 }
 
 // cacheCleanupLoop periodically removes expired entries from the cache.
 // It runs every 5 minutes and stops when the context is cancelled.
 func (c *IndexerClient) cacheCleanupLoop(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(indexerClientCleanupInterval)
 	defer ticker.Stop()
 
 	for {
@@ -124,7 +142,7 @@ func (c *IndexerClient) evictExpiredEntries() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	now := time.Now()
+	now := c.currentTime()
 	evicted := 0
 	for key, entry := range c.cache {
 		if now.After(entry.expiresAt) {
@@ -355,7 +373,7 @@ func (c *IndexerClient) getFromCache(key string) interface{} {
 	if !ok {
 		return nil
 	}
-	if time.Now().After(entry.expiresAt) {
+	if c.currentTime().After(entry.expiresAt) {
 		delete(c.cache, key)
 		return nil
 	}
@@ -367,8 +385,48 @@ func (c *IndexerClient) putInCache(key string, data interface{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.cacheTTL <= 0 {
+		c.cacheTTL = defaultIndexerClientCacheTTL
+	}
+	if c.maxCacheEntries <= 0 {
+		c.maxCacheEntries = maxIndexerClientCacheEntries
+	}
+	now := c.currentTime()
+	for cacheKey, entry := range c.cache {
+		if now.After(entry.expiresAt) {
+			delete(c.cache, cacheKey)
+		}
+	}
+	if _, exists := c.cache[key]; !exists && len(c.cache) >= c.maxCacheEntries {
+		c.evictOldestEntryLocked()
+	}
 	c.cache[key] = &cachedResponse{
 		data:      data,
-		expiresAt: time.Now().Add(60 * time.Second),
+		expiresAt: now.Add(c.cacheTTL),
+	}
+}
+
+func (c *IndexerClient) currentTime() time.Time {
+	if c != nil && c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+func (c *IndexerClient) evictOldestEntryLocked() {
+	var (
+		oldestKey    string
+		oldestExpiry time.Time
+		found        bool
+	)
+	for key, entry := range c.cache {
+		if !found || entry.expiresAt.Before(oldestExpiry) {
+			oldestKey = key
+			oldestExpiry = entry.expiresAt
+			found = true
+		}
+	}
+	if found {
+		delete(c.cache, oldestKey)
 	}
 }
