@@ -379,23 +379,53 @@
             }
         }
 
+        function openRealtimeSocket(url) {
+            var ws = new WebSocket(url);
+            ws.onmessage = function(e) {
+                try {
+                    handleRealtimeEvent(JSON.parse(e.data));
+                } catch (err) {
+                }
+            };
+            ws.onclose = function() {
+                setTimeout(function() {
+                    if (!document.hidden) {
+                        location.reload();
+                    }
+                }, 30000);
+            };
+        }
+
+        function connectRealtimeSocket() {
+            var wsURL = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+            var wsTicketPath = {{printf "%q" .WebSocketTicketPath}};
+
+            if (!wsTicketPath || !window.xleaksFetch) {
+                openRealtimeSocket(wsURL);
+                return;
+            }
+
+            window.xleaksFetch(wsTicketPath, { method: 'POST' })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('websocket ticket request failed');
+                    }
+                    return response.json();
+                })
+                .then(function(payload) {
+                    if (!payload || !payload.ticket) {
+                        throw new Error('missing websocket ticket');
+                    }
+                    openRealtimeSocket(wsURL + '?ws_ticket=' + encodeURIComponent(payload.ticket));
+                })
+                .catch(function() {
+                    openRealtimeSocket(wsURL);
+                });
+        }
+
         loadStoredBadges();
         refreshNotificationBadge();
-
-        var ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws');
-        ws.onmessage = function(e) {
-            try {
-                handleRealtimeEvent(JSON.parse(e.data));
-            } catch (err) {
-            }
-        };
-        ws.onclose = function() {
-            setTimeout(function() {
-                if (!document.hidden) {
-                    location.reload();
-                }
-            }, 30000);
-        };
+        connectRealtimeSocket();
     })();
     </script>
     {{end}}

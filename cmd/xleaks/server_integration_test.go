@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gorilla/websocket"
 	"github.com/xleaks-org/xleaks/pkg/api"
 	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/identity"
@@ -269,7 +271,90 @@ func TestMountedServerAllowsForwardedHTTPSBrowserFlowWithTokenAuth(t *testing.T)
 	}
 }
 
+func TestMountedServerWebSocketTicketFlowWithTokenAuth(t *testing.T) {
+	t.Parallel()
+
+	const apiToken = "integration-token"
+	testServer := newMountedTestServerWithWebSocket(t, apiToken, true)
+	defer testServer.Close()
+
+	client := testServer.Client()
+
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/signup", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(GET /signup) error = %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /signup error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	csrfCookie := findCookie(resp.Cookies(), "xleaks_csrf")
+	if csrfCookie == nil || csrfCookie.Value == "" {
+		t.Fatal("expected csrf cookie before requesting websocket ticket")
+	}
+
+	req, err = http.NewRequest(http.MethodPost, testServer.URL+"/api/ws-ticket", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(POST /api/ws-ticket) error = %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Origin", testServer.URL)
+	req.Header.Set("X-CSRF-Token", csrfCookie.Value)
+
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/ws-ticket error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /api/ws-ticket status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var ticketResp struct {
+		Ticket string `json:"ticket"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ticketResp); err != nil {
+		t.Fatalf("decode websocket ticket response error = %v", err)
+	}
+	if ticketResp.Ticket == "" {
+		t.Fatal("expected websocket ticket in response")
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/ws?ws_ticket=" + url.QueryEscape(ticketResp.Ticket)
+	header := http.Header{}
+	header.Set("Origin", testServer.URL)
+
+	conn, wsResp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		if wsResp != nil {
+			t.Fatalf("Dial websocket error = %v, status = %d", err, wsResp.StatusCode)
+		}
+		t.Fatalf("Dial websocket error = %v", err)
+	}
+	_ = conn.Close()
+
+	_, wsResp, err = websocket.DefaultDialer.Dial(wsURL, header)
+	if err == nil {
+		t.Fatal("expected one-time websocket ticket replay to fail")
+	}
+	if wsResp == nil {
+		t.Fatal("expected HTTP response for failed websocket replay")
+	}
+	if wsResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("replayed websocket ticket status = %d, want %d", wsResp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
 func newMountedTestServer(t *testing.T, apiToken string) *httptest.Server {
+	return newMountedTestServerWithWebSocket(t, apiToken, false)
+}
+
+func newMountedTestServerWithWebSocket(t *testing.T, apiToken string, enableWebSocket bool) *httptest.Server {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -278,7 +363,7 @@ func newMountedTestServer(t *testing.T, apiToken string) *httptest.Server {
 	cfg := config.DefaultConfig()
 	cfg.Node.DataDir = t.TempDir()
 	cfg.API.ListenAddress = "127.0.0.1:0"
-	cfg.API.EnableWebSocket = false
+	cfg.API.EnableWebSocket = enableWebSocket
 	cfg.Network.EnableMDNS = false
 	cfg.Network.EnableRelay = false
 	cfg.Network.EnableHolePunching = false

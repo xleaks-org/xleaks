@@ -53,6 +53,12 @@ func LocalOnly(allowForwarded bool) func(http.Handler) http.Handler {
 // TokenAuth middleware validates Bearer token from requests. If the provided
 // token is empty, auth is disabled and all requests are allowed through.
 func TokenAuth(token string) func(http.Handler) http.Handler {
+	return TokenAuthWithWebSocketTicket(token, nil)
+}
+
+// TokenAuthWithWebSocketTicket validates Bearer tokens and optionally accepts
+// one-time WebSocket tickets on upgrade requests.
+func TokenAuthWithWebSocketTicket(token string, validateWebSocketTicket func(string) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// If no token configured, skip auth entirely.
@@ -75,12 +81,22 @@ func TokenAuth(token string) func(http.Handler) http.Handler {
 			}
 
 			// Allow query-string tokens only on actual WebSocket handshakes.
-			if isWebSocketHandshake(r) && r.URL.Query().Get("token") == token {
-				next.ServeHTTP(w, r)
-				return
+			if isWebSocketHandshake(r) {
+				if validateWebSocketTicket != nil && validateWebSocketTicket(r.URL.Query().Get("ws_ticket")) {
+					next.ServeHTTP(w, r)
+					return
+				}
+				if r.URL.Query().Get("token") == token {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 
-			logAccessRejection(r, "invalid_api_token", "has_authorization", auth != "", "has_query_token", r.URL.Query().Has("token"))
+			logAccessRejection(r, "invalid_api_token",
+				"has_authorization", auth != "",
+				"has_query_token", r.URL.Query().Has("token"),
+				"has_ws_ticket", r.URL.Query().Has("ws_ticket"),
+			)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		})
 	}

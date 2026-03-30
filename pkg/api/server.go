@@ -28,6 +28,7 @@ type ServerConfig struct {
 type Server struct {
 	httpServer *http.Server
 	wsHub      *WSHub
+	wsTickets  *WSTicketManager
 	router     http.Handler
 	apiToken   string
 }
@@ -41,9 +42,15 @@ func NewServer(listenAddr string, deps *HandlerDeps) *Server {
 // NewServerWithConfig creates a new API server from the given config.
 func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	var wsHub *WSHub
+	var wsTickets *WSTicketManager
 	if cfg.EnableWebSocket {
 		wsHub = NewWSHub()
+		wsTickets = NewWSTicketManager(defaultWSTicketTTL)
 	}
+	if deps == nil {
+		deps = &HandlerDeps{}
+	}
+	deps.WSTickets = wsTickets
 	router := NewRouter(deps, wsHub)
 
 	// Build the middleware chain (outermost first, innermost last):
@@ -53,7 +60,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 	handler = middleware.BrowserGuard(handler)
 
 	if cfg.APIToken != "" {
-		handler = middleware.TokenAuth(cfg.APIToken)(handler)
+		handler = middleware.TokenAuthWithWebSocketTicket(cfg.APIToken, wsTickets.ValidateAndConsume)(handler)
 	}
 
 	handler = middleware.CORS()(handler)
@@ -80,9 +87,10 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
-		wsHub:    wsHub,
-		router:   router,
-		apiToken: cfg.APIToken,
+		wsHub:     wsHub,
+		wsTickets: wsTickets,
+		router:    router,
+		apiToken:  cfg.APIToken,
 	}
 
 	return s

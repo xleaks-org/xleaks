@@ -294,10 +294,11 @@ func (h *Handler) currentUser(r *http.Request) *UserInfo {
 // pageData returns the base template data for a page.
 func (h *Handler) pageData(r *http.Request, active, title string) map[string]interface{} {
 	data := map[string]interface{}{
-		"Active":           active,
-		"Title":            title,
-		"User":             h.currentUser(r),
-		"WebSocketEnabled": h.enableWebSocket,
+		"Active":              active,
+		"Title":               title,
+		"User":                h.currentUser(r),
+		"WebSocketEnabled":    h.enableWebSocket,
+		"WebSocketTicketPath": "/api/ws-ticket",
 	}
 	if token := csrfTokenFromRequest(r); token != "" {
 		data["CSRFToken"] = token

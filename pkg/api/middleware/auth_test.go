@@ -82,6 +82,29 @@ func TestTokenAuthAllowsQueryTokenOnWebSocketHandshake(t *testing.T) {
 	}
 }
 
+func TestTokenAuthAllowsWebSocketTicketOnHandshake(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7470/ws?ws_ticket=ticket-123", nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	rr := httptest.NewRecorder()
+	called := false
+
+	TokenAuthWithWebSocketTicket("secret", func(ticket string) bool {
+		return ticket == "ticket-123"
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})).ServeHTTP(rr, req)
+
+	if !called {
+		t.Fatal("websocket ticket should reach handler")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
 func TestSaveTokenCreatesOwnerOnlyFile(t *testing.T) {
 	t.Parallel()
 

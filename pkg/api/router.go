@@ -40,6 +40,7 @@ type HandlerDeps struct {
 	IdentityChange     func(*identity.KeyPair)
 	EnsureTopic        func(string) error
 	WebHandler         chi.Router // optional: Go-based web UI routes
+	WSTickets          *WSTicketManager
 }
 
 // NewRouter creates the chi router with all API routes.
@@ -156,6 +157,10 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 		r.Get("/node/config", h.GetNodeConfig)
 		r.Put("/node/config", h.UpdateNodeConfig)
 		r.Post("/node/backup", h.CreateBackup)
+
+		if deps.WSTickets != nil {
+			r.Post("/ws-ticket", deps.WSTickets.IssueHandler)
+		}
 	})
 
 	// WebSocket
