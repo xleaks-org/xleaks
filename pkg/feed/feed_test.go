@@ -610,6 +610,127 @@ func TestTimelineEnrichesAuthorName(t *testing.T) {
 	}
 }
 
+func TestGetFeedForPubkeyUsesProvidedViewerSubscriptions(t *testing.T) {
+	t.Parallel()
+	s := setup(t)
+
+	holder := identity.NewHolder(t.TempDir())
+	activeKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair(active): %v", err)
+	}
+	holder.Set(activeKP)
+
+	if err := s.db.UpsertProfile(activeKP.PublicKeyBytes(), "Active", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile active: %v", err)
+	}
+
+	followedKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair(followed): %v", err)
+	}
+	if err := s.db.UpsertProfile(followedKP.PublicKeyBytes(), "Followed", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile followed: %v", err)
+	}
+
+	if err := s.db.AddSubscription(s.kp.PublicKeyBytes(), followedKP.PublicKeyBytes(), time.Now().UnixMilli()); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+
+	now := time.Now().UnixMilli()
+	viewerPostCID := make([]byte, 32)
+	viewerPostCID[0] = 0x41
+	if err := s.db.InsertPost(viewerPostCID, s.kp.PublicKeyBytes(), "viewer own post", nil, nil, now, make([]byte, 64)); err != nil {
+		t.Fatalf("InsertPost viewer: %v", err)
+	}
+	followedPostCID := make([]byte, 32)
+	followedPostCID[0] = 0x42
+	if err := s.db.InsertPost(followedPostCID, followedKP.PublicKeyBytes(), "followed post", nil, nil, now-1000, make([]byte, 64)); err != nil {
+		t.Fatalf("InsertPost followed: %v", err)
+	}
+	activePostCID := make([]byte, 32)
+	activePostCID[0] = 0x43
+	if err := s.db.InsertPost(activePostCID, activeKP.PublicKeyBytes(), "active-only post", nil, nil, now-2000, make([]byte, 64)); err != nil {
+		t.Fatalf("InsertPost active: %v", err)
+	}
+
+	tl := NewTimeline(s.db, holder)
+	entries, err := tl.GetFeedForPubkey(s.kp.PublicKeyBytes(), 0, 50)
+	if err != nil {
+		t.Fatalf("GetFeedForPubkey: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("len(entries) = %d, want 2", len(entries))
+	}
+
+	authorSet := make(map[string]bool)
+	for _, entry := range entries {
+		authorSet[hex.EncodeToString(entry.Post.Author)] = true
+	}
+	if !authorSet[hex.EncodeToString(s.kp.PublicKeyBytes())] {
+		t.Fatal("viewer own post missing from session feed")
+	}
+	if !authorSet[hex.EncodeToString(followedKP.PublicKeyBytes())] {
+		t.Fatal("followed post missing from session feed")
+	}
+	if authorSet[hex.EncodeToString(activeKP.PublicKeyBytes())] {
+		t.Fatal("active holder identity leaked into session feed")
+	}
+}
+
+func TestGetGlobalFeedForPubkeyUsesProvidedViewerReactions(t *testing.T) {
+	t.Parallel()
+	s := setup(t)
+
+	holder := identity.NewHolder(t.TempDir())
+	activeKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair(active): %v", err)
+	}
+	holder.Set(activeKP)
+
+	viewerKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair(viewer): %v", err)
+	}
+	if err := s.db.UpsertProfile(viewerKP.PublicKeyBytes(), "Viewer", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile viewer: %v", err)
+	}
+
+	postCID := make([]byte, 32)
+	postCID[0] = 0x51
+	if err := s.db.InsertPost(postCID, s.kp.PublicKeyBytes(), "reacted post", nil, nil, time.Now().UnixMilli(), make([]byte, 64)); err != nil {
+		t.Fatalf("InsertPost: %v", err)
+	}
+
+	likeCID := make([]byte, 32)
+	likeCID[0] = 0x61
+	if err := s.db.InsertReaction(likeCID, viewerKP.PublicKeyBytes(), postCID, "like", time.Now().UnixMilli()); err != nil {
+		t.Fatalf("InsertReaction like: %v", err)
+	}
+	repostCID := make([]byte, 32)
+	repostCID[0] = 0x62
+	if err := s.db.InsertReaction(repostCID, viewerKP.PublicKeyBytes(), postCID, "repost", time.Now().UnixMilli()); err != nil {
+		t.Fatalf("InsertReaction repost: %v", err)
+	}
+
+	tl := NewTimeline(s.db, holder)
+	entries, err := tl.GetGlobalFeedForPubkey(viewerKP.PublicKeyBytes(), 0, 10)
+	if err != nil {
+		t.Fatalf("GetGlobalFeedForPubkey: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(entries))
+	}
+	if !entries[0].IsLiked {
+		t.Fatal("IsLiked = false, want true for provided viewer pubkey")
+	}
+	if !entries[0].IsReposted {
+		t.Fatal("IsReposted = false, want true for provided viewer pubkey")
+	}
+}
+
 // ---------- nextBackoff tests ----------
 
 func TestNextBackoff(t *testing.T) {
@@ -626,7 +747,7 @@ func TestNextBackoff(t *testing.T) {
 			name:    "doubles with jitter",
 			current: 30 * time.Second,
 			max:     10 * time.Minute,
-			wantMin: 60 * time.Second,            // 2x, no jitter
+			wantMin: 60 * time.Second,                // 2x, no jitter
 			wantMax: 60*time.Second + 15*time.Second, // 2x + half of current
 		},
 		{

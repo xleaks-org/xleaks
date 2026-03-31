@@ -1,11 +1,13 @@
 package web
 
 import (
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
@@ -162,5 +164,109 @@ func TestFeedPartialReplyThreadFailureDoesNotLeakBackendError(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(body), "sql") || strings.Contains(strings.ToLower(body), "closed") {
 		t.Fatalf("body leaked backend error details: %q", body)
+	}
+}
+
+func TestFeedPartialUsesSessionIdentityForLikeState(t *testing.T) {
+	t.Parallel()
+
+	handler, db, _ := testFeedPartialHandler(t)
+
+	viewerKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair(viewer): %v", err)
+	}
+	authorKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair(author): %v", err)
+	}
+	if err := db.UpsertProfile(viewerKP.PublicKeyBytes(), "Viewer", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile(viewer): %v", err)
+	}
+	if err := db.UpsertProfile(authorKP.PublicKeyBytes(), "Author", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile(author): %v", err)
+	}
+
+	postCID := make([]byte, 32)
+	postCID[0] = 0x71
+	if err := db.InsertPost(postCID, authorKP.PublicKeyBytes(), "liked by session viewer", nil, nil, time.Now().UnixMilli(), make([]byte, 64)); err != nil {
+		t.Fatalf("InsertPost: %v", err)
+	}
+	reactionCID := make([]byte, 32)
+	reactionCID[0] = 0x72
+	if err := db.InsertReaction(reactionCID, viewerKP.PublicKeyBytes(), postCID, "like", time.Now().UnixMilli()); err != nil {
+		t.Fatalf("InsertReaction: %v", err)
+	}
+
+	token, err := handler.sessions.Create(viewerKP)
+	if err != nil {
+		t.Fatalf("Create(session): %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/web/feed?all=1", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	handler.feedPartial(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	body := rr.Body.String()
+	postID := hex.EncodeToString(postCID)
+	if !strings.Contains(body, "liked by session viewer") {
+		t.Fatalf("body = %q, want rendered post content", body)
+	}
+	if !strings.Contains(body, `text-red-400 flex items-center gap-1`) {
+		t.Fatalf("body = %q, want liked-state markup", body)
+	}
+	if strings.Contains(body, `hx-post="/web/like" hx-vals='{"target":"`+postID+`"}'`) {
+		t.Fatalf("body rendered unliked action for session-liked post: %q", body)
+	}
+}
+
+func TestNodeStatusPartialUsesSessionIdentityForSubscriptions(t *testing.T) {
+	t.Parallel()
+
+	handler, db, _ := testFeedPartialHandler(t)
+
+	viewerKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair(viewer): %v", err)
+	}
+	targetKP, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair(target): %v", err)
+	}
+	if err := db.UpsertProfile(viewerKP.PublicKeyBytes(), "Viewer", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile(viewer): %v", err)
+	}
+	if err := db.UpsertProfile(targetKP.PublicKeyBytes(), "Target", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile(target): %v", err)
+	}
+	if err := db.AddSubscription(viewerKP.PublicKeyBytes(), targetKP.PublicKeyBytes(), time.Now().UnixMilli()); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+
+	token, err := handler.sessions.Create(viewerKP)
+	if err != nil {
+		t.Fatalf("Create(session): %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/web/node-status", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	handler.nodeStatusPartial(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Following") {
+		t.Fatalf("body = %q, want following row for session subscriptions", body)
+	}
+	if !strings.Contains(body, ">1<") {
+		t.Fatalf("body = %q, want session subscription count", body)
 	}
 }

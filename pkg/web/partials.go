@@ -25,6 +25,10 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 		renderSessionExpiredPartial(w)
 		return
 	}
+	var sessionPubkey []byte
+	if kp := h.getKeyPair(r); kp != nil {
+		sessionPubkey = kp.PublicKeyBytes()
+	}
 
 	// Handle reply_to filter: load replies to a specific post.
 	replyTo := strings.TrimSpace(r.URL.Query().Get("reply_to"))
@@ -69,7 +73,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 			renderPartialError(w, http.StatusBadRequest, "Invalid author key.")
 			return
 		}
-		entries, err := h.timeline.GetUserPosts(authorBytes, before, pageSize+1)
+		entries, err := h.timeline.GetUserPostsForPubkey(sessionPubkey, authorBytes, before, pageSize+1)
 		if err != nil {
 			slog.Error("failed to get user posts", "error", err)
 			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load posts.</p></div>`)
@@ -110,7 +114,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 
 	if !useGlobal {
 		var err error
-		entries, err = h.timeline.GetFeed(before, pageSize+1)
+		entries, err = h.timeline.GetFeedForPubkey(sessionPubkey, before, pageSize+1)
 		if err != nil {
 			slog.Error("failed to get feed", "error", err)
 			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load feed.</p></div>`)
@@ -124,7 +128,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 
 	if useGlobal {
 		var err error
-		entries, err = h.timeline.GetGlobalFeed(before, pageSize+1)
+		entries, err = h.timeline.GetGlobalFeedForPubkey(sessionPubkey, before, pageSize+1)
 		if err != nil {
 			slog.Error("failed to get global feed", "error", err)
 			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Failed to load feed.</p></div>`)
@@ -294,7 +298,7 @@ func (h *Handler) nodeStatusPartial(w http.ResponseWriter, r *http.Request) {
 		peers, uptimeSecs, storageUsed, storageLimit, subscriptions = h.nodeStatus()
 	} else if h.db != nil {
 		var ownerPubkey []byte
-		if kp := h.identity.Get(); kp != nil {
+		if kp := h.getKeyPair(r); kp != nil {
 			ownerPubkey = kp.PublicKeyBytes()
 		}
 		if count, err := h.db.CountSubscriptions(ownerPubkey); err == nil {

@@ -35,16 +35,16 @@ func NewTimeline(db *storage.DB, idHolder *identity.Holder) *Timeline {
 
 // GetFeed returns the home feed — posts from followed publishers, paginated.
 func (t *Timeline) GetFeed(before int64, limit int) ([]TimelineEntry, error) {
+	return t.GetFeedForPubkey(t.activePubkey(), before, limit)
+}
+
+// GetFeedForPubkey returns the home feed for the provided viewer pubkey.
+func (t *Timeline) GetFeedForPubkey(ownerPubkey []byte, before int64, limit int) ([]TimelineEntry, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	if limit > 100 {
 		limit = 100
-	}
-
-	var ownerPubkey []byte
-	if kp := t.identity.Get(); kp != nil {
-		ownerPubkey = kp.PublicKeyBytes()
 	}
 
 	subs, err := t.db.GetSubscriptions(ownerPubkey)
@@ -58,8 +58,8 @@ func (t *Timeline) GetFeed(before int64, limit int) ([]TimelineEntry, error) {
 	}
 
 	// Include own posts in feed (get current pubkey dynamically).
-	if kp := t.identity.Get(); kp != nil {
-		authors = append(authors, kp.PublicKeyBytes())
+	if len(ownerPubkey) > 0 {
+		authors = append(authors, ownerPubkey)
 	}
 
 	posts, err := t.db.GetFeed(authors, before, limit)
@@ -67,11 +67,16 @@ func (t *Timeline) GetFeed(before int64, limit int) ([]TimelineEntry, error) {
 		return nil, fmt.Errorf("get feed: %w", err)
 	}
 
-	return t.enrichPosts(posts)
+	return t.enrichPostsForPubkey(posts, ownerPubkey)
 }
 
 // GetGlobalFeed returns all posts regardless of follow status, paginated.
 func (t *Timeline) GetGlobalFeed(before int64, limit int) ([]TimelineEntry, error) {
+	return t.GetGlobalFeedForPubkey(t.activePubkey(), before, limit)
+}
+
+// GetGlobalFeedForPubkey returns all posts for the provided viewer pubkey.
+func (t *Timeline) GetGlobalFeedForPubkey(ownerPubkey []byte, before int64, limit int) ([]TimelineEntry, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -84,11 +89,16 @@ func (t *Timeline) GetGlobalFeed(before int64, limit int) ([]TimelineEntry, erro
 		return nil, fmt.Errorf("get global feed: %w", err)
 	}
 
-	return t.enrichPosts(posts)
+	return t.enrichPostsForPubkey(posts, ownerPubkey)
 }
 
 // GetUserPosts returns posts by a specific user, paginated.
 func (t *Timeline) GetUserPosts(pubkey []byte, before int64, limit int) ([]TimelineEntry, error) {
+	return t.GetUserPostsForPubkey(t.activePubkey(), pubkey, before, limit)
+}
+
+// GetUserPostsForPubkey returns posts by a specific user for the provided viewer pubkey.
+func (t *Timeline) GetUserPostsForPubkey(ownerPubkey, pubkey []byte, before int64, limit int) ([]TimelineEntry, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -98,17 +108,16 @@ func (t *Timeline) GetUserPosts(pubkey []byte, before int64, limit int) ([]Timel
 		return nil, fmt.Errorf("get user posts: %w", err)
 	}
 
-	return t.enrichPosts(posts)
+	return t.enrichPostsForPubkey(posts, ownerPubkey)
 }
 
 // enrichPosts adds reaction counts and profile info to raw post rows.
 func (t *Timeline) enrichPosts(posts []storage.PostRow) ([]TimelineEntry, error) {
-	entries := make([]TimelineEntry, 0, len(posts))
+	return t.enrichPostsForPubkey(posts, t.activePubkey())
+}
 
-	var ownPubkey []byte
-	if kp := t.identity.Get(); kp != nil {
-		ownPubkey = kp.PublicKeyBytes()
-	}
+func (t *Timeline) enrichPostsForPubkey(posts []storage.PostRow, ownPubkey []byte) ([]TimelineEntry, error) {
+	entries := make([]TimelineEntry, 0, len(posts))
 
 	for _, post := range posts {
 		entry := TimelineEntry{Post: post}
@@ -131,9 +140,19 @@ func (t *Timeline) enrichPosts(posts []storage.PostRow) ([]TimelineEntry, error)
 
 		// Check if current user has liked/reposted.
 		entry.IsLiked = t.db.HasReacted(ownPubkey, post.CID, "like")
+		entry.IsReposted = t.db.HasReacted(ownPubkey, post.CID, "repost")
 
 		entries = append(entries, entry)
 	}
 
 	return entries, nil
+}
+
+func (t *Timeline) activePubkey() []byte {
+	if t != nil && t.identity != nil {
+		if kp := t.identity.Get(); kp != nil {
+			return kp.PublicKeyBytes()
+		}
+	}
+	return nil
 }
