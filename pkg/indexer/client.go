@@ -1,10 +1,13 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,9 +16,14 @@ import (
 )
 
 const (
-	defaultIndexerClientCacheTTL = 60 * time.Second
-	maxIndexerClientCacheEntries = 1024
-	indexerClientCleanupInterval = 5 * time.Minute
+	defaultIndexerClientCacheTTL       = 60 * time.Second
+	maxIndexerClientCacheEntries       = 1024
+	indexerClientCleanupInterval       = 5 * time.Minute
+	defaultIndexerClientTimeout        = 5 * time.Second
+	indexerClientDialTimeout           = 3 * time.Second
+	indexerClientTLSHandshakeTimeout   = 3 * time.Second
+	indexerClientResponseHeaderTimeout = 3 * time.Second
+	maxIndexerClientResponseBytes      = 1 << 20
 )
 
 // IndexerClient is an HTTP client for querying remote indexer nodes.
@@ -97,9 +105,7 @@ type ClientPublisher struct {
 func NewIndexerClient(ctx context.Context) *IndexerClient {
 	ctx, cancel := context.WithCancel(ctx)
 	c := &IndexerClient{
-		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		httpClient:      newIndexerHTTPClient(),
 		knownIndexers:   make([]string, 0),
 		cache:           make(map[string]*cachedResponse),
 		cancel:          cancel,
@@ -117,6 +123,9 @@ func (c *IndexerClient) Close() {
 		return
 	}
 	c.stopOnce.Do(func() {
+		if c.httpClient != nil {
+			c.httpClient.CloseIdleConnections()
+		}
 		c.cancel()
 	})
 }
@@ -338,7 +347,12 @@ func (c *IndexerClient) queryIndexer(path string, params url.Values, result inte
 	var lastErr error
 	for _, base := range indexers {
 		u := base + path + "?" + params.Encode()
-		resp, err := c.httpClient.Get(u)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
 			continue
@@ -350,7 +364,7 @@ func (c *IndexerClient) queryIndexer(path string, params url.Values, result inte
 			continue
 		}
 
-		err = json.NewDecoder(resp.Body).Decode(result)
+		err = decodeIndexerResponse(resp.Body, result)
 		resp.Body.Close()
 		if err != nil {
 			lastErr = err
@@ -404,6 +418,51 @@ func (c *IndexerClient) putInCache(key string, data interface{}) {
 		data:      data,
 		expiresAt: now.Add(c.cacheTTL),
 	}
+}
+
+func newIndexerHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{
+		Timeout:   indexerClientDialTimeout,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
+	transport.TLSHandshakeTimeout = indexerClientTLSHandshakeTimeout
+	transport.ResponseHeaderTimeout = indexerClientResponseHeaderTimeout
+	transport.MaxResponseHeaderBytes = 32 << 10
+	transport.MaxIdleConns = 32
+	transport.MaxIdleConnsPerHost = 8
+	transport.MaxConnsPerHost = 16
+	transport.IdleConnTimeout = 30 * time.Second
+
+	return &http.Client{
+		Timeout:   defaultIndexerClientTimeout,
+		Transport: transport,
+	}
+}
+
+func decodeIndexerResponse(body io.Reader, result interface{}) error {
+	limited := io.LimitReader(body, maxIndexerClientResponseBytes+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return err
+	}
+	if len(data) > maxIndexerClientResponseBytes {
+		return fmt.Errorf("response too large: exceeded %d bytes", maxIndexerClientResponseBytes)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(result); err != nil {
+		return err
+	}
+
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("unexpected trailing data in response")
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *IndexerClient) currentTime() time.Time {
