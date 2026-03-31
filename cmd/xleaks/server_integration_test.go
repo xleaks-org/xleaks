@@ -432,6 +432,18 @@ func TestMountedServerBrowserAuthBootstrapSupportsProtectedWebUIAndAPI(t *testin
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/node/status with browser auth status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
+	requireNoStoreResponse(t, resp, "/api/node/status")
+
+	resp, err = client.Get(testServer.URL + "/api/search?q=test&type=posts")
+	if err != nil {
+		t.Fatalf("GET /api/search with browser auth error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/search with browser auth status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	requireNoStoreResponse(t, resp, "/api/search")
 
 	req, err = http.NewRequest(http.MethodPost, testServer.URL+"/api/ws-ticket", nil)
 	if err != nil {

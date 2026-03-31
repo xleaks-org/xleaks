@@ -131,7 +131,7 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 		r.Get("/users/{pubkey}", h.GetUserProfile)
 
 		// Search & Discovery
-		r.Get("/search", h.Search)
+		r.With(middleware.NoStore).Get("/search", h.Search)
 		r.Get("/trending", h.GetTrending)
 		r.Get("/explore", h.Explore)
 
@@ -153,11 +153,11 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 		r.Get("/media/{cid}/status", h.GetMediaStatus)
 
 		// Node status
-		r.Get("/node/status", h.GetNodeStatus)
-		r.Get("/node/peers", h.GetNodePeers)
-		r.Get("/node/config", h.GetNodeConfig)
-		r.Put("/node/config", h.UpdateNodeConfig)
-		r.Post("/node/backup", h.CreateBackup)
+		r.With(middleware.NoStore).Get("/node/status", h.GetNodeStatus)
+		r.With(middleware.NoStore).Get("/node/peers", h.GetNodePeers)
+		r.With(middleware.NoStore).Get("/node/config", h.GetNodeConfig)
+		r.With(middleware.NoStore).Put("/node/config", h.UpdateNodeConfig)
+		r.With(middleware.NoStore).Post("/node/backup", h.CreateBackup)
 
 		if deps.WSTickets != nil {
 			r.Post("/ws-ticket", deps.WSTickets.IssueHandler)

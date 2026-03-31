@@ -38,13 +38,13 @@ func TestNonIdentityRoutesRemainCacheNeutral(t *testing.T) {
 	t.Parallel()
 
 	router := NewRouter(&HandlerDeps{}, nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/node/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/posts/not-hex", nil)
 	rr := httptest.NewRecorder()
 
 	router.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
 	if got := rr.Header().Get("Cache-Control"); got != "" {
 		t.Fatalf("Cache-Control = %q, want empty", got)
@@ -112,6 +112,30 @@ func TestFollowingRouteDisablesCaching(t *testing.T) {
 
 	router := NewRouter(&HandlerDeps{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/following", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	requireNoStoreHeaders(t, rr.Header())
+}
+
+func TestSearchRouteDisablesCaching(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(&HandlerDeps{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/search", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	requireNoStoreHeaders(t, rr.Header())
+}
+
+func TestNodeStatusRouteDisablesCaching(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(&HandlerDeps{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/node/status", nil)
 	rr := httptest.NewRecorder()
 
 	router.ServeHTTP(rr, req)
