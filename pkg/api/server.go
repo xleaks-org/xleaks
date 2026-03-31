@@ -87,7 +87,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 		authLimiter.AddLimit("POST /auth/token", 5, time.Minute)
 		authLimiter.SetGlobalLimit(30, time.Minute)
 
-		topMux.HandleFunc("GET /auth/token", func(w http.ResponseWriter, r *http.Request) {
+		topMux.Handle("GET /auth/token", middleware.NoStore(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			nextPath := safeBrowserRedirectPath(r.URL.Query().Get("next"))
 			state, _ := browserAuth.CookieState(r)
 			if state == browserAuthSessionValid {
@@ -102,7 +102,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 				}
 			}
 			renderBrowserAuthPage(w, nextPath, errorCode)
-		})
+		})))
 		loginHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 			if err := r.ParseForm(); err != nil {
@@ -127,11 +127,11 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 			logBrowserAuthInfo(r, "browser auth login succeeded", "next", nextPath)
 			http.Redirect(w, r, nextPath, http.StatusSeeOther)
 		})
-		topMux.Handle("POST /auth/token", observeStatus(authLimiter.Middleware(loginHandler), func(r *http.Request, status int) {
+		topMux.Handle("POST /auth/token", middleware.NoStore(observeStatus(authLimiter.Middleware(loginHandler), func(r *http.Request, status int) {
 			if status == http.StatusTooManyRequests {
 				logBrowserAuthWarn(r, "browser auth login rate limited")
 			}
-		}))
+		})))
 	}
 	topMux.HandleFunc("GET /health", handleHealth)
 	topMux.Handle("GET /metrics", metricsHandler)

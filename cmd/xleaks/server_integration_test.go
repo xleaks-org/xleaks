@@ -390,6 +390,7 @@ func TestMountedServerBrowserAuthBootstrapSupportsProtectedWebUIAndAPI(t *testin
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /auth/token status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
+	requireNoStoreResponse(t, resp, "/auth/token")
 
 	form := url.Values{
 		"token": []string{apiToken},
@@ -407,6 +408,7 @@ func TestMountedServerBrowserAuthBootstrapSupportsProtectedWebUIAndAPI(t *testin
 	if got := resp.Header.Get("Location"); got != "/signup" {
 		t.Fatalf("POST /auth/token Location = %q, want %q", got, "/signup")
 	}
+	requireNoStoreResponse(t, resp, "/auth/token")
 
 	resp, err = client.Get(testServer.URL + "/signup")
 	if err != nil {
