@@ -29,39 +29,46 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle reply_to filter: load replies to a specific post.
-	replyTo := r.URL.Query().Get("reply_to")
+	replyTo := strings.TrimSpace(r.URL.Query().Get("reply_to"))
 	if replyTo != "" {
-		cidBytes, err := hex.DecodeString(replyTo)
-		if err == nil {
-			replies, err := h.db.GetThread(cidBytes)
-			if err == nil {
-				var posts []PostView
-				for i := range replies {
-					posts = append(posts, h.postRowToView(&replies[i]))
-				}
-				data := struct{ Posts []PostView }{Posts: posts}
-				if err := h.partials.ExecuteTemplate(w, "feed_items.html", data); err != nil {
-					slog.Error("template error rendering reply feed", "error", err)
-				}
-				return
-			}
-			slog.Warn("failed to get thread", "reply_to", replyTo, "error", err)
+		cidBytes, err := decodeHexQueryValue(replyTo)
+		if err != nil {
+			slog.Warn("invalid reply target", "error", err)
+			renderPartialError(w, http.StatusBadRequest, "Invalid reply target.")
+			return
 		}
+		replies, err := h.db.GetThread(cidBytes)
+		if err != nil {
+			slog.Error("failed to get thread", "error", err)
+			renderPartialError(w, http.StatusInternalServerError, "Failed to load replies.")
+			return
+		}
+		var posts []PostView
+		for i := range replies {
+			posts = append(posts, h.postRowToView(&replies[i]))
+		}
+		data := struct{ Posts []PostView }{Posts: posts}
+		if err := h.partials.ExecuteTemplate(w, "feed_items.html", data); err != nil {
+			slog.Error("template error rendering reply feed", "error", err)
+		}
+		return
 	}
 
 	const pageSize = 20
-	var before int64
-	if b := r.URL.Query().Get("before"); b != "" {
-		before, _ = strconv.ParseInt(b, 10, 64)
+	before, err := parseFeedCursorQuery(r.URL.Query().Get("before"))
+	if err != nil {
+		slog.Warn("invalid feed cursor", "error", err)
+		renderPartialError(w, http.StatusBadRequest, "Invalid feed cursor.")
+		return
 	}
 
 	// Handle author filter: load posts by a specific user (profile page).
-	author := r.URL.Query().Get("author")
+	author := strings.TrimSpace(r.URL.Query().Get("author"))
 	if author != "" {
-		authorBytes, err := hex.DecodeString(author)
+		authorBytes, err := decodeHexQueryValue(author)
 		if err != nil {
-			slog.Warn("invalid author pubkey", "author", author, "error", err)
-			fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p>Invalid author key.</p></div>`)
+			slog.Warn("invalid author pubkey", "error", err)
+			renderPartialError(w, http.StatusBadRequest, "Invalid author key.")
 			return
 		}
 		entries, err := h.timeline.GetUserPosts(authorBytes, before, pageSize+1)
@@ -151,6 +158,39 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 			`<button hx-get="/web/feed?before=%d%s" hx-target="closest div" hx-swap="outerHTML" `+
 			`class="text-blue-500 hover:text-blue-400 text-sm">Load more</button></div>`, lastTs, allParam)
 	}
+}
+
+func renderPartialError(w http.ResponseWriter, status int, message string) {
+	w.WriteHeader(status)
+	fmt.Fprintf(
+		w,
+		`<div class="text-center py-12 text-gray-400"><p>%s</p></div>`,
+		template.HTMLEscapeString(message),
+	)
+}
+
+func parseFeedCursorQuery(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	cursor, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || cursor < 0 {
+		return 0, errors.New("invalid feed cursor")
+	}
+	return cursor, nil
+}
+
+func decodeHexQueryValue(value string) ([]byte, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, errors.New("invalid hex input")
+	}
+	decoded, err := hex.DecodeString(value)
+	if err != nil {
+		return nil, errors.New("invalid hex input")
+	}
+	return decoded, nil
 }
 
 // handlePost creates a new post from form data using the callback.
