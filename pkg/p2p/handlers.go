@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -24,16 +26,17 @@ type PostIndexer interface {
 // MessageProcessor handles incoming P2P messages by deserializing,
 // validating, and storing them.
 type MessageProcessor struct {
-	db             StorageWriter
-	cas            ContentWriter
-	notifier       Notifier
-	indexer        PostIndexer
-	broadcast      func(eventType string, data interface{})
-	autoFetchMedia bool
-	fetchContent   func(ctx context.Context, cidHex string) ([]byte, error)
-	prefetchMu     sync.Mutex
-	prefetching    map[string]struct{}
-	prefetchSlots  chan struct{}
+	db                 StorageWriter
+	cas                ContentWriter
+	notifier           Notifier
+	indexer            PostIndexer
+	broadcast          func(eventType string, data interface{})
+	autoFetchMedia     bool
+	fetchContent       func(ctx context.Context, cidHex string) ([]byte, error)
+	fetchContentToFile func(ctx context.Context, cidHex string) (*FetchedContentFile, error)
+	prefetchMu         sync.Mutex
+	prefetching        map[string]struct{}
+	prefetchSlots      chan struct{}
 }
 
 const (
@@ -65,6 +68,7 @@ type StorageWriter interface {
 // ContentWriter defines content-addressed storage operations.
 type ContentWriter interface {
 	Put(cid []byte, data []byte) error
+	PutReader(cid []byte, r io.Reader) error
 	Has(cid []byte) bool
 }
 
@@ -106,6 +110,12 @@ func (mp *MessageProcessor) SetAutoFetchMedia(enabled bool) {
 // SetMediaFetcher sets the content fetch callback for eager media fetching. Must be called before message processing starts.
 func (mp *MessageProcessor) SetMediaFetcher(fn func(ctx context.Context, cidHex string) ([]byte, error)) {
 	mp.fetchContent = fn
+}
+
+// SetMediaFileFetcher sets the staged-file content fetch callback for eager
+// media fetching. Must be called before message processing starts.
+func (mp *MessageProcessor) SetMediaFileFetcher(fn func(ctx context.Context, cidHex string) (*FetchedContentFile, error)) {
+	mp.fetchContentToFile = fn
 }
 
 // HandleMessage deserializes an Envelope and routes to the appropriate handler.
@@ -375,7 +385,7 @@ func (mp *MessageProcessor) handleMediaObject(ctx context.Context, obj *pb.Media
 	); err != nil {
 		return fmt.Errorf("insert media object: %w", err)
 	}
-	if mp.autoFetchMedia && mp.fetchContent != nil {
+	if mp.autoFetchMedia && (mp.fetchContent != nil || mp.fetchContentToFile != nil) {
 		shouldPin, err := mp.db.ShouldPinAuthor(obj.Author)
 		if err != nil {
 			return fmt.Errorf("resolve media pin policy: %w", err)
@@ -430,12 +440,22 @@ func (mp *MessageProcessor) prefetchMediaContent(ctx context.Context, obj *pb.Me
 			}
 			continue
 		}
-		data, err := mp.fetchContent(ctx, hex.EncodeToString(item.cid))
-		if err != nil {
-			return fmt.Errorf("fetch %x: %w", item.cid, err)
-		}
-		if err := mp.cas.Put(item.cid, data); err != nil {
-			return fmt.Errorf("store %x: %w", item.cid, err)
+		if mp.fetchContentToFile != nil {
+			fetched, err := mp.fetchContentToFile(ctx, hex.EncodeToString(item.cid))
+			if err != nil {
+				return fmt.Errorf("fetch %x: %w", item.cid, err)
+			}
+			if err := mp.storeFetchedMediaFile(item.cid, fetched); err != nil {
+				return fmt.Errorf("store %x: %w", item.cid, err)
+			}
+		} else {
+			data, err := mp.fetchContent(ctx, hex.EncodeToString(item.cid))
+			if err != nil {
+				return fmt.Errorf("fetch %x: %w", item.cid, err)
+			}
+			if err := mp.cas.Put(item.cid, data); err != nil {
+				return fmt.Errorf("store %x: %w", item.cid, err)
+			}
 		}
 		if err := mp.db.TrackContentForMedia(item.cid, item.parent); err != nil {
 			return fmt.Errorf("track %x: %w", item.cid, err)
@@ -481,4 +501,26 @@ func (mp *MessageProcessor) scheduleMediaPrefetch(obj *pb.MediaObject) {
 			slog.Warn("failed to prefetch media", "cid", cidHex, "error", err)
 		}
 	}()
+}
+
+func (mp *MessageProcessor) storeFetchedMediaFile(cid []byte, fetched *FetchedContentFile) error {
+	if fetched == nil || fetched.Path == "" {
+		return fmt.Errorf("missing fetched media file")
+	}
+
+	file, err := os.Open(fetched.Path)
+	if err != nil {
+		if removeErr := os.Remove(fetched.Path); removeErr != nil && !os.IsNotExist(removeErr) {
+			slog.Warn("failed to remove fetched media temp file after open error", "path", fetched.Path, "error", removeErr)
+		}
+		return err
+	}
+	defer file.Close()
+	defer func() {
+		if removeErr := os.Remove(fetched.Path); removeErr != nil && !os.IsNotExist(removeErr) {
+			slog.Warn("failed to remove fetched media temp file", "path", fetched.Path, "error", removeErr)
+		}
+	}()
+
+	return mp.cas.PutReader(cid, file)
 }

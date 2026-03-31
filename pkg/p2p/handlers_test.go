@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -157,6 +159,15 @@ func newMockCAS() *mockCAS {
 }
 
 func (m *mockCAS) Put(cid []byte, data []byte) error {
+	m.data[string(cid)] = data
+	return nil
+}
+
+func (m *mockCAS) PutReader(cid []byte, r io.Reader) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
 	m.data[string(cid)] = data
 	return nil
 }
@@ -660,4 +671,68 @@ func TestHandleMessage_MediaObject_AutoFetchesPinnedAuthorContent(t *testing.T) 
 	}
 
 	t.Fatal("expected media object to be prefetched asynchronously")
+}
+
+func TestHandleMessage_MediaObject_AutoFetchesPinnedAuthorContentFromTempFiles(t *testing.T) {
+	mp, db, cas, _ := newProcessor()
+	kp := makeKeyPair(t)
+
+	fileData := []byte("fetched media bytes")
+	fileCID, err := content.ComputeCID(fileData)
+	if err != nil {
+		t.Fatalf("ComputeCID file: %v", err)
+	}
+	chunkCID, err := content.ComputeCID([]byte("chunk"))
+	if err != nil {
+		t.Fatalf("ComputeCID chunk: %v", err)
+	}
+	thumbData := []byte("thumbnail bytes")
+	thumbCID, err := content.ComputeCID(thumbData)
+	if err != nil {
+		t.Fatalf("ComputeCID thumb: %v", err)
+	}
+
+	data, obj := signedMediaObject(t, kp, fileCID, chunkCID, thumbCID, len(fileData))
+	db.shouldPin[string(kp.PublicKeyBytes())] = true
+
+	tempDir := t.TempDir()
+	filePath := tempDir + "/file-media"
+	if err := os.WriteFile(filePath, fileData, 0o600); err != nil {
+		t.Fatalf("WriteFile() file error = %v", err)
+	}
+	thumbPath := tempDir + "/thumb-media"
+	if err := os.WriteFile(thumbPath, thumbData, 0o600); err != nil {
+		t.Fatalf("WriteFile() thumb error = %v", err)
+	}
+
+	mp.SetAutoFetchMedia(true)
+	mp.SetMediaFileFetcher(func(ctx context.Context, cidHex string) (*FetchedContentFile, error) {
+		switch cidHex {
+		case hex.EncodeToString(fileCID):
+			return &FetchedContentFile{Path: filePath, Size: int64(len(fileData))}, nil
+		case hex.EncodeToString(thumbCID):
+			return &FetchedContentFile{Path: thumbPath, Size: int64(len(thumbData))}, nil
+		default:
+			return nil, fmt.Errorf("unexpected fetch %s", cidHex)
+		}
+	})
+
+	if err := mp.HandleMessage(context.Background(), data); err != nil {
+		t.Fatalf("HandleMessage media object: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cas.Has(obj.Cid) && cas.Has(obj.ThumbnailCid) && db.mediaFetched[string(obj.Cid)] {
+			for _, path := range []string{filePath, thumbPath} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("expected fetched temp file %s to be removed", path)
+				}
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("expected media object to be prefetched asynchronously from temp files")
 }

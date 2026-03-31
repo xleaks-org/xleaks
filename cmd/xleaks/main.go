@@ -91,8 +91,8 @@ func run() error {
 		msgProcessor.SetAutoFetchMedia(cfg.Media.AutoFetchMedia)
 		if p2pHost != nil {
 			if ce := p2pHost.ContentExchange(); ce != nil {
-				msgProcessor.SetMediaFetcher(func(ctx context.Context, cidHex string) ([]byte, error) {
-					return ce.FetchContent(ctx, cidHex, ce.FetchLocal)
+				msgProcessor.SetMediaFileFetcher(func(ctx context.Context, cidHex string) (*p2p.FetchedContentFile, error) {
+					return ce.FetchContentToTempFile(ctx, cidHex)
 				})
 			}
 		}
