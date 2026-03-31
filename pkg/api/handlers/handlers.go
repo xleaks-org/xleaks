@@ -232,20 +232,31 @@ func parseHexParam(r *http.Request, name string) ([]byte, error) {
 	return b, nil
 }
 
-// parsePagination extracts "before" and "limit" query parameters for cursor-based pagination.
-func parsePagination(r *http.Request, defaultLimit int) (before int64, limit int) {
+// parsePagination extracts and validates "before" and "limit" query parameters
+// for cursor-based pagination.
+func parsePagination(r *http.Request, defaultLimit int) (before int64, limit int, err error) {
 	limit = defaultLimit
 	if b := r.URL.Query().Get("before"); b != "" {
-		if v, err := strconv.ParseInt(b, 10, 64); err == nil {
-			before = v
+		v, parseErr := strconv.ParseInt(b, 10, 64)
+		if parseErr != nil {
+			return 0, 0, fmt.Errorf("invalid before parameter")
 		}
+		if v < 0 {
+			return 0, 0, fmt.Errorf("before must be 0 or greater")
+		}
+		before = v
 	}
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
-			limit = v
+		v, parseErr := strconv.Atoi(l)
+		if parseErr != nil {
+			return 0, 0, fmt.Errorf("invalid limit parameter")
 		}
+		if v < 1 || v > 100 {
+			return 0, 0, fmt.Errorf("limit must be between 1 and 100")
+		}
+		limit = v
 	}
-	return
+	return before, limit, nil
 }
 
 // parseJSON decodes the request body as JSON into v.

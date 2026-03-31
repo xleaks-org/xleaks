@@ -6,7 +6,11 @@ import (
 
 // GetFeed handles GET /api/feed?before=TIMESTAMP.
 func (h *Handler) GetFeed(w http.ResponseWriter, r *http.Request) {
-	before, limit := parsePagination(r, 20)
+	before, limit, err := parsePagination(r, 20)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	entries, err := h.timeline.GetFeed(before, limit)
 	if err != nil {

@@ -274,15 +274,17 @@ func TestParsePagination(t *testing.T) {
 		defaultLim int
 		wantBefore int64
 		wantLimit  int
+		wantErr    string
 	}{
-		{"defaults", "", 20, 0, 20},
-		{"custom before", "before=1000", 20, 1000, 20},
-		{"custom limit", "limit=50", 20, 0, 50},
-		{"both", "before=5000&limit=10", 20, 5000, 10},
-		{"limit too high", "limit=200", 20, 0, 20},
-		{"limit zero", "limit=0", 20, 0, 20},
-		{"invalid before", "before=abc", 20, 0, 20},
-		{"invalid limit", "limit=abc", 20, 0, 20},
+		{"defaults", "", 20, 0, 20, ""},
+		{"custom before", "before=1000", 20, 1000, 20, ""},
+		{"custom limit", "limit=50", 20, 0, 50, ""},
+		{"both", "before=5000&limit=10", 20, 5000, 10, ""},
+		{"limit too high", "limit=200", 20, 0, 0, "limit must be between 1 and 100"},
+		{"limit zero", "limit=0", 20, 0, 0, "limit must be between 1 and 100"},
+		{"negative before", "before=-1", 20, 0, 0, "before must be 0 or greater"},
+		{"invalid before", "before=abc", 20, 0, 0, "invalid before parameter"},
+		{"invalid limit", "limit=abc", 20, 0, 0, "invalid limit parameter"},
 	}
 
 	for _, tt := range tests {
@@ -293,7 +295,19 @@ func TestParsePagination(t *testing.T) {
 				url += "?" + tt.query
 			}
 			r := httptest.NewRequest("GET", url, nil)
-			before, limit := parsePagination(r, tt.defaultLim)
+			before, limit, err := parsePagination(r, tt.defaultLim)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error %q", tt.wantErr)
+				}
+				if err.Error() != tt.wantErr {
+					t.Fatalf("error = %q, want %q", err.Error(), tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parsePagination() error = %v", err)
+			}
 			if before != tt.wantBefore {
 				t.Errorf("before = %d, want %d", before, tt.wantBefore)
 			}
@@ -1411,6 +1425,21 @@ func TestGetFeedInternalFailureDoesNotLeakBackendError(t *testing.T) {
 	assertJSONErrorResponse(t, w.Body.Bytes(), "failed to load feed", "sql", "closed")
 }
 
+func TestGetFeedRejectsInvalidPagination(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/feed?limit=0", nil)
+	h.GetFeed(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "limit must be between 1 and 100")
+}
+
 func TestGetNotificationsInternalFailureDoesNotLeakBackendError(t *testing.T) {
 	t.Parallel()
 
@@ -1428,6 +1457,22 @@ func TestGetNotificationsInternalFailureDoesNotLeakBackendError(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 	assertJSONErrorResponse(t, w.Body.Bytes(), "failed to load notifications", "sql", "closed")
+}
+
+func TestGetNotificationsRejectsInvalidPagination(t *testing.T) {
+	t.Parallel()
+
+	h, db := testHandler(t)
+	wireServiceBackedHandler(h, db)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/notifications?before=abc", nil)
+	h.GetNotifications(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid before parameter")
 }
 
 func TestCreateBackupFailureDoesNotLeakBackendError(t *testing.T) {

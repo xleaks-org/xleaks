@@ -67,7 +67,11 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before, limit := parsePagination(r, 50)
+	before, limit, err := parsePagination(r, 50)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	messages, err := h.db.GetConversation(kp.PublicKeyBytes(), peerPubkey, before, limit)
 	if err != nil {

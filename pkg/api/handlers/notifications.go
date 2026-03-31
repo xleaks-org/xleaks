@@ -16,7 +16,11 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before, limit := parsePagination(r, 20)
+	before, limit, err := parsePagination(r, 20)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	notifs, err := h.notifs.GetNotifications(kp.PublicKeyBytes(), before, limit)
 	if err != nil {
