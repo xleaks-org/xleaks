@@ -47,9 +47,9 @@ type HandlerDeps struct {
 func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 	r := chi.NewRouter()
 
-	r.Use(chiMiddleware.Logger)
-	r.Use(chiMiddleware.Recoverer)
 	r.Use(chiMiddleware.RequestID)
+	r.Use(middleware.RequestLogger())
+	r.Use(chiMiddleware.Recoverer)
 
 	// Per-route rate limiting.
 	rl := middleware.NewRouteRateLimiter()
