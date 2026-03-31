@@ -270,7 +270,7 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		displayName = "Anonymous"
 	}
 	if err := social.ValidateProfileFields(displayName, bio, website); err != nil {
-		http.Redirect(w, r, "/settings?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/settings?error="+url.QueryEscape(profileValidationMessage(err)), http.StatusSeeOther)
 		return
 	}
 

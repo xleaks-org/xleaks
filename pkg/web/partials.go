@@ -210,13 +210,6 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func postValidationMessage(err error) string {
-	if errors.Is(err, social.ErrPostContentTooLong) {
-		return social.ErrPostContentTooLong.Error()
-	}
-	return "Invalid post content"
-}
-
 func validateOptionalHexInput(value string) error {
 	if value == "" {
 		return nil

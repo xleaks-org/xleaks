@@ -1,11 +1,13 @@
 package web
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/xleaks-org/xleaks/pkg/identity"
@@ -123,5 +125,43 @@ func TestHandleExportIdentityUsesSessionIdentity(t *testing.T) {
 	}
 	if payload.Pubkey == hex.EncodeToString(secondKP.PublicKeyBytes()) {
 		t.Fatalf("exported active identity %q instead of session identity", payload.Pubkey)
+	}
+}
+
+func TestHandleUpdateProfileUsesStableValidationRedirect(t *testing.T) {
+	t.Parallel()
+
+	sm := NewSessionManager()
+	defer sm.Stop()
+
+	kp, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	token, err := sm.Create(kp)
+	if err != nil {
+		t.Fatalf("Create(session): %v", err)
+	}
+
+	h := &Handler{
+		sessions: sm,
+		updateProfile: func(context.Context, *identity.KeyPair, string, string, string, []byte, []byte) error {
+			t.Fatal("updateProfile should not be called for invalid profile fields")
+			return nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://example.test/settings/profile", strings.NewReader("display_name="+strings.Repeat("a", 51)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	h.handleUpdateProfile(rr, req)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	if got := rr.Header().Get("Location"); got != "/settings?error=display_name+must+not+exceed+50+characters" {
+		t.Fatalf("Location = %q, want %q", got, "/settings?error=display_name+must+not+exceed+50+characters")
 	}
 }

@@ -143,7 +143,7 @@ func (h *Handler) handleSetProfile(w http.ResponseWriter, r *http.Request) {
 	if err := social.ValidateProfileFields(displayName, "", ""); err != nil {
 		data := h.pageData(r, "", "Set Your Name")
 		data["SetProfile"] = true
-		data["Error"] = err.Error()
+		data["Error"] = profileValidationMessage(err)
 		h.renderPage(w, "onboarding.html", data)
 		return
 	}
