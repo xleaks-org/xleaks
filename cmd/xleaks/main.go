@@ -52,10 +52,10 @@ func run() error {
 		return fmt.Errorf("failed to set up logging: %w", err)
 	}
 	if apiToken != "" {
-		slog.Info("API token auth enabled", "listen_addr", cfg.API.ListenAddress)
+		slog.Info("API token auth enabled", "listen_addr", logging.RedactAddr(cfg.API.ListenAddress))
 	}
 	if cfg.API.EnableWebUI && !isLoopbackListenAddress(cfg.API.ListenAddress) && cfg.API.AllowRemoteWebUI {
-		slog.Warn("remote web UI exposure explicitly enabled", "listen_addr", cfg.API.ListenAddress)
+		slog.Warn("remote web UI exposure explicitly enabled", "listen_addr", logging.RedactAddr(cfg.API.ListenAddress))
 	}
 
 	db, cas, err := setupDatabase(cfg)

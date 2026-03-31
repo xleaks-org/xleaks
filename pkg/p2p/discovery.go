@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	ma "github.com/multiformats/go-multiaddr"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 )
 
 const (
@@ -55,13 +56,13 @@ func (h *Host) Bootstrap(ctx context.Context, bootstrapPeers []string) error {
 	for _, addrStr := range bootstrapPeers {
 		maddr, err := ma.NewMultiaddr(addrStr)
 		if err != nil {
-			slog.Warn("skipping invalid bootstrap peer", "addr", addrStr, "error", err)
+			slog.Warn("skipping invalid bootstrap peer", "addr", xlog.RedactAddr(addrStr), "error", err)
 			continue
 		}
 
 		info, err := peer.AddrInfoFromP2pAddr(maddr)
 		if err != nil {
-			slog.Warn("skipping invalid bootstrap peer", "addr", addrStr, "error", err)
+			slog.Warn("skipping invalid bootstrap peer", "addr", xlog.RedactAddr(addrStr), "error", err)
 			continue
 		}
 

@@ -6,6 +6,7 @@ import (
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/xleaks-org/xleaks/pkg/config"
+	"github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/p2p"
 )
 
@@ -38,7 +39,7 @@ func setupP2P(ctx context.Context, cfg *config.Config) (*p2p.Host, error) {
 
 	slog.Info("P2P host started", "peer_id", host.ID())
 	for _, addr := range host.Addrs() {
-		slog.Info("P2P listening", "addr", addr, "peer_id", host.ID())
+		slog.Info("P2P listening", "addr", logging.RedactAddr(addr.String()), "peer_id", host.ID())
 	}
 
 	if err := host.InitPubSub(ctx); err != nil {

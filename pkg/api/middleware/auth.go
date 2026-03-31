@@ -28,7 +28,7 @@ func LocalOnly(allowForwarded bool) func(http.Handler) http.Handler {
 
 			ip := net.ParseIP(host)
 			if ip == nil || !ip.IsLoopback() {
-				logAccessRejection(r, "non_loopback_remote", "remote_host", host)
+				logAccessRejection(r, "non_loopback_remote")
 				http.Error(w, "Forbidden: API only accessible from localhost", http.StatusForbidden)
 				return
 			}

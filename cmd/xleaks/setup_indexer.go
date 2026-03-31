@@ -11,6 +11,7 @@ import (
 
 	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/indexer"
+	"github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/p2p"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
@@ -39,7 +40,7 @@ func setupIndexer(ctx context.Context, db *storage.DB, dataDir string, cfg *conf
 	idxAPI := indexer.NewIndexerAPI(idx.Search(), idx.Trending(), idx.Stats())
 	indexerServer := newIndexerHTTPServer(cfg.Indexer.PublicAPIAddress, idxAPI.Handler())
 	go func() {
-		slog.Info("indexer API listening", "addr", indexerServer.Addr)
+		slog.Info("indexer API listening", "addr", logging.RedactAddr(indexerServer.Addr))
 		if err := indexerServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("indexer API error", "error", err)
 		}

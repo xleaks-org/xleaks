@@ -6,6 +6,7 @@ import (
 	"time"
 
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 )
 
 func logAccessRejection(r *http.Request, reason string, attrs ...any) {
@@ -13,7 +14,7 @@ func logAccessRejection(r *http.Request, reason string, attrs ...any) {
 		"reason", reason,
 		"method", r.Method,
 		"path", r.URL.Path,
-		"remote_addr", r.RemoteAddr,
+		"remote_addr", xlog.RedactAddr(r.RemoteAddr),
 	}
 	base = append(base, attrs...)
 	slog.Warn("rejected api request", base...)
@@ -38,7 +39,7 @@ func RequestLogger() func(http.Handler) http.Handler {
 				"status", status,
 				"bytes", recorder.BytesWritten(),
 				"duration_ms", time.Since(start).Milliseconds(),
-				"remote_addr", r.RemoteAddr,
+				"remote_addr", xlog.RedactAddr(r.RemoteAddr),
 			}
 			if requestID := chiMiddleware.GetReqID(r.Context()); requestID != "" {
 				attrs = append(attrs, "request_id", requestID)

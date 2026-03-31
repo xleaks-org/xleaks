@@ -17,6 +17,7 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/indexer"
+	"github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/p2p"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 	"github.com/xleaks-org/xleaks/pkg/web"
@@ -250,7 +251,7 @@ func runServer(
 		}
 	}()
 
-	slog.Info("XLeaks node starting", "addr", cfg.API.ListenAddress)
+	slog.Info("XLeaks node starting", "addr", logging.RedactAddr(cfg.API.ListenAddress))
 	if p2pHost != nil {
 		slog.Info("P2P connected", "peers", p2pHost.PeerCount())
 	} else {

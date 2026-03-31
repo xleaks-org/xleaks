@@ -8,6 +8,7 @@ import (
 	libp2p "github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 )
 
 // RelayOptions returns libp2p options for relay client support.
@@ -28,18 +29,18 @@ func (h *Host) ConnectToRelays(ctx context.Context, relayAddrs []string) {
 	for _, addr := range relayAddrs {
 		maddr, err := ma.NewMultiaddr(addr)
 		if err != nil {
-			slog.Warn("invalid relay address", "addr", addr, "error", err)
+			slog.Warn("invalid relay address", "addr", xlog.RedactAddr(addr), "error", err)
 			continue
 		}
 
 		info, err := peer.AddrInfoFromP2pAddr(maddr)
 		if err != nil {
-			slog.Warn("invalid relay address", "addr", addr, "error", err)
+			slog.Warn("invalid relay address", "addr", xlog.RedactAddr(addr), "error", err)
 			continue
 		}
 
 		if err := h.host.Connect(ctx, *info); err != nil {
-			slog.Warn("failed to connect to relay", "addr", addr, "error", err)
+			slog.Warn("failed to connect to relay", "addr", xlog.RedactAddr(addr), "error", err)
 		} else {
 			slog.Info("connected to relay", "peer_id", info.ID)
 		}

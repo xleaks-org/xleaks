@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 )
 
 const (
@@ -25,13 +27,13 @@ func BrowserGuard(next http.Handler) http.Handler {
 		}
 
 		if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && !OriginAllowed(r, origin) {
-			logAccessRejection(r, "cross_origin_request", "origin", origin)
+			logAccessRejection(r, "cross_origin_request", "origin", xlog.RedactURL(origin))
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
 		if referer := strings.TrimSpace(r.Header.Get("Referer")); referer != "" && !sameOriginURL(r, referer) {
-			logAccessRejection(r, "cross_origin_referer", "referer", referer)
+			logAccessRejection(r, "cross_origin_referer", "referer", xlog.RedactURL(referer))
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}

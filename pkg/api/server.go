@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/api/middleware"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/metrics"
 	"github.com/xleaks-org/xleaks/pkg/version"
 )
@@ -119,7 +120,7 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 			sessionToken, err := browserAuth.Issue()
 			if err != nil {
-				slog.Error("browser auth session issue failed", "path", r.URL.Path, "remote_addr", r.RemoteAddr, "error", err)
+				logBrowserAuthError(r, "browser auth session issue failed", "error", err)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
@@ -170,7 +171,7 @@ func handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 // Start begins listening for HTTP connections.
 func (s *Server) Start() error {
-	slog.Info("API server listening", "addr", s.httpServer.Addr)
+	slog.Info("API server listening", "addr", xlog.RedactAddr(s.httpServer.Addr))
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("server error: %w", err)
 	}
@@ -220,7 +221,7 @@ func browserSessionAuth(apiToken string, browserAuth *BrowserAuthManager) func(h
 					if token, err := browserAuth.Issue(); err == nil {
 						browserAuth.SetCookie(w, r, token)
 					} else {
-						slog.Error("browser auth bootstrap failed", "path", r.URL.Path, "remote_addr", r.RemoteAddr, "error", err)
+						logBrowserAuthError(r, "browser auth bootstrap failed", "error", err)
 					}
 				}
 				next.ServeHTTP(w, r)
@@ -368,11 +369,15 @@ func logBrowserAuthWarn(r *http.Request, message string, attrs ...any) {
 	slog.Warn(message, browserAuthLogAttrs(r, attrs...)...)
 }
 
+func logBrowserAuthError(r *http.Request, message string, attrs ...any) {
+	slog.Error(message, browserAuthLogAttrs(r, attrs...)...)
+}
+
 func browserAuthLogAttrs(r *http.Request, attrs ...any) []any {
 	base := []any{
 		"method", r.Method,
 		"path", r.URL.Path,
-		"remote_addr", r.RemoteAddr,
+		"remote_addr", xlog.RedactAddr(r.RemoteAddr),
 	}
 	base = append(base, attrs...)
 	return base
