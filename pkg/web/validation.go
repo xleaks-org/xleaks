@@ -27,3 +27,14 @@ func profileValidationMessage(err error) string {
 		return "Invalid profile fields"
 	}
 }
+
+func onboardingIdentityFailureMessage(action string) string {
+	switch action {
+	case "create":
+		return "Failed to create identity"
+	case "import":
+		return "Failed to import identity"
+	default:
+		return "Identity operation failed"
+	}
+}

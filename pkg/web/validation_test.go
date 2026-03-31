@@ -42,3 +42,26 @@ func TestProfileValidationMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestOnboardingIdentityFailureMessage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		action string
+		want   string
+	}{
+		{name: "create", action: "create", want: "Failed to create identity"},
+		{name: "import", action: "import", want: "Failed to import identity"},
+		{name: "fallback", action: "other", want: "Identity operation failed"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := onboardingIdentityFailureMessage(tt.action); got != tt.want {
+				t.Fatalf("onboardingIdentityFailureMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

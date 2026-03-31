@@ -53,7 +53,8 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	kp, mnemonic, err := h.identity.CreateAndSave(passphrase)
 	if err != nil {
-		h.renderOnboardingError(w, r, fmt.Sprintf("Failed to create identity: %v", err), true)
+		slog.Error("onboarding identity create failed", "error", err)
+		h.renderOnboardingError(w, r, onboardingIdentityFailureMessage("create"), true)
 		return
 	}
 	h.notifyIdentityChange()
@@ -189,7 +190,8 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	}
 	kp, err := h.identity.ImportAndSave(mnemonic, passphrase)
 	if err != nil {
-		h.renderOnboardingError(w, r, fmt.Sprintf("Failed to import identity: %v", err), true)
+		slog.Error("onboarding identity import failed", "error", err)
+		h.renderOnboardingError(w, r, onboardingIdentityFailureMessage("import"), true)
 		return
 	}
 	h.notifyIdentityChange()
