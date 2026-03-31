@@ -25,6 +25,16 @@ type ServiceBundle struct {
 	Indexer   *indexer.IndexerClient
 }
 
+// Close releases background resources owned by the service bundle.
+func (s *ServiceBundle) Close() {
+	if s == nil {
+		return
+	}
+	if s.Indexer != nil {
+		s.Indexer.Close()
+	}
+}
+
 // setupServices creates all social services, the feed manager, timeline, and
 // indexer client.
 func setupServices(

@@ -42,6 +42,17 @@ type Handler struct {
 	minPassphraseLen int
 }
 
+// Close releases background resources owned by the handler.
+func (h *Handler) Close() error {
+	if h == nil {
+		return nil
+	}
+	if h.sessions != nil {
+		h.sessions.Stop()
+	}
+	return nil
+}
+
 // SetRepost sets the repost callback.
 func (h *Handler) SetRepost(fn RepostFunc) { h.repostPost = fn }
 

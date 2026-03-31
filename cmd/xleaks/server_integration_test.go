@@ -623,7 +623,8 @@ func newMountedTestServerWithWebSocket(t *testing.T, apiToken string, enableWebS
 
 	idHolder, kp := setupIdentity(cfg.DataDir(), db)
 	svc := setupServices(ctx, db, cas, kp, idHolder)
-	webRoutes := setupWebHandler(db, idHolder, svc, cfg, nil, cfg.DataDir(), nil, func(*identity.KeyPair) {}, nil)
+	t.Cleanup(svc.Close)
+	webRoutes := setupWebHandler(ctx, db, idHolder, svc, cfg, nil, cfg.DataDir(), nil, func(*identity.KeyPair) {}, nil)
 	cfgPath := filepath.Join(cfg.DataDir(), "config.toml")
 	deps := buildAPIDeps(db, cas, kp, idHolder, svc, nil, cfg, cfgPath, webRoutes, apiToken != "", func(*identity.KeyPair) {}, nil)
 	server := api.NewServerWithConfig(api.ServerConfig{

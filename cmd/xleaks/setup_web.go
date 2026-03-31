@@ -22,9 +22,14 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/web"
 )
 
+type runtimeCloser interface {
+	Close() error
+}
+
 // setupWebHandler initialises the Go-template web UI and wires its callbacks.
 // The idx parameter may be nil when the node is not running in indexer mode.
 func setupWebHandler(
+	ctx context.Context,
 	db *storage.DB,
 	idHolder *identity.Holder,
 	svc *ServiceBundle,
@@ -43,9 +48,11 @@ func setupWebHandler(
 	sessionMgr := web.NewSessionManager()
 	webHandler, err := web.NewHandler(db, idHolder, svc.Timeline, sessionMgr)
 	if err != nil {
+		sessionMgr.Stop()
 		slog.Warn("web UI failed to initialize", "error", err)
 		return nil
 	}
+	closeOnContextCancel(ctx, webHandler)
 
 	webHandler.SetOnIdentityChange(identitySync)
 	webHandler.SetTopicSubscriber(ensureTopic)
@@ -162,6 +169,19 @@ func setupWebHandler(
 	webHandler.SetIndexerClient(svc.Indexer)
 
 	return webHandler.Routes()
+}
+
+func closeOnContextCancel(ctx context.Context, closer runtimeCloser) {
+	if ctx == nil || closer == nil {
+		return
+	}
+
+	go func() {
+		<-ctx.Done()
+		if err := closer.Close(); err != nil {
+			slog.Warn("runtime cleanup failed", "error", err)
+		}
+	}()
 }
 
 // buildAPIDeps constructs the HandlerDeps struct for the API server.

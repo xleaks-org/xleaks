@@ -79,6 +79,7 @@ func run() error {
 	}
 
 	svc := setupServices(ctx, db, cas, kp, idHolder)
+	defer svc.Close()
 	wireOutboundPublishers(p2pHost, svc)
 	if err := backfillPinnedContent(db); err != nil {
 		slog.Warn("failed to backfill pinned content state", "error", err)
@@ -115,7 +116,7 @@ func run() error {
 	replicator.StartStorageManager(ctx, maxStorage, 5*time.Minute)
 
 	cfgPath := defaultConfigPath
-	webRoutes := setupWebHandler(db, idHolder, svc, cfg, p2pHost, dataDir, idx, identitySync, ensureTopicSubscription)
+	webRoutes := setupWebHandler(ctx, db, idHolder, svc, cfg, p2pHost, dataDir, idx, identitySync, ensureTopicSubscription)
 	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes, apiToken != "", identitySync, ensureTopicSubscription)
 
 	server := api.NewServerWithConfig(api.ServerConfig{
