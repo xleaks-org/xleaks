@@ -60,6 +60,7 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 	rl.AddLimit("POST /api/identity/create", 5, time.Minute)
 	rl.AddLimit("POST /api/identity/import", 5, time.Minute)
 	rl.AddLimit("POST /api/identity/unlock", 10, time.Minute)
+	rl.AddLimit("POST /api/identity/export", 10, time.Minute)
 	rl.AddLimit("GET", 120, time.Minute)
 	rl.SetGlobalLimit(300, time.Minute)
 	r.Use(rl.Middleware)
@@ -103,7 +104,7 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 			r.Post("/lock", h.LockIdentity)
 			r.Get("/list", h.ListIdentities)
 			r.Put("/switch/{pubkey}", h.SwitchIdentity)
-			r.Get("/export", h.ExportIdentity)
+			r.Post("/export", h.ExportIdentity)
 		})
 
 		// Posts
@@ -135,15 +136,15 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 		r.Get("/explore", h.Explore)
 
 		// DMs
-		r.Get("/dm", h.ListConversations)
-		r.Get("/dm/{pubkey}", h.GetConversation)
-		r.Post("/dm/{pubkey}", h.SendDM)
+		r.With(middleware.NoStore).Get("/dm", h.ListConversations)
+		r.With(middleware.NoStore).Get("/dm/{pubkey}", h.GetConversation)
+		r.With(middleware.NoStore).Post("/dm/{pubkey}", h.SendDM)
 
 		// Notifications
-		r.Get("/notifications", h.GetNotifications)
-		r.Put("/notifications/read", h.MarkAllNotificationsRead)
-		r.Put("/notifications/{id}/read", h.MarkNotificationRead)
-		r.Get("/notifications/unread-count", h.GetUnreadCount)
+		r.With(middleware.NoStore).Get("/notifications", h.GetNotifications)
+		r.With(middleware.NoStore).Put("/notifications/read", h.MarkAllNotificationsRead)
+		r.With(middleware.NoStore).Put("/notifications/{id}/read", h.MarkNotificationRead)
+		r.With(middleware.NoStore).Get("/notifications/unread-count", h.GetUnreadCount)
 
 		// Media
 		r.Post("/media", h.UploadMedia)

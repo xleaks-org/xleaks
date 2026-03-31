@@ -231,6 +231,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/unlock", h.handleUnlock)
 	r.Post("/logout", h.handleLogout)
 	r.Get("/settings", h.settingsPage)
+	r.Post("/settings/export", h.handleExportIdentity)
 	r.Post("/settings/switch", h.handleSwitchIdentity)
 	r.Get("/post/{id}", h.postPage)
 	r.Get("/user/{pubkey}", h.profilePage)

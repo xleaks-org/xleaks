@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -304,7 +303,7 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ExportIdentity handles GET /api/identity/export.
+// ExportIdentity handles POST /api/identity/export.
 func (h *Handler) ExportIdentity(w http.ResponseWriter, r *http.Request) {
 	if h.identity == nil {
 		respondError(w, http.StatusInternalServerError, "identity system not initialized")
@@ -316,20 +315,16 @@ func (h *Handler) ExportIdentity(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "no active identity")
 		return
 	}
-	address, _ := identity.PubKeyToAddress(mustDecodeHexString(pubkeyHex))
-	slog.Info("identity exported", "pubkey", pubkeyHex, "address", address)
-	body, err := json.MarshalIndent(map[string]interface{}{
-		"pubkey":        pubkeyHex,
-		"address":       address,
-		"encrypted_key": enc,
-	}, "", "  ")
+	body, filename, err := identity.MarshalExportIdentity(pubkeyHex, enc)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to export identity")
 		return
 	}
+	address, _ := identity.PubKeyToAddress(mustDecodeHexString(pubkeyHex))
+	slog.Info("identity exported", "pubkey", pubkeyHex, "address", address)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+pubkeyHex+`.xleaks-key.json"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.WriteHeader(http.StatusOK)
 	w.Write(body)
 }

@@ -1003,7 +1003,7 @@ paths:
                 $ref: '#/components/schemas/Error'
 
   /api/identity/export:
-    get:
+    post:
       tags: [Identity]
       summary: Export the active identity
       operationId: exportIdentity

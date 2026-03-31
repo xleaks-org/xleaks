@@ -298,6 +298,43 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings?success=Profile+updated", http.StatusSeeOther)
 }
 
+// handleExportIdentity exports the encrypted key for the current web session's
+// identity instead of relying on whatever identity is globally active.
+func (h *Handler) handleExportIdentity(w http.ResponseWriter, r *http.Request) {
+	if h.sessions == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	sess := h.sessions.GetFromRequest(r)
+	if sess == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if h.identity == nil {
+		http.Redirect(w, r, "/settings?error=identity+system+not+available", http.StatusSeeOther)
+		return
+	}
+
+	enc, err := h.identity.ExportIdentity(sess.PubkeyHex)
+	if err != nil {
+		slog.Warn("failed to export session identity", "pubkey", sess.PubkeyHex, "error", err)
+		http.Redirect(w, r, "/settings?error=failed+to+export+identity", http.StatusSeeOther)
+		return
+	}
+
+	body, filename, err := identity.MarshalExportIdentity(sess.PubkeyHex, enc)
+	if err != nil {
+		slog.Error("failed to render exported identity", "pubkey", sess.PubkeyHex, "error", err)
+		http.Redirect(w, r, "/settings?error=failed+to+export+identity", http.StatusSeeOther)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.WriteHeader(http.StatusOK)
+	w.Write(body)
+}
+
 // handleSwitchIdentity switches the active identity and replaces the current web session.
 func (h *Handler) handleSwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	if h.currentUser(r) == nil {

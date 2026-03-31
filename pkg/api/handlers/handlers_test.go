@@ -319,6 +319,64 @@ func TestHexSlice(t *testing.T) {
 	}
 }
 
+func TestExportIdentityReturnsAttachmentOnPost(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	db, err := storage.NewDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	cas, err := content.NewContentStore(filepath.Join(dir, "cas"))
+	if err != nil {
+		t.Fatalf("NewContentStore: %v", err)
+	}
+
+	holder := identity.NewHolder(filepath.Join(dir, "identities"))
+	kp, _, err := holder.CreateAndSave("passphrase")
+	if err != nil {
+		t.Fatalf("CreateAndSave: %v", err)
+	}
+	if err := db.UpsertProfile(kp.PublicKeyBytes(), "TestUser", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile: %v", err)
+	}
+
+	fm := feed.NewManager(db)
+	tl := feed.NewTimeline(db, holder)
+	h := New(db, cas, kp, nil, nil, nil, nil, nil, nil, fm, tl)
+	h.SetIdentityHolder(holder)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/identity/export", nil)
+	rr := httptest.NewRecorder()
+
+	h.ExportIdentity(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if got := rr.Header().Get("Content-Disposition"); !strings.Contains(got, ".xleaks-key.json") {
+		t.Fatalf("Content-Disposition = %q, want export attachment", got)
+	}
+
+	var payload struct {
+		Pubkey string `json:"pubkey"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payload.Pubkey != hex.EncodeToString(kp.PublicKeyBytes()) {
+		t.Fatalf("pubkey = %q, want %q", payload.Pubkey, hex.EncodeToString(kp.PublicKeyBytes()))
+	}
+}
+
 func TestIsUsableKeyPair(t *testing.T) {
 	t.Parallel()
 
