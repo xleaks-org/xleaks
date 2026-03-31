@@ -26,6 +26,9 @@ func TestNewIndexerHTTPServerSetsTimeouts(t *testing.T) {
 	if srv.IdleTimeout != 60*time.Second {
 		t.Fatalf("IdleTimeout = %s, want %s", srv.IdleTimeout, 60*time.Second)
 	}
+	if srv.MaxHeaderBytes != maxIndexerHeaderBytes {
+		t.Fatalf("MaxHeaderBytes = %d, want %d", srv.MaxHeaderBytes, maxIndexerHeaderBytes)
+	}
 	if srv.Handler == nil {
 		t.Fatal("expected handler to be set")
 	}

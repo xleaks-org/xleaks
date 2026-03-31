@@ -21,6 +21,8 @@ import (
 // to compute the uptime reported by the /health endpoint.
 var serverStartTime = time.Now()
 
+const maxHTTPHeaderBytes = 64 << 10
+
 // ServerConfig holds configuration options for the API server.
 type ServerConfig struct {
 	ListenAddr      string
@@ -142,11 +144,13 @@ func NewServerWithConfig(cfg ServerConfig, deps *HandlerDeps) *Server {
 
 	s := &Server{
 		httpServer: &http.Server{
-			Addr:         cfg.ListenAddr,
-			Handler:      serverHandler,
-			ReadTimeout:  15 * time.Second,
-			WriteTimeout: 15 * time.Second,
-			IdleTimeout:  60 * time.Second,
+			Addr:              cfg.ListenAddr,
+			Handler:           serverHandler,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      15 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    maxHTTPHeaderBytes,
 		},
 		wsHub:       wsHub,
 		wsTickets:   wsTickets,

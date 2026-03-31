@@ -16,6 +16,8 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
+const maxIndexerHeaderBytes = 64 << 10
+
 // setupIndexer initialises the indexer subsystem when the node is running in
 // indexer mode. It starts the indexer, mounts its public API on a separate port,
 // and advertises the node as an indexer on the DHT.
@@ -112,6 +114,7 @@ func newIndexerHTTPServer(addr string, handler http.Handler) *http.Server {
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    maxIndexerHeaderBytes,
 	}
 }
 
