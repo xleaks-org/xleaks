@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -159,7 +160,7 @@ func (r *Replicator) checkAndEvict(maxBytes int64) {
 	dataDir := r.cas.BasePath()
 	currentSize, err := content.DirSize(dataDir)
 	if err != nil {
-		slog.Warn("replicator: failed to compute directory size", "dir", dataDir, "error", err)
+		slog.Warn("replicator: failed to compute directory size", "dir", xlog.RedactPath(dataDir), "error", err)
 		return
 	}
 

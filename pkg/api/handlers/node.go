@@ -18,6 +18,7 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/content"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/version"
 )
 
@@ -389,7 +390,7 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	// Persist to disk if we have a config path.
 	if h.cfgPath != "" {
 		if err := next.Save(h.cfgPath); err != nil {
-			slog.Error("failed to save node config", "path", h.cfgPath, "error", err)
+			slog.Error("failed to save node config", "path", xlog.RedactPath(h.cfgPath), "error", err)
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save config: %v", err))
 			return
 		}
@@ -572,18 +573,18 @@ func (h *Handler) CreateBackup(w http.ResponseWriter, r *http.Request) {
 	backupDir := filepath.Dir(h.db.Path())
 	path, err := h.db.Backup(backupDir)
 	if err != nil {
-		slog.Error("database backup failed", "dir", backupDir, "error", err)
+		slog.Error("database backup failed", "dir", xlog.RedactPath(backupDir), "error", err)
 		respondError(w, http.StatusInternalServerError, "backup failed: "+err.Error())
 		return
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
-		slog.Error("database backup stat failed", "path", path, "error", err)
+		slog.Error("database backup stat failed", "path", xlog.RedactPath(path), "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to stat backup: "+err.Error())
 		return
 	}
-	slog.Info("database backup created", "path", path, "size", info.Size())
+	slog.Info("database backup created", "path", xlog.RedactPath(path), "size", info.Size())
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"path":      path,

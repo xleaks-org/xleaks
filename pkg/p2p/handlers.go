@@ -12,6 +12,7 @@ import (
 
 	"github.com/xleaks-org/xleaks/pkg/content"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 	pb "github.com/xleaks-org/xleaks/proto/gen"
 	"google.golang.org/protobuf/proto"
 )
@@ -511,14 +512,14 @@ func (mp *MessageProcessor) storeFetchedMediaFile(cid []byte, fetched *FetchedCo
 	file, err := os.Open(fetched.Path)
 	if err != nil {
 		if removeErr := os.Remove(fetched.Path); removeErr != nil && !os.IsNotExist(removeErr) {
-			slog.Warn("failed to remove fetched media temp file after open error", "path", fetched.Path, "error", removeErr)
+			slog.Warn("failed to remove fetched media temp file after open error", "path", xlog.RedactPath(fetched.Path), "error", removeErr)
 		}
 		return err
 	}
 	defer file.Close()
 	defer func() {
 		if removeErr := os.Remove(fetched.Path); removeErr != nil && !os.IsNotExist(removeErr) {
-			slog.Warn("failed to remove fetched media temp file", "path", fetched.Path, "error", removeErr)
+			slog.Warn("failed to remove fetched media temp file", "path", xlog.RedactPath(fetched.Path), "error", removeErr)
 		}
 	}()
 
