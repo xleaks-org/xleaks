@@ -415,6 +415,60 @@ func TestHexSlice(t *testing.T) {
 	}
 }
 
+func TestParseHexParam(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
+
+		r := httptest.NewRequest(http.MethodGet, "/api/posts/deadbeef", nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("cid", "deadbeef")
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+		got, err := parseHexParam(r, "cid")
+		if err != nil {
+			t.Fatalf("parseHexParam() error = %v", err)
+		}
+		if hex.EncodeToString(got) != "deadbeef" {
+			t.Fatalf("parseHexParam() = %x, want deadbeef", got)
+		}
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		t.Parallel()
+
+		r := httptest.NewRequest(http.MethodGet, "/api/posts", nil)
+		rctx := chi.NewRouteContext()
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+		_, err := parseHexParam(r, "cid")
+		if err == nil {
+			t.Fatal("expected error for missing route param")
+		}
+		if err.Error() != "missing cid parameter" {
+			t.Fatalf("error = %q, want %q", err.Error(), "missing cid parameter")
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Parallel()
+
+		r := httptest.NewRequest(http.MethodGet, "/api/posts/not-hex", nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("cid", "not-hex")
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+		_, err := parseHexParam(r, "cid")
+		if err == nil {
+			t.Fatal("expected error for invalid route param")
+		}
+		if err.Error() != "invalid cid hex" {
+			t.Fatalf("error = %q, want %q", err.Error(), "invalid cid hex")
+		}
+	})
+}
+
 func TestExportIdentityReturnsAttachmentOnPost(t *testing.T) {
 	t.Parallel()
 
@@ -1151,6 +1205,44 @@ func TestUploadMediaRejectsConfiguredUploadLimit(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "uploaded file too large") {
 		t.Fatalf("body = %q, want upload-too-large error", w.Body.String())
 	}
+}
+
+func TestGetMediaRejectsInvalidCIDWithoutDecoderLeak(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/media/not-hex", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("cid", "not-hex")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	h.GetMedia(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid cid hex", "encoding/hex", "invalid byte")
+}
+
+func TestFollowRejectsInvalidPubkeyWithoutDecoderLeak(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/follow/not-hex", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("pubkey", "not-hex")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	h.Follow(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid pubkey hex", "encoding/hex", "invalid byte")
 }
 
 func TestGetMediaServesStoredContent(t *testing.T) {

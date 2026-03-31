@@ -223,11 +223,11 @@ func errorAttrs(err error, attrs ...any) []any {
 func parseHexParam(r *http.Request, name string) ([]byte, error) {
 	param := chi.URLParam(r, name)
 	if param == "" {
-		return nil, fmt.Errorf("missing parameter: %s", name)
+		return nil, fmt.Errorf("missing %s parameter", name)
 	}
 	b, err := hex.DecodeString(param)
 	if err != nil {
-		return nil, fmt.Errorf("invalid hex for %s: %w", name, err)
+		return nil, fmt.Errorf("invalid %s hex", name)
 	}
 	return b, nil
 }
