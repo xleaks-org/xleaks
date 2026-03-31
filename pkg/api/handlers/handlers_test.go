@@ -978,6 +978,84 @@ func TestUploadMediaRejectsOversizedImageDimensions(t *testing.T) {
 	}
 }
 
+func TestUploadMediaMalformedMultipartDoesNotLeakParserError(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	body := strings.NewReader("--broken\r\nContent-Disposition: form-data; name=\"file\"; filename=\"upload.png\"\r\n\r\nabc")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/media", body)
+	r.Header.Set("Content-Type", "multipart/form-data")
+	h.UploadMedia(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "failed to read uploaded file", "multipart", "boundary", "EOF")
+}
+
+func TestUploadMediaInvalidImageDoesNotLeakDecoderError(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	valid := testPNGImage(8, 8)
+	truncated := valid[:20]
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fileWriter, err := writer.CreateFormFile("file", "broken.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fileWriter.Write(truncated); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/media", &body)
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	h.UploadMedia(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid image", "png", "EOF", "unexpected")
+}
+
+func TestUploadMediaUnsupportedTypeDoesNotLeakDetectedMime(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fileWriter, err := writer.CreateFormFile("file", "notes.txt")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fileWriter.Write([]byte("plain text upload")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/media", &body)
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	h.UploadMedia(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "unsupported media type", "text/plain", "application/octet-stream")
+}
+
 func TestUploadMediaStoresStreamedUpload(t *testing.T) {
 	t.Parallel()
 

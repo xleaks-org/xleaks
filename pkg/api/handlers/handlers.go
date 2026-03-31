@@ -195,6 +195,11 @@ func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{"error": message})
 }
 
+func respondBadRequest(w http.ResponseWriter, logMessage string, err error, clientMessage string, attrs ...any) {
+	slog.Warn(logMessage, errorAttrs(err, attrs...)...)
+	respondError(w, http.StatusBadRequest, clientMessage)
+}
+
 func respondInternalError(w http.ResponseWriter, logMessage string, err error, clientMessage string, attrs ...any) {
 	slog.Error(logMessage, errorAttrs(err, attrs...)...)
 	respondError(w, http.StatusInternalServerError, clientMessage)

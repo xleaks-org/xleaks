@@ -70,7 +70,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, errMissingUploadedFile), errors.Is(err, errEmptyUploadedFile):
 			respondError(w, http.StatusBadRequest, err.Error())
 		default:
-			respondError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			respondBadRequest(w, "failed to stage uploaded file", err, "failed to read uploaded file")
 		}
 		return
 	}
@@ -79,7 +79,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	// Detect mime type from the initial bytes without buffering the full upload.
 	mimeType := http.DetectContentType(upload.Sniff)
 	if err := content.ValidateMediaType(mimeType); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequest(w, "rejected uploaded media type", err, "unsupported media type", "mime_type", mimeType)
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		meta, err := content.ExtractImageMetadataReader(metaReader)
 		metaReader.Close()
 		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid image: "+err.Error())
+			respondBadRequest(w, "rejected invalid uploaded image", err, "invalid image", "mime_type", mimeType)
 			return
 		}
 		width = meta.Width
