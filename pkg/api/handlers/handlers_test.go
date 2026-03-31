@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -67,6 +68,68 @@ func testHandler(t *testing.T) (*Handler, *storage.DB) {
 	h.SetIdentityHolder(idHolder)
 
 	return h, db
+}
+
+func testStoredIdentityHandler(t *testing.T, passphrase string) (*Handler, *storage.DB, *identity.Holder, *identity.KeyPair) {
+	t.Helper()
+
+	dir := t.TempDir()
+	db, err := storage.NewDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	cas, err := content.NewContentStore(filepath.Join(dir, "cas"))
+	if err != nil {
+		t.Fatalf("NewContentStore: %v", err)
+	}
+
+	holder := identity.NewHolder(filepath.Join(dir, "identities"))
+	kp, _, err := holder.CreateAndSave(passphrase)
+	if err != nil {
+		t.Fatalf("CreateAndSave: %v", err)
+	}
+	if err := db.UpsertProfile(kp.PublicKeyBytes(), "TestUser", "", nil, nil, "", 1, time.Now().UnixMilli()); err != nil {
+		t.Fatalf("UpsertProfile: %v", err)
+	}
+
+	fm := feed.NewManager(db)
+	tl := feed.NewTimeline(db, holder)
+	h := New(db, cas, kp, nil, nil, nil, nil, nil, nil, fm, tl)
+	h.SetIdentityHolder(holder)
+
+	return h, db, holder, kp
+}
+
+func captureDefaultJSONLogger(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	previous := slog.Default()
+	slog.SetDefault(logger)
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+	})
+	return &buf
+}
+
+func decodeSingleJSONLogLine(t *testing.T, logLine string) map[string]any {
+	t.Helper()
+
+	if strings.TrimSpace(logLine) == "" {
+		t.Fatal("expected log output")
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(logLine), &payload); err != nil {
+		t.Fatalf("unmarshal log line: %v", err)
+	}
+	return payload
 }
 
 func testPNGWithDimensions(width, height uint32) []byte {
@@ -374,6 +437,96 @@ func TestExportIdentityReturnsAttachmentOnPost(t *testing.T) {
 	}
 	if payload.Pubkey != hex.EncodeToString(kp.PublicKeyBytes()) {
 		t.Fatalf("pubkey = %q, want %q", payload.Pubkey, hex.EncodeToString(kp.PublicKeyBytes()))
+	}
+}
+
+func TestUnlockIdentityWrongPassphraseDoesNotLeakInternalError(t *testing.T) {
+	t.Parallel()
+
+	h, _, holder, _ := testStoredIdentityHandler(t, "correct horse battery staple")
+	holder.Lock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/identity/unlock", strings.NewReader(`{"passphrase":"wrong passphrase"}`))
+	rr := httptest.NewRecorder()
+
+	h.UnlockIdentity(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := payload["error"]; got != "failed to unlock identity" {
+		t.Fatalf("error = %q, want %q", got, "failed to unlock identity")
+	}
+	if strings.Contains(rr.Body.String(), "decrypt") || strings.Contains(rr.Body.String(), "authentication") {
+		t.Fatalf("response leaked internal unlock error: %s", rr.Body.String())
+	}
+}
+
+func TestSwitchIdentityWrongPassphraseDoesNotLeakInternalError(t *testing.T) {
+	t.Parallel()
+
+	h, _, _, kp := testStoredIdentityHandler(t, "correct horse battery staple")
+	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+
+	req := httptest.NewRequest(http.MethodPut, "/api/identity/switch/"+pubkeyHex, strings.NewReader(`{"passphrase":"wrong passphrase"}`))
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("pubkey", pubkeyHex)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rr := httptest.NewRecorder()
+
+	h.SwitchIdentity(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := payload["error"]; got != "failed to switch identity" {
+		t.Fatalf("error = %q, want %q", got, "failed to switch identity")
+	}
+	if strings.Contains(rr.Body.String(), "decrypt") || strings.Contains(rr.Body.String(), pubkeyHex) {
+		t.Fatalf("response leaked internal switch error: %s", rr.Body.String())
+	}
+}
+
+func TestExportIdentityAuditLogRedactsIdentity(t *testing.T) {
+	buf := captureDefaultJSONLogger(t)
+	h, _, _, kp := testStoredIdentityHandler(t, "correct horse battery staple")
+	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
+	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/identity/export", nil)
+	rr := httptest.NewRecorder()
+
+	h.ExportIdentity(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	logLine := strings.TrimSpace(buf.String())
+	if strings.Contains(logLine, pubkeyHex) || strings.Contains(logLine, address) {
+		t.Fatalf("log line leaked raw identity details: %s", logLine)
+	}
+
+	payload := decodeSingleJSONLogLine(t, logLine)
+	if got := payload["msg"]; got != "identity exported" {
+		t.Fatalf("msg = %v, want %q", got, "identity exported")
+	}
+	identityField, ok := payload["identity"].(map[string]any)
+	if !ok {
+		t.Fatalf("identity = %T, want object", payload["identity"])
+	}
+	if got := identityField["fingerprint"]; got == "" {
+		t.Fatalf("identity.fingerprint = %v, want non-empty fingerprint", got)
 	}
 }
 

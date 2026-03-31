@@ -1,6 +1,8 @@
 package logging
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"net"
 	"net/url"
@@ -85,6 +87,27 @@ func RedactURL(raw string) slog.Value {
 	return slog.GroupValue(attrs...)
 }
 
+// RedactIdentifier preserves only a stable fingerprint and basic shape for an
+// identifier such as a pubkey, address, or token-like string.
+func RedactIdentifier(value string) slog.Value {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return slog.GroupValue(slog.Bool("redacted", true))
+	}
+
+	sum := sha256.Sum256([]byte(value))
+	attrs := []slog.Attr{
+		slog.Bool("redacted", true),
+		slog.String("fingerprint", hex.EncodeToString(sum[:6])),
+		slog.Int("length", len(value)),
+	}
+	if isHexString(value) {
+		attrs = append(attrs, slog.String("format", "hex"))
+	}
+
+	return slog.GroupValue(attrs...)
+}
+
 func redactMultiaddr(addr string) slog.Value {
 	parts := strings.Split(strings.TrimPrefix(addr, "/"), "/")
 	protocols := make([]string, 0, len(parts)/2)
@@ -147,4 +170,12 @@ func classifyHost(host string) string {
 		return "private"
 	}
 	return "public"
+}
+
+func isHexString(value string) bool {
+	if len(value) == 0 || len(value)%2 != 0 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }

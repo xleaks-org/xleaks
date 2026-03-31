@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 )
 
 type createIdentityRequest struct {
@@ -54,7 +55,8 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 
 	kp, mnemonic, err := h.identity.CreateAndSave(req.Passphrase)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to create identity: "+err.Error())
+		slog.Error("identity create failed", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to create identity")
 		return
 	}
 
@@ -68,7 +70,7 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis()); err != nil {
 		slog.Error("failed to upsert profile", "error", err)
 	}
-	slog.Info("identity created", "pubkey", pubkeyHex, "address", address)
+	slog.Info("identity created", identityLogAttrs(pubkeyHex)...)
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"pubkey":   pubkeyHex,
@@ -114,7 +116,8 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 
 	kp, err := h.identity.ImportAndSave(mnemonic, req.Passphrase)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to import identity: "+err.Error())
+		slog.Error("identity import failed", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to import identity")
 		return
 	}
 
@@ -127,7 +130,7 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.UpsertProfile(kp.PublicKeyBytes(), DefaultDisplayName, "", nil, nil, "", 1, nowMillis()); err != nil {
 		slog.Error("failed to upsert profile", "error", err)
 	}
-	slog.Info("identity imported", "pubkey", pubkeyHex, "address", address)
+	slog.Info("identity imported", identityLogAttrs(pubkeyHex)...)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"pubkey":  pubkeyHex,
@@ -157,7 +160,7 @@ func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 	kp, err := h.identity.Unlock(req.Passphrase)
 	if err != nil {
 		slog.Warn("identity unlock failed", "error", err)
-		respondError(w, http.StatusUnauthorized, "failed to unlock: "+err.Error())
+		respondError(w, http.StatusUnauthorized, "failed to unlock identity")
 		return
 	}
 
@@ -166,7 +169,7 @@ func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 
 	pubkeyHex := hex.EncodeToString(kp.PublicKeyBytes())
 	address, _ := identity.PubKeyToAddress(kp.PublicKeyBytes())
-	slog.Info("identity unlocked", "pubkey", pubkeyHex, "address", address)
+	slog.Info("identity unlocked", identityLogAttrs(pubkeyHex)...)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "unlocked",
@@ -231,7 +234,7 @@ func (h *Handler) LockIdentity(w http.ResponseWriter, r *http.Request) {
 		h.identity.Lock()
 	}
 	h.updateIdentity(nil)
-	slog.Info("identity locked", "pubkey", pubkeyHex)
+	slog.Info("identity locked", identityLogAttrs(pubkeyHex)...)
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "locked",
 	})
@@ -246,7 +249,8 @@ func (h *Handler) ListIdentities(w http.ResponseWriter, r *http.Request) {
 
 	identities, err := h.identity.ListIdentities()
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to list identities: "+err.Error())
+		slog.Error("failed to list identities", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to list identities")
 		return
 	}
 
@@ -285,8 +289,8 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.identity.SwitchIdentity(pubkeyHex, req.Passphrase); err != nil {
-		slog.Warn("identity switch failed", "pubkey", pubkeyHex, "error", err)
-		respondError(w, http.StatusUnauthorized, "failed to switch identity: "+err.Error())
+		slog.Warn("identity switch failed", identityLogAttrs(pubkeyHex, "error", err)...)
+		respondError(w, http.StatusUnauthorized, "failed to switch identity")
 		return
 	}
 
@@ -294,7 +298,7 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	h.updateIdentity(h.identity.Get())
 
 	address, _ := identity.PubKeyToAddress(pubkeyBytes)
-	slog.Info("identity switched", "pubkey", pubkeyHex, "address", address)
+	slog.Info("identity switched", identityLogAttrs(pubkeyHex)...)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "switched",
@@ -320,8 +324,7 @@ func (h *Handler) ExportIdentity(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to export identity")
 		return
 	}
-	address, _ := identity.PubKeyToAddress(mustDecodeHexString(pubkeyHex))
-	slog.Info("identity exported", "pubkey", pubkeyHex, "address", address)
+	slog.Info("identity exported", identityLogAttrs(pubkeyHex)...)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
@@ -333,7 +336,11 @@ func nowMillis() int64 {
 	return time.Now().UnixMilli()
 }
 
-func mustDecodeHexString(s string) []byte {
-	b, _ := hex.DecodeString(s)
-	return b
+func identityLogAttrs(pubkeyHex string, attrs ...any) []any {
+	if pubkeyHex == "" {
+		return attrs
+	}
+	base := []any{"identity", xlog.RedactIdentifier(pubkeyHex)}
+	base = append(base, attrs...)
+	return base
 }

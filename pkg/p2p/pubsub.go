@@ -9,6 +9,7 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 )
 
 // PeerID is an alias for libp2p peer.ID, exported for use by consumers.
@@ -118,7 +119,7 @@ func (h *Host) SubscribeWithFilter(
 
 		// Rate limiting: drop if the author has exceeded their limit.
 		if h.rateLimiter != nil && !h.rateLimiter.Allow(authorHex, msgType) {
-			slog.Warn("rate limit exceeded", "author", authorHex, "type", msgType)
+			slog.Warn("rate limit exceeded", "author", xlog.RedactIdentifier(authorHex), "type", msgType)
 			return
 		}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xleaks-org/xleaks/pkg/identity"
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/social"
 )
 
@@ -317,14 +318,14 @@ func (h *Handler) handleExportIdentity(w http.ResponseWriter, r *http.Request) {
 
 	enc, err := h.identity.ExportIdentity(sess.PubkeyHex)
 	if err != nil {
-		slog.Warn("failed to export session identity", "pubkey", sess.PubkeyHex, "error", err)
+		slog.Warn("failed to export session identity", "identity", xlog.RedactIdentifier(sess.PubkeyHex), "error", err)
 		http.Redirect(w, r, "/settings?error=failed+to+export+identity", http.StatusSeeOther)
 		return
 	}
 
 	body, filename, err := identity.MarshalExportIdentity(sess.PubkeyHex, enc)
 	if err != nil {
-		slog.Error("failed to render exported identity", "pubkey", sess.PubkeyHex, "error", err)
+		slog.Error("failed to render exported identity", "identity", xlog.RedactIdentifier(sess.PubkeyHex), "error", err)
 		http.Redirect(w, r, "/settings?error=failed+to+export+identity", http.StatusSeeOther)
 		return
 	}

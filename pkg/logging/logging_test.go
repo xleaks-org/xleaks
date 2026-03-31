@@ -108,6 +108,28 @@ func TestRedactURLPreservesOnlySchemeAndNetworkShape(t *testing.T) {
 	}
 }
 
+func TestRedactIdentifierPreservesOnlyFingerprintAndShape(t *testing.T) {
+	value := RedactIdentifier("deadbeefcafebabe")
+
+	if value.Kind() != slog.KindGroup {
+		t.Fatalf("Kind = %v, want %v", value.Kind(), slog.KindGroup)
+	}
+
+	attrs := value.Group()
+	if len(attrs) != 4 {
+		t.Fatalf("group len = %d, want %d", len(attrs), 4)
+	}
+	if attrs[1].Key != "fingerprint" || attrs[1].Value.String() == "" {
+		t.Fatalf("fingerprint attr = %v, want non-empty fingerprint", attrs[1])
+	}
+	if attrs[2].Key != "length" || attrs[2].Value.Int64() != int64(len("deadbeefcafebabe")) {
+		t.Fatalf("length attr = %v, want %d", attrs[2], len("deadbeefcafebabe"))
+	}
+	if attrs[3].Key != "format" || attrs[3].Value.String() != "hex" {
+		t.Fatalf("format attr = %v, want hex", attrs[3])
+	}
+}
+
 func TestSetupTightensExistingLogFilePermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "xleaks.log")
 	if err := os.WriteFile(path, []byte("existing"), 0o644); err != nil {

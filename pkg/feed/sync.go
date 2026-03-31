@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"time"
 
+	xlog "github.com/xleaks-org/xleaks/pkg/logging"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -48,7 +49,7 @@ func (s *Syncer) SyncPublisher(ctx context.Context, pubkey []byte) error {
 	// Discover content CIDs for this publisher via DHT.
 	cidHexList, err := s.OnDiscoverContent(ctx, pubkeyHex)
 	if err != nil {
-		return fmt.Errorf("discover content for %s: %w", pubkeyHex, err)
+		return fmt.Errorf("discover publisher content: %w", err)
 	}
 
 	// Fetch and store each discovered CID.
@@ -131,7 +132,7 @@ func (s *Syncer) StartBackgroundSync(ctx context.Context) {
 
 				if err := s.SyncPublisher(ctx, pubkey); err != nil {
 					slog.Warn("background sync: failed to sync publisher",
-						"pubkey", hex.EncodeToString(pubkey)[:16], "error", err)
+						"identity", xlog.RedactIdentifier(hex.EncodeToString(pubkey)), "error", err)
 					hadError = true
 				}
 			}
