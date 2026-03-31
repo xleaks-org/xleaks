@@ -68,7 +68,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, errUploadedFileTooLarge):
 			respondError(w, http.StatusRequestEntityTooLarge, errUploadedFileTooLarge.Error())
 		case errors.Is(err, errMissingUploadedFile), errors.Is(err, errEmptyUploadedFile):
-			respondError(w, http.StatusBadRequest, err.Error())
+			respondBadRequestError(w, err)
 		default:
 			respondBadRequest(w, "failed to stage uploaded file", err, "failed to read uploaded file")
 		}
@@ -402,7 +402,7 @@ func generateMediaThumbnailFromPath(path, mimeType string, quality int) ([]byte,
 func (h *Handler) GetMedia(w http.ResponseWriter, r *http.Request) {
 	cidBytes, err := parseHexParam(r, "cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -437,7 +437,7 @@ func (h *Handler) GetMedia(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetMediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	cidBytes, err := parseHexParam(r, "cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -495,7 +495,7 @@ func (h *Handler) GetMediaThumbnail(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetMediaStatus(w http.ResponseWriter, r *http.Request) {
 	cidBytes, err := parseHexParam(r, "cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 

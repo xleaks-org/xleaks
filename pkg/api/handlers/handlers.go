@@ -35,6 +35,18 @@ const (
 	EventNewDM           = "new_dm"
 )
 
+type requestError struct {
+	message string
+}
+
+func (e *requestError) Error() string {
+	return e.message
+}
+
+func newRequestError(format string, args ...any) error {
+	return &requestError{message: fmt.Sprintf(format, args...)}
+}
+
 // EventBroadcaster is a callback that broadcasts real-time events to WebSocket clients.
 type EventBroadcaster func(eventType string, data interface{})
 
@@ -195,6 +207,19 @@ func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{"error": message})
 }
 
+func respondBadRequestError(w http.ResponseWriter, err error, attrs ...any) {
+	if err == nil {
+		respondError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if isClientSafeBadRequest(err) {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	slog.Warn("sanitized unexpected bad request error", errorAttrs(err, attrs...)...)
+	respondError(w, http.StatusBadRequest, "invalid request")
+}
+
 func respondBadRequest(w http.ResponseWriter, logMessage string, err error, clientMessage string, attrs ...any) {
 	slog.Warn(logMessage, errorAttrs(err, attrs...)...)
 	respondError(w, http.StatusBadRequest, clientMessage)
@@ -219,11 +244,30 @@ func errorAttrs(err error, attrs ...any) []any {
 	return base
 }
 
+func isClientSafeBadRequest(err error) bool {
+	var reqErr *requestError
+	if errors.As(err, &reqErr) {
+		return true
+	}
+	switch {
+	case errors.Is(err, social.ErrPostContentTooLong),
+		errors.Is(err, social.ErrDisplayNameMissing),
+		errors.Is(err, social.ErrDisplayNameTooLong),
+		errors.Is(err, social.ErrBioTooLong),
+		errors.Is(err, social.ErrWebsiteTooLong),
+		errors.Is(err, errMissingUploadedFile),
+		errors.Is(err, errEmptyUploadedFile):
+		return true
+	default:
+		return false
+	}
+}
+
 // parseHexParam extracts a URL parameter by name and decodes it from hex to bytes.
 func parseHexParam(r *http.Request, name string) ([]byte, error) {
 	param := chi.URLParam(r, name)
 	if param == "" {
-		return nil, fmt.Errorf("missing %s parameter", name)
+		return nil, newRequestError("missing %s parameter", name)
 	}
 	b, err := decodeHexField(param, name)
 	if err != nil {
@@ -234,11 +278,11 @@ func parseHexParam(r *http.Request, name string) ([]byte, error) {
 
 func decodeHexField(value, field string) ([]byte, error) {
 	if value == "" {
-		return nil, fmt.Errorf("invalid %s hex", field)
+		return nil, newRequestError("invalid %s hex", field)
 	}
 	b, err := hex.DecodeString(value)
 	if err != nil {
-		return nil, fmt.Errorf("invalid %s hex", field)
+		return nil, newRequestError("invalid %s hex", field)
 	}
 	return b, nil
 }
@@ -254,11 +298,11 @@ func decodeHexSliceField(values []string, field string) ([][]byte, error) {
 	decoded := make([][]byte, 0, len(values))
 	for _, value := range values {
 		if value == "" {
-			return nil, fmt.Errorf("invalid %s entry hex", field)
+			return nil, newRequestError("invalid %s entry hex", field)
 		}
 		item, err := hex.DecodeString(value)
 		if err != nil {
-			return nil, fmt.Errorf("invalid %s entry hex", field)
+			return nil, newRequestError("invalid %s entry hex", field)
 		}
 		decoded = append(decoded, item)
 	}
@@ -272,20 +316,20 @@ func parsePagination(r *http.Request, defaultLimit int) (before int64, limit int
 	if b := r.URL.Query().Get("before"); b != "" {
 		v, parseErr := strconv.ParseInt(b, 10, 64)
 		if parseErr != nil {
-			return 0, 0, fmt.Errorf("invalid before parameter")
+			return 0, 0, newRequestError("invalid before parameter")
 		}
 		if v < 0 {
-			return 0, 0, fmt.Errorf("before must be 0 or greater")
+			return 0, 0, newRequestError("before must be 0 or greater")
 		}
 		before = v
 	}
 	if l := r.URL.Query().Get("limit"); l != "" {
 		v, parseErr := strconv.Atoi(l)
 		if parseErr != nil {
-			return 0, 0, fmt.Errorf("invalid limit parameter")
+			return 0, 0, newRequestError("invalid limit parameter")
 		}
 		if v < 1 || v > 100 {
-			return 0, 0, fmt.Errorf("limit must be between 1 and 100")
+			return 0, 0, newRequestError("limit must be between 1 and 100")
 		}
 		limit = v
 	}
@@ -300,13 +344,13 @@ func parseJSON(w http.ResponseWriter, r *http.Request, v interface{}) error {
 	if err := dec.Decode(v); err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
-			return fmt.Errorf("JSON body too large")
+			return newRequestError("JSON body too large")
 		}
-		return fmt.Errorf("invalid JSON body")
+		return newRequestError("invalid JSON body")
 	}
 	var trailing struct{}
 	if err := dec.Decode(&trailing); err != io.EOF {
-		return fmt.Errorf("invalid JSON body")
+		return newRequestError("invalid JSON body")
 	}
 	return nil
 }

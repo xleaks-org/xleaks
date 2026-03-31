@@ -25,7 +25,7 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 
 	var req createReactionRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -36,7 +36,7 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 
 	targetCID, err := decodeHexField(req.Target, "target")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -68,7 +68,7 @@ func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
 
 	var req createRepostRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
 
 	postCID, err := decodeHexField(req.PostCID, "post_cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 

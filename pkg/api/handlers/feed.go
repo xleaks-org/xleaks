@@ -8,7 +8,7 @@ import (
 func (h *Handler) GetFeed(w http.ResponseWriter, r *http.Request) {
 	before, limit, err := parsePagination(r, 20)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 

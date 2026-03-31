@@ -33,7 +33,7 @@ type switchIdentityRequest struct {
 func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 	var req createIdentityRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 	var req importIdentityRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -143,7 +143,7 @@ func (h *Handler) ImportIdentity(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UnlockIdentity(w http.ResponseWriter, r *http.Request) {
 	var req unlockIdentityRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -266,7 +266,7 @@ func (h *Handler) ListIdentities(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	pubkeyBytes, err := parseHexParam(r, "pubkey")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 	pubkeyHex := hex.EncodeToString(pubkeyBytes)
@@ -274,7 +274,7 @@ func (h *Handler) SwitchIdentity(w http.ResponseWriter, r *http.Request) {
 	// Read passphrase from request body.
 	var req switchIdentityRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 

@@ -15,7 +15,7 @@ func (h *Handler) Follow(w http.ResponseWriter, r *http.Request) {
 
 	pubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -41,7 +41,7 @@ func (h *Handler) Unfollow(w http.ResponseWriter, r *http.Request) {
 
 	pubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -84,7 +84,7 @@ func (h *Handler) GetFollowing(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetFollowers(w http.ResponseWriter, r *http.Request) {
 	pubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 

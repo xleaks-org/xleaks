@@ -25,24 +25,24 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 	var req createPostRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 	if err := social.ValidatePostContent(req.Content); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
 	mediaCIDs, err := decodeHexSliceField(req.MediaCIDs, "media_cids")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
 	// Decode reply_to CID if present.
 	replyTo, err := decodeOptionalHexField(req.ReplyTo, "reply_to")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetPost(w http.ResponseWriter, r *http.Request) {
 	cidBytes, err := parseHexParam(r, "cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -107,7 +107,7 @@ func (h *Handler) GetPost(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 	cidBytes, err := parseHexParam(r, "cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -124,7 +124,7 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetPostReactions(w http.ResponseWriter, r *http.Request) {
 	cidBytes, err := parseHexParam(r, "cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -152,13 +152,13 @@ func (h *Handler) GetPostReactions(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetUserPosts(w http.ResponseWriter, r *http.Request) {
 	pubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
 	before, limit, err := parsePagination(r, 20)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 

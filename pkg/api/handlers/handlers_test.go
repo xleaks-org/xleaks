@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"image"
@@ -262,6 +263,37 @@ func TestRespondError(t *testing.T) {
 	}
 	if body["error"] != "something went wrong" {
 		t.Errorf("error = %q, want 'something went wrong'", body["error"])
+	}
+}
+
+func TestRespondBadRequestErrorPreservesSafeValidationMessages(t *testing.T) {
+	t.Parallel()
+
+	w := httptest.NewRecorder()
+	respondBadRequestError(w, newRequestError("invalid cid hex"))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid cid hex")
+}
+
+func TestRespondBadRequestErrorSanitizesUnexpectedErrors(t *testing.T) {
+	t.Parallel()
+
+	buf := captureDefaultJSONLogger(t)
+
+	w := httptest.NewRecorder()
+	respondBadRequestError(w, errors.New("sql: unexpected decoder leak"))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid request", "sql", "decoder")
+
+	logLine := strings.TrimSpace(buf.String())
+	if !strings.Contains(logLine, "sanitized unexpected bad request error") {
+		t.Fatalf("log line = %q, want sanitization warning", logLine)
 	}
 }
 

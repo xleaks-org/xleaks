@@ -63,24 +63,24 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	var req updateProfileRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
 	avatarCID, err := decodeOptionalHexField(req.AvatarCID, "avatar_cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 	bannerCID, err := decodeOptionalHexField(req.BannerCID, "banner_cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
 	displayName := req.getDisplayName()
 	if err := social.ValidateProfileFields(displayName, req.Bio, req.Website); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -126,7 +126,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	pubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 

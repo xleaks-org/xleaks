@@ -63,13 +63,13 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 
 	peerPubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
 	before, limit, err := parsePagination(r, 50)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -130,13 +130,13 @@ func (h *Handler) SendDM(w http.ResponseWriter, r *http.Request) {
 
 	recipientPubkey, err := parseHexParam(r, "pubkey")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
 	var req sendDMRequest
 	if err := parseJSON(w, r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 

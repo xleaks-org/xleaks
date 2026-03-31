@@ -250,11 +250,11 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 
 	var updates map[string]interface{}
 	if err := parseJSON(w, r, &updates); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 	if err := validateAllowedUpdateKeys(updates, allowedNodeConfigUpdateKeys); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -262,7 +262,7 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	refreshIndexers := false
 
 	if n, ok, err := optionalIntField(updates, "max_connections"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		if n < 1 {
@@ -272,7 +272,7 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		next.Network.MaxPeers = n
 	}
 	if n, ok, err := optionalIntField(updates, "storage_limit_gb"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		if n < 0 {
@@ -282,25 +282,25 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		next.Node.MaxStorageGB = n
 	}
 	if b, ok, err := optionalBoolField(updates, "enable_relay"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		next.Network.EnableRelay = b
 	}
 	if b, ok, err := optionalBoolField(updates, "enable_mdns"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		next.Network.EnableMDNS = b
 	}
 	if b, ok, err := optionalBoolField(updates, "enable_hole_punching"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		next.Network.EnableHolePunching = b
 	}
 	if n, ok, err := optionalIntField(updates, "bandwidth_limit_mbps"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		if n < 0 {
@@ -310,54 +310,54 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		next.Network.BandwidthLimitMbps = n
 	}
 	if peers, ok, err := optionalStringSliceField(updates, "bootstrap_peers"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		peers = normalizeStringSlice(peers)
 		if err := validateBootstrapPeers(peers); err != nil {
-			respondError(w, http.StatusBadRequest, err.Error())
+			respondBadRequestError(w, err)
 			return
 		}
 		next.Network.BootstrapPeers = peers
 	}
 	if indexers, ok, err := optionalStringSliceField(updates, "known_indexers"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		indexers, err = normalizeIndexerURLs(indexers)
 		if err != nil {
-			respondError(w, http.StatusBadRequest, err.Error())
+			respondBadRequestError(w, err)
 			return
 		}
 		next.Indexer.KnownIndexers = indexers
 		refreshIndexers = true
 	}
 	if b, ok, err := optionalBoolField(updates, "enable_websocket"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		next.API.EnableWebSocket = b
 	}
 	if b, ok, err := optionalBoolField(updates, "enable_web_ui"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		next.API.EnableWebUI = b
 	}
 	if b, ok, err := optionalBoolField(updates, "allow_remote_web_ui"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		next.API.AllowRemoteWebUI = b
 	}
 	if b, ok, err := optionalBoolField(updates, "auto_fetch_media"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		next.Media.AutoFetchMedia = b
 	}
 	if n, ok, err := optionalIntField(updates, "max_upload_size_mb"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		if n < 1 {
@@ -367,7 +367,7 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		next.Media.MaxUploadSizeMB = n
 	}
 	if n, ok, err := optionalIntField(updates, "thumbnail_quality"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		if n < minThumbnailQuality || n > maxThumbnailQuality {
@@ -377,13 +377,13 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		next.Media.ThumbnailQuality = n
 	}
 	if level, ok, err := optionalLogLevelField(updates, "log_level"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	} else if ok {
 		next.Logging.Level = level
 	}
 	if err := validateWebUIConfig(next.API.ListenAddress, h.apiTokenConfigured, next.API.EnableWebUI, next.API.AllowRemoteWebUI); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondBadRequestError(w, err)
 		return
 	}
 
@@ -414,10 +414,10 @@ func validateWebUIConfig(listenAddr string, apiTokenConfigured, enableWebUI, all
 		return nil
 	}
 	if !apiTokenConfigured {
-		return fmt.Errorf("enable_web_ui on a non-loopback api_address requires API token auth")
+		return newRequestError("enable_web_ui on a non-loopback api_address requires API token auth")
 	}
 	if !allowRemoteWebUI {
-		return fmt.Errorf("enable_web_ui on a non-loopback api_address requires allow_remote_web_ui to be true")
+		return newRequestError("enable_web_ui on a non-loopback api_address requires allow_remote_web_ui to be true")
 	}
 	return nil
 }
@@ -458,7 +458,7 @@ func optionalIntField(updates map[string]interface{}, key string) (int, bool, er
 	}
 	n, ok := raw.(float64)
 	if !ok || math.Trunc(n) != n {
-		return 0, false, fmt.Errorf("%s must be an integer", key)
+		return 0, false, newRequestError("%s must be an integer", key)
 	}
 	return int(n), true, nil
 }
@@ -470,7 +470,7 @@ func optionalBoolField(updates map[string]interface{}, key string) (bool, bool, 
 	}
 	b, ok := raw.(bool)
 	if !ok {
-		return false, false, fmt.Errorf("%s must be a boolean", key)
+		return false, false, newRequestError("%s must be a boolean", key)
 	}
 	return b, true, nil
 }
@@ -482,7 +482,7 @@ func optionalStringSliceField(updates map[string]interface{}, key string) ([]str
 	}
 	items, ok := toStringSlice(raw)
 	if !ok {
-		return nil, false, fmt.Errorf("%s must be an array of strings", key)
+		return nil, false, newRequestError("%s must be an array of strings", key)
 	}
 	return items, true, nil
 }
@@ -494,7 +494,7 @@ func optionalLogLevelField(updates map[string]interface{}, key string) (string, 
 	}
 	level, ok := raw.(string)
 	if !ok {
-		return "", false, fmt.Errorf("%s must be a string", key)
+		return "", false, newRequestError("%s must be a string", key)
 	}
 	level = strings.ToLower(strings.TrimSpace(level))
 	switch level {
@@ -504,7 +504,7 @@ func optionalLogLevelField(updates map[string]interface{}, key string) (string, 
 		}
 		return level, true, nil
 	default:
-		return "", false, fmt.Errorf("%s must be one of debug, info, warn, warning, or error", key)
+		return "", false, newRequestError("%s must be one of debug, info, warn, warning, or error", key)
 	}
 }
 
@@ -528,7 +528,7 @@ func normalizeStringSlice(items []string) []string {
 func validateBootstrapPeers(peers []string) error {
 	for _, peer := range peers {
 		if _, err := ma.NewMultiaddr(peer); err != nil {
-			return fmt.Errorf("bootstrap_peers contains an invalid multiaddr")
+			return newRequestError("bootstrap_peers contains an invalid multiaddr")
 		}
 	}
 	return nil
@@ -544,13 +544,13 @@ func normalizeIndexerURLs(urls []string) ([]string, error) {
 		}
 		parsed, err := url.ParseRequestURI(rawURL)
 		if err != nil || parsed.Host == "" {
-			return nil, fmt.Errorf("known_indexers contains an invalid URL")
+			return nil, newRequestError("known_indexers contains an invalid URL")
 		}
 		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			return nil, fmt.Errorf("known_indexers must use http or https URLs")
+			return nil, newRequestError("known_indexers must use http or https URLs")
 		}
 		if parsed.RawQuery != "" || parsed.Fragment != "" {
-			return nil, fmt.Errorf("known_indexers must be base URLs without query or fragment")
+			return nil, newRequestError("known_indexers must be base URLs without query or fragment")
 		}
 		canonical := strings.TrimRight(parsed.String(), "/")
 		if _, ok := seen[canonical]; ok {
@@ -626,5 +626,5 @@ func validateAllowedUpdateKeys(updates map[string]interface{}, allowed map[strin
 		return nil
 	}
 	sort.Strings(unknown)
-	return fmt.Errorf("unknown config fields: %s", strings.Join(unknown, ", "))
+	return newRequestError("unknown config fields: %s", strings.Join(unknown, ", "))
 }
