@@ -34,7 +34,7 @@ func (h *Handler) GetOwnProfile(w http.ResponseWriter, r *http.Request) {
 
 	profile, err := h.profiles.GetProfile(kp.PublicKeyBytes())
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load own profile", err, "failed to load profile")
 		return
 	}
 
@@ -93,7 +93,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	// Check if profile exists; if not, create it; otherwise update.
 	existing, err := h.profiles.GetProfile(kp.PublicKeyBytes())
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load existing profile", err, "failed to load profile")
 		return
 	}
 
@@ -112,7 +112,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		dbErr := h.db.UpsertProfile(kp.PublicKeyBytes(), displayName, req.Bio, avatarCID, bannerCID, req.Website, version, time.Now().UnixMilli())
 		if dbErr != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			respondInternalError(w, "failed to update profile", dbErr, "failed to update profile", "service_error", err)
 			return
 		}
 		respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -138,7 +138,7 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 
 	profile, err := h.profiles.GetProfile(pubkey)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load user profile", err, "failed to load profile")
 		return
 	}
 	if profile == nil {

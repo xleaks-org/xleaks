@@ -20,7 +20,7 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 
 	notifs, err := h.notifs.GetNotifications(kp.PublicKeyBytes(), before, limit)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load notifications", err, "failed to load notifications")
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *Handler) MarkAllNotificationsRead(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.db.MarkAllRead(kp.PublicKeyBytes()); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to mark notifications read", err, "failed to mark notifications read")
 		return
 	}
 
@@ -135,7 +135,7 @@ func (h *Handler) MarkNotificationRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.MarkRead(kp.PublicKeyBytes(), id); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to mark notification read", err, "failed to mark notification read")
 		return
 	}
 
@@ -151,7 +151,7 @@ func (h *Handler) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 
 	count, err := h.db.UnreadCount(kp.PublicKeyBytes())
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load unread notification count", err, "failed to load unread count")
 		return
 	}
 

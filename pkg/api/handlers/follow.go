@@ -20,7 +20,7 @@ func (h *Handler) Follow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := h.follows.Follow(r.Context(), pubkey); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to follow user", err, "failed to follow user")
 		return
 	}
 	if h.ensureTopic != nil {
@@ -46,7 +46,7 @@ func (h *Handler) Unfollow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := h.follows.Unfollow(r.Context(), pubkey); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to unfollow user", err, "failed to unfollow user")
 		return
 	}
 	if h.ensureTopic != nil {
@@ -68,7 +68,7 @@ func (h *Handler) GetFollowing(w http.ResponseWriter, r *http.Request) {
 
 	following, err := h.db.GetFollowing(kp.PublicKeyBytes())
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load following", err, "failed to load following")
 		return
 	}
 
@@ -90,7 +90,7 @@ func (h *Handler) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 	followers, err := h.db.GetFollowers(pubkey)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load followers", err, "failed to load followers")
 		return
 	}
 

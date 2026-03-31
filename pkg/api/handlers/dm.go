@@ -23,7 +23,7 @@ func (h *Handler) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 	conversations, err := h.db.GetConversations(kp.PublicKeyBytes())
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load conversations", err, "failed to load conversations")
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 
 	messages, err := h.db.GetConversation(kp.PublicKeyBytes(), peerPubkey, before, limit)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load conversation", err, "failed to load conversation")
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 	for _, msg := range messages {
 		if bytes.Equal(msg.Recipient, kp.PublicKeyBytes()) && !msg.Read {
 			if err := h.db.MarkDMRead(msg.CID); err != nil {
-				respondError(w, http.StatusInternalServerError, err.Error())
+				respondInternalError(w, "failed to mark direct message read", err, "failed to update message state")
 				return
 			}
 			msg.Read = true
@@ -143,7 +143,7 @@ func (h *Handler) SendDM(w http.ResponseWriter, r *http.Request) {
 
 	dm, err := h.dms.SendDM(r.Context(), recipientPubkey, req.Content)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to send direct message", err, "failed to send direct message")
 		return
 	}
 

@@ -26,6 +26,7 @@ import (
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/indexer"
+	"github.com/xleaks-org/xleaks/pkg/social"
 	"github.com/xleaks-org/xleaks/pkg/storage"
 )
 
@@ -68,6 +69,21 @@ func testHandler(t *testing.T) (*Handler, *storage.DB) {
 	h.SetIdentityHolder(idHolder)
 
 	return h, db
+}
+
+func wireServiceBackedHandler(h *Handler, db *storage.DB) {
+	if h == nil || db == nil {
+		return
+	}
+
+	h.feed = feed.NewManager(db)
+	h.timeline = feed.NewTimeline(db, h.identity)
+	h.posts = social.NewPostService(db, h.cas, h.currentKeyPair())
+	h.reactions = social.NewReactionService(db, h.currentKeyPair())
+	h.profiles = social.NewProfileService(db, h.currentKeyPair())
+	h.dms = social.NewDMService(db, h.currentKeyPair())
+	h.notifs = social.NewNotificationService(db)
+	h.follows = social.NewFollowService(db, h.feed, h.currentKeyPair())
 }
 
 func testStoredIdentityHandler(t *testing.T, passphrase string) (*Handler, *storage.DB, *identity.Holder, *identity.KeyPair) {
@@ -130,6 +146,23 @@ func decodeSingleJSONLogLine(t *testing.T, logLine string) map[string]any {
 		t.Fatalf("unmarshal log line: %v", err)
 	}
 	return payload
+}
+
+func assertJSONErrorResponse(t *testing.T, body []byte, want string, disallowed ...string) {
+	t.Helper()
+
+	var payload map[string]string
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if got := payload["error"]; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+	for _, fragment := range disallowed {
+		if fragment != "" && strings.Contains(string(body), fragment) {
+			t.Fatalf("response leaked %q in %s", fragment, string(body))
+		}
+	}
 }
 
 func testPNGWithDimensions(width, height uint32) []byte {
@@ -894,6 +927,26 @@ func TestCreatePostRejectsTooLongContent(t *testing.T) {
 	}
 }
 
+func TestCreatePostInternalFailureDoesNotLeakBackendError(t *testing.T) {
+	t.Parallel()
+
+	h, db := testHandler(t)
+	wireServiceBackedHandler(h, db)
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	body := strings.NewReader(`{"content":"hello world"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/posts", body)
+	h.CreatePost(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "failed to create post", "sql", "closed")
+}
+
 func TestUploadMediaRejectsOversizedImageDimensions(t *testing.T) {
 	t.Parallel()
 
@@ -1170,6 +1223,62 @@ func TestGetFeedEmpty(t *testing.T) {
 	}
 }
 
+func TestGetFeedInternalFailureDoesNotLeakBackendError(t *testing.T) {
+	t.Parallel()
+
+	h, db := testHandler(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/feed", nil)
+	h.GetFeed(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "failed to load feed", "sql", "closed")
+}
+
+func TestGetNotificationsInternalFailureDoesNotLeakBackendError(t *testing.T) {
+	t.Parallel()
+
+	h, db := testHandler(t)
+	wireServiceBackedHandler(h, db)
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/notifications", nil)
+	h.GetNotifications(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "failed to load notifications", "sql", "closed")
+}
+
+func TestCreateBackupFailureDoesNotLeakBackendError(t *testing.T) {
+	t.Parallel()
+
+	h, db := testHandler(t)
+	dbPath := db.Path()
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/node/backup", nil)
+	h.CreateBackup(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "backup failed", "sql", "closed", dbPath)
+}
+
 func TestGetNodePeersNilP2PHost(t *testing.T) {
 	t.Parallel()
 	h, _ := testHandler(t)
@@ -1414,6 +1523,24 @@ func TestUpdateNodeConfigAllowsRemoteWebUIWithTokenAndOptIn(t *testing.T) {
 	if !cfg.API.AllowRemoteWebUI {
 		t.Fatal("expected remote web UI exposure to be enabled")
 	}
+}
+
+func TestUpdateNodeConfigSaveFailureDoesNotLeakBackendError(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	h.SetConfig(cfg, t.TempDir())
+
+	body := strings.NewReader(`{"enable_mdns":true}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "failed to save config", "regular file", h.cfgPath)
 }
 
 func TestUpdateNodeConfigRejectsFractionalNumbers(t *testing.T) {

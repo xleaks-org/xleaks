@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -192,6 +193,25 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 // respondError writes a JSON error response with the given status code and message.
 func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{"error": message})
+}
+
+func respondInternalError(w http.ResponseWriter, logMessage string, err error, clientMessage string, attrs ...any) {
+	slog.Error(logMessage, errorAttrs(err, attrs...)...)
+	respondError(w, http.StatusInternalServerError, clientMessage)
+}
+
+func respondNotFoundError(w http.ResponseWriter, logMessage string, err error, clientMessage string, attrs ...any) {
+	slog.Warn(logMessage, errorAttrs(err, attrs...)...)
+	respondError(w, http.StatusNotFound, clientMessage)
+}
+
+func errorAttrs(err error, attrs ...any) []any {
+	if err == nil {
+		return attrs
+	}
+	base := []any{"error", err}
+	base = append(base, attrs...)
+	return base
 }
 
 // parseHexParam extracts a URL parameter by name and decodes it from hex to bytes.

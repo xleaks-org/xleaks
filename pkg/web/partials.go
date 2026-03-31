@@ -185,7 +185,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	postID, err := h.createPost(r.Context(), content, mediaCIDs, replyTo)
 	if err != nil {
 		slog.Error("post creation failed", "error", err)
-		http.Error(w, "Failed to create post: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to create post", http.StatusInternalServerError)
 		return
 	}
 

@@ -42,7 +42,7 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 
 	reaction, err := h.reactions.CreateReaction(r.Context(), targetCID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to create reaction", err, "failed to create reaction")
 		return
 	}
 	if h.ensureTopic != nil {
@@ -85,7 +85,7 @@ func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
 
 	post, err := h.posts.CreateRepost(r.Context(), postCID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to create repost", err, "failed to create repost")
 		return
 	}
 

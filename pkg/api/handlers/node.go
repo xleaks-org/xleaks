@@ -390,8 +390,7 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	// Persist to disk if we have a config path.
 	if h.cfgPath != "" {
 		if err := next.Save(h.cfgPath); err != nil {
-			slog.Error("failed to save node config", "path", xlog.RedactPath(h.cfgPath), "error", err)
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save config: %v", err))
+			respondInternalError(w, "failed to save node config", err, "failed to save config", "path", xlog.RedactPath(h.cfgPath))
 			return
 		}
 	}
@@ -573,15 +572,13 @@ func (h *Handler) CreateBackup(w http.ResponseWriter, r *http.Request) {
 	backupDir := filepath.Dir(h.db.Path())
 	path, err := h.db.Backup(backupDir)
 	if err != nil {
-		slog.Error("database backup failed", "dir", xlog.RedactPath(backupDir), "error", err)
-		respondError(w, http.StatusInternalServerError, "backup failed: "+err.Error())
+		respondInternalError(w, "database backup failed", err, "backup failed", "dir", xlog.RedactPath(backupDir))
 		return
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
-		slog.Error("database backup stat failed", "path", xlog.RedactPath(path), "error", err)
-		respondError(w, http.StatusInternalServerError, "failed to stat backup: "+err.Error())
+		respondInternalError(w, "database backup stat failed", err, "failed to inspect backup", "path", xlog.RedactPath(path))
 		return
 	}
 	slog.Info("database backup created", "path", xlog.RedactPath(path), "size", info.Size())

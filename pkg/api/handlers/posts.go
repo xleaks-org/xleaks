@@ -57,7 +57,7 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 	post, err := h.posts.CreatePost(r.Context(), req.Content, mediaCIDs, replyTo)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to create post", err, "failed to create post")
 		return
 	}
 
@@ -122,7 +122,7 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	thread, err := h.posts.GetThread(r.Context(), cidBytes)
 	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
+		respondNotFoundError(w, "failed to load thread", err, "thread not found")
 		return
 	}
 
@@ -139,7 +139,7 @@ func (h *Handler) GetPostReactions(w http.ResponseWriter, r *http.Request) {
 
 	reactions, err := h.db.GetReactions(cidBytes)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load post reactions", err, "failed to load reactions")
 		return
 	}
 
@@ -169,7 +169,7 @@ func (h *Handler) GetUserPosts(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := h.timeline.GetUserPosts(pubkey, before, limit)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load user posts", err, "failed to load user posts")
 		return
 	}
 

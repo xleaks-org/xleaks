@@ -10,7 +10,7 @@ func (h *Handler) GetFeed(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := h.timeline.GetFeed(before, limit)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondInternalError(w, "failed to load feed", err, "failed to load feed")
 		return
 	}
 
