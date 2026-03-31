@@ -225,11 +225,44 @@ func parseHexParam(r *http.Request, name string) ([]byte, error) {
 	if param == "" {
 		return nil, fmt.Errorf("missing %s parameter", name)
 	}
-	b, err := hex.DecodeString(param)
+	b, err := decodeHexField(param, name)
 	if err != nil {
-		return nil, fmt.Errorf("invalid %s hex", name)
+		return nil, err
 	}
 	return b, nil
+}
+
+func decodeHexField(value, field string) ([]byte, error) {
+	if value == "" {
+		return nil, fmt.Errorf("invalid %s hex", field)
+	}
+	b, err := hex.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s hex", field)
+	}
+	return b, nil
+}
+
+func decodeOptionalHexField(value, field string) ([]byte, error) {
+	if value == "" {
+		return nil, nil
+	}
+	return decodeHexField(value, field)
+}
+
+func decodeHexSliceField(values []string, field string) ([][]byte, error) {
+	decoded := make([][]byte, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			return nil, fmt.Errorf("invalid %s entry hex", field)
+		}
+		item, err := hex.DecodeString(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s entry hex", field)
+		}
+		decoded = append(decoded, item)
+	}
+	return decoded, nil
 }
 
 // parsePagination extracts and validates "before" and "limit" query parameters

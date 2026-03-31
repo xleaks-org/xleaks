@@ -112,3 +112,117 @@ func TestHandlePostInternalFailureDoesNotLeakBackendError(t *testing.T) {
 		t.Fatalf("body = %q, want %q", body, "Failed to create post\n")
 	}
 }
+
+func TestHandlePostRejectsInvalidMediaCID(t *testing.T) {
+	t.Parallel()
+
+	sessions := NewSessionManager()
+	defer sessions.Stop()
+
+	kp, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	token, err := sessions.Create(kp)
+	if err != nil {
+		t.Fatalf("Create(session): %v", err)
+	}
+
+	handler := &Handler{
+		sessions: sessions,
+		createPost: func(_ context.Context, _ string, _ []string, _ string) (string, error) {
+			t.Fatal("createPost should not be called for invalid media CID")
+			return "", nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/web/post", strings.NewReader("content=hello&media_cids=not-hex"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	handler.handlePost(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+	if body := rr.Body.String(); body != "Invalid media CID\n" {
+		t.Fatalf("body = %q, want %q", body, "Invalid media CID\n")
+	}
+}
+
+func TestHandlePostRejectsInvalidReplyTarget(t *testing.T) {
+	t.Parallel()
+
+	sessions := NewSessionManager()
+	defer sessions.Stop()
+
+	kp, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	token, err := sessions.Create(kp)
+	if err != nil {
+		t.Fatalf("Create(session): %v", err)
+	}
+
+	handler := &Handler{
+		sessions: sessions,
+		createPost: func(_ context.Context, _ string, _ []string, _ string) (string, error) {
+			t.Fatal("createPost should not be called for invalid reply target")
+			return "", nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/web/post", strings.NewReader("content=hello&reply_to=not-hex"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	handler.handlePost(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+	if body := rr.Body.String(); body != "Invalid reply target\n" {
+		t.Fatalf("body = %q, want %q", body, "Invalid reply target\n")
+	}
+}
+
+func TestHandlePostRejectsTooLongContentWithStableMessage(t *testing.T) {
+	t.Parallel()
+
+	sessions := NewSessionManager()
+	defer sessions.Stop()
+
+	kp, err := identity.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	token, err := sessions.Create(kp)
+	if err != nil {
+		t.Fatalf("Create(session): %v", err)
+	}
+
+	handler := &Handler{
+		sessions: sessions,
+		createPost: func(_ context.Context, _ string, _ []string, _ string) (string, error) {
+			t.Fatal("createPost should not be called for invalid post content")
+			return "", nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/web/post", strings.NewReader("content="+strings.Repeat("a", 5001)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	handler.handlePost(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+	if body := rr.Body.String(); body != "post content must not exceed 5000 characters\n" {
+		t.Fatalf("body = %q, want %q", body, "post content must not exceed 5000 characters\n")
+	}
+}

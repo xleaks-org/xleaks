@@ -34,9 +34,9 @@ func (h *Handler) CreateReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetCID, err := hex.DecodeString(req.Target)
+	targetCID, err := decodeHexField(req.Target, "target")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid target hex")
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -77,9 +77,9 @@ func (h *Handler) CreateRepost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postCID, err := hex.DecodeString(req.PostCID)
+	postCID, err := decodeHexField(req.PostCID, "post_cid")
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid post_cid hex")
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

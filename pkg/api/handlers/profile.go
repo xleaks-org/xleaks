@@ -67,21 +67,15 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var avatarCID, bannerCID []byte
-	var err error
-	if req.AvatarCID != "" {
-		avatarCID, err = hex.DecodeString(req.AvatarCID)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid avatar_cid hex")
-			return
-		}
+	avatarCID, err := decodeOptionalHexField(req.AvatarCID, "avatar_cid")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
 	}
-	if req.BannerCID != "" {
-		bannerCID, err = hex.DecodeString(req.BannerCID)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid banner_cid hex")
-			return
-		}
+	bannerCID, err := decodeOptionalHexField(req.BannerCID, "banner_cid")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	displayName := req.getDisplayName()

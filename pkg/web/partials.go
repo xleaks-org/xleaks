@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -166,7 +167,15 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	mediaCIDs := r.Form["media_cids"]
 	replyTo := strings.TrimSpace(r.FormValue("reply_to"))
 	if err := social.ValidatePostContent(content); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, postValidationMessage(err), http.StatusBadRequest)
+		return
+	}
+	if err := validateHexSliceInput(mediaCIDs); err != nil {
+		http.Error(w, "Invalid media CID", http.StatusBadRequest)
+		return
+	}
+	if err := validateOptionalHexInput(replyTo); err != nil {
+		http.Error(w, "Invalid reply target", http.StatusBadRequest)
 		return
 	}
 	if content == "" && len(mediaCIDs) == 0 {
@@ -199,6 +208,36 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	if err := h.partials.ExecuteTemplate(w, "feed_items.html", struct{ Posts []PostView }{Posts: []PostView{post}}); err != nil {
 		slog.Error("failed to render feed item", "error", err)
 	}
+}
+
+func postValidationMessage(err error) string {
+	if errors.Is(err, social.ErrPostContentTooLong) {
+		return social.ErrPostContentTooLong.Error()
+	}
+	return "Invalid post content"
+}
+
+func validateOptionalHexInput(value string) error {
+	if value == "" {
+		return nil
+	}
+	_, err := hex.DecodeString(value)
+	if err != nil {
+		return errors.New("invalid hex input")
+	}
+	return nil
+}
+
+func validateHexSliceInput(values []string) error {
+	for _, value := range values {
+		if value == "" {
+			return errors.New("invalid hex input")
+		}
+		if _, err := hex.DecodeString(value); err != nil {
+			return errors.New("invalid hex input")
+		}
+	}
+	return nil
 }
 
 // nodeStatusPartial returns the node status as an htmx partial.

@@ -33,26 +33,17 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode media CIDs from hex strings.
-	var mediaCIDs [][]byte
-	for _, cidHex := range req.MediaCIDs {
-		cid, err := hex.DecodeString(cidHex)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid media CID hex: "+cidHex)
-			return
-		}
-		mediaCIDs = append(mediaCIDs, cid)
+	mediaCIDs, err := decodeHexSliceField(req.MediaCIDs, "media_cids")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	// Decode reply_to CID if present.
-	var replyTo []byte
-	if req.ReplyTo != "" {
-		var err error
-		replyTo, err = hex.DecodeString(req.ReplyTo)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid reply_to hex")
-			return
-		}
+	replyTo, err := decodeOptionalHexField(req.ReplyTo, "reply_to")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	post, err := h.posts.CreatePost(r.Context(), req.Content, mediaCIDs, replyTo)

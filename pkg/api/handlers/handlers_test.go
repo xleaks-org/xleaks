@@ -995,6 +995,38 @@ func TestCreatePostRejectsTooLongContent(t *testing.T) {
 	}
 }
 
+func TestCreatePostRejectsInvalidMediaCIDWithoutEchoingValue(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	body := strings.NewReader(`{"content":"hello","media_cids":["not-hex"]}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/posts", body)
+	h.CreatePost(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid media_cids entry hex", "not-hex", "encoding/hex", "invalid byte")
+}
+
+func TestCreatePostRejectsInvalidReplyTargetWithoutDecoderLeak(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	body := strings.NewReader(`{"content":"hello","reply_to":"not-hex"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/posts", body)
+	h.CreatePost(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid reply_to hex", "encoding/hex", "invalid byte")
+}
+
 func TestCreatePostInternalFailureDoesNotLeakBackendError(t *testing.T) {
 	t.Parallel()
 
@@ -1013,6 +1045,38 @@ func TestCreatePostInternalFailureDoesNotLeakBackendError(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 	assertJSONErrorResponse(t, w.Body.Bytes(), "failed to create post", "sql", "closed")
+}
+
+func TestCreateReactionRejectsInvalidTargetWithoutDecoderLeak(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	body := strings.NewReader(`{"target":"not-hex"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/reactions", body)
+	h.CreateReaction(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid target hex", "encoding/hex", "invalid byte")
+}
+
+func TestCreateRepostRejectsInvalidPostCIDWithoutDecoderLeak(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	body := strings.NewReader(`{"post_cid":"not-hex"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/repost", body)
+	h.CreateRepost(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid post_cid hex", "encoding/hex", "invalid byte")
 }
 
 func TestUploadMediaRejectsOversizedImageDimensions(t *testing.T) {
@@ -1383,6 +1447,22 @@ func TestUpdateProfileRejectsTooLongDisplayName(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
+}
+
+func TestUpdateProfileRejectsInvalidAvatarCIDWithoutDecoderLeak(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	body := strings.NewReader(`{"display_name":"Alice","avatar_cid":"not-hex"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/api/profile", body)
+	h.UpdateProfile(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid avatar_cid hex", "encoding/hex", "invalid byte")
 }
 
 func TestGetFeedEmpty(t *testing.T) {
