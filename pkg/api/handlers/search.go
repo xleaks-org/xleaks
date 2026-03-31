@@ -13,32 +13,27 @@ import (
 
 // Search handles GET /api/search?q=QUERY&type=posts|users.
 func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("q")
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
 		respondError(w, http.StatusBadRequest, "query parameter 'q' is required")
 		return
 	}
 
-	searchType := r.URL.Query().Get("type")
+	searchType := strings.TrimSpace(r.URL.Query().Get("type"))
 	if searchType == "" {
 		searchType = "posts"
 	}
 
-	page := 0
-	if p := r.URL.Query().Get("page"); p != "" {
-		if n, err := strconv.Atoi(p); err == nil && n >= 0 {
-			page = n
-		}
+	page, err := parseNonNegativeQueryInt(r, "page", 0)
+	if err != nil {
+		respondBadRequestError(w, err)
+		return
 	}
 
-	pageSize := 20
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if n, err := strconv.Atoi(ps); err == nil && n > 0 {
-			pageSize = n
-			if pageSize > 100 {
-				pageSize = 100
-			}
-		}
+	pageSize, err := parseBoundedPositiveQueryInt(r, "page_size", 20, 100)
+	if err != nil {
+		respondBadRequestError(w, err)
+		return
 	}
 
 	switch searchType {
@@ -192,16 +187,16 @@ func (h *Handler) searchUsersResults(query string, page, pageSize int) ([]indexe
 
 // GetTrending handles GET /api/trending.
 func (h *Handler) GetTrending(w http.ResponseWriter, r *http.Request) {
-	window := r.URL.Query().Get("window")
-	if window == "" {
-		window = "24h"
+	window, err := parseTrendingWindow(r)
+	if err != nil {
+		respondBadRequestError(w, err)
+		return
 	}
 
-	limit := 20
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil && n > 0 {
-			limit = n
-		}
+	limit, err := parseBoundedPositiveQueryInt(r, "limit", 20, 100)
+	if err != nil {
+		respondBadRequestError(w, err)
+		return
 	}
 
 	if h.indexerClient != nil && h.indexerClient.Available() {
@@ -227,11 +222,10 @@ func (h *Handler) GetTrending(w http.ResponseWriter, r *http.Request) {
 
 // Explore handles GET /api/explore.
 func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
-	limit := 20
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil && n > 0 {
-			limit = n
-		}
+	limit, err := parseBoundedPositiveQueryInt(r, "limit", 20, 100)
+	if err != nil {
+		respondBadRequestError(w, err)
+		return
 	}
 
 	if h.indexerClient != nil && h.indexerClient.Available() {
@@ -289,6 +283,49 @@ func (h *Handler) localTrending(window string, limit int) ([]indexer.ClientTrend
 	}
 
 	return posts, tags
+}
+
+func parseNonNegativeQueryInt(r *http.Request, name string, defaultValue int) (int, error) {
+	value := strings.TrimSpace(r.URL.Query().Get(name))
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, newRequestError("invalid %s parameter", name)
+	}
+	if parsed < 0 {
+		return 0, newRequestError("%s must be 0 or greater", name)
+	}
+	return parsed, nil
+}
+
+func parseBoundedPositiveQueryInt(r *http.Request, name string, defaultValue, max int) (int, error) {
+	value := strings.TrimSpace(r.URL.Query().Get(name))
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, newRequestError("invalid %s parameter", name)
+	}
+	if parsed < 1 || parsed > max {
+		return 0, newRequestError("%s must be between 1 and %d", name, max)
+	}
+	return parsed, nil
+}
+
+func parseTrendingWindow(r *http.Request) (string, error) {
+	window := strings.TrimSpace(r.URL.Query().Get("window"))
+	if window == "" {
+		return "24h", nil
+	}
+	switch window {
+	case "1h", "6h", "24h", "7d":
+		return window, nil
+	default:
+		return "", newRequestError("window must be one of 1h, 6h, 24h, 7d")
+	}
 }
 
 func (h *Handler) localExplorePublishers(limit int) []indexer.ClientPublisher {

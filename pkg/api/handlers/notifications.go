@@ -133,7 +133,7 @@ func (h *Handler) MarkNotificationRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
+	if err != nil || id < 1 {
 		respondError(w, http.StatusBadRequest, "invalid notification id")
 		return
 	}

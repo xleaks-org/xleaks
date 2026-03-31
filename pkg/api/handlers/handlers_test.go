@@ -902,6 +902,48 @@ func TestSearchMissingQuery(t *testing.T) {
 	}
 }
 
+func TestSearchRejectsBlankQuery(t *testing.T) {
+	t.Parallel()
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/search?q=+++", nil)
+	h.Search(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "query parameter 'q' is required")
+}
+
+func TestSearchRejectsInvalidPageParameter(t *testing.T) {
+	t.Parallel()
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/search?q=hello&page=abc", nil)
+	h.Search(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid page parameter")
+}
+
+func TestSearchRejectsOutOfRangePageSize(t *testing.T) {
+	t.Parallel()
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/search?q=hello&page_size=101", nil)
+	h.Search(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "page_size must be between 1 and 100")
+}
+
 func TestSearchPostsType(t *testing.T) {
 	t.Parallel()
 	h, _ := testHandler(t)
@@ -979,6 +1021,48 @@ func TestSearchDefaultsToPostsType(t *testing.T) {
 	if body["type"] != "posts" {
 		t.Errorf("type = %v, want 'posts' (default)", body["type"])
 	}
+}
+
+func TestGetTrendingRejectsInvalidWindow(t *testing.T) {
+	t.Parallel()
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/trending?window=30d", nil)
+	h.GetTrending(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "window must be one of 1h, 6h, 24h, 7d")
+}
+
+func TestGetTrendingRejectsOutOfRangeLimit(t *testing.T) {
+	t.Parallel()
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/trending?limit=0", nil)
+	h.GetTrending(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "limit must be between 1 and 100")
+}
+
+func TestExploreRejectsInvalidLimit(t *testing.T) {
+	t.Parallel()
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/explore?limit=abc", nil)
+	h.Explore(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid limit parameter")
 }
 
 func TestCreatePostNoIdentity(t *testing.T) {
@@ -1585,6 +1669,43 @@ func TestGetNotificationsRejectsInvalidPagination(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid before parameter")
+}
+
+func TestMarkNotificationReadRejectsMissingID(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/api/notifications//read", nil)
+	rctx := chi.NewRouteContext()
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	h.MarkNotificationRead(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "missing notification id")
+}
+
+func TestMarkNotificationReadRejectsNonPositiveID(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/api/notifications/-1/read", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "-1")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	h.MarkNotificationRead(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "invalid notification id")
 }
 
 func TestCreateBackupFailureDoesNotLeakBackendError(t *testing.T) {
