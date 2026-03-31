@@ -1888,6 +1888,42 @@ func TestUpdateNodeConfigRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestUpdateNodeConfigRejectsInvalidBootstrapPeerWithoutEchoingValue(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	h.SetConfig(cfg, "")
+
+	body := strings.NewReader(`{"bootstrap_peers":["not-a-multiaddr"]}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "bootstrap_peers contains an invalid multiaddr", "not-a-multiaddr")
+}
+
+func TestUpdateNodeConfigRejectsInvalidKnownIndexerWithoutEchoingValue(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	h.SetConfig(cfg, "")
+
+	body := strings.NewReader(`{"known_indexers":["://bad?token=secret"]}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "known_indexers contains an invalid URL", "token=secret", "://bad")
+}
+
 func TestMediaCIDsForPostNilDB(t *testing.T) {
 	t.Parallel()
 

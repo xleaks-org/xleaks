@@ -528,7 +528,7 @@ func normalizeStringSlice(items []string) []string {
 func validateBootstrapPeers(peers []string) error {
 	for _, peer := range peers {
 		if _, err := ma.NewMultiaddr(peer); err != nil {
-			return fmt.Errorf("bootstrap_peers contains invalid multiaddr %q", peer)
+			return fmt.Errorf("bootstrap_peers contains an invalid multiaddr")
 		}
 	}
 	return nil
@@ -544,7 +544,7 @@ func normalizeIndexerURLs(urls []string) ([]string, error) {
 		}
 		parsed, err := url.ParseRequestURI(rawURL)
 		if err != nil || parsed.Host == "" {
-			return nil, fmt.Errorf("known_indexers contains invalid URL %q", rawURL)
+			return nil, fmt.Errorf("known_indexers contains an invalid URL")
 		}
 		if parsed.Scheme != "http" && parsed.Scheme != "https" {
 			return nil, fmt.Errorf("known_indexers must use http or https URLs")
