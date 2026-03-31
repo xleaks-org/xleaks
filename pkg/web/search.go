@@ -14,6 +14,10 @@ type searchResults struct {
 
 // performSearch executes a search query and returns both post and user results.
 func (h *Handler) performSearch(q string, limit int) searchResults {
+	q = normalizeSearchInput(q)
+	if q == "" {
+		return searchResults{}
+	}
 	return searchResults{
 		Posts: h.searchPosts(q, limit),
 		Users: h.searchUsers(q, limit),
@@ -21,9 +25,13 @@ func (h *Handler) performSearch(q string, limit int) searchResults {
 }
 
 func (h *Handler) searchPosts(q string, limit int) []PostView {
+	q = normalizeSearchInput(q)
+	if q == "" {
+		return nil
+	}
 	results := make([]PostView, 0, limit)
 	seen := make(map[string]struct{}, limit)
-	indexerQuery := normalizedPostSearchQuery(q)
+	indexerQuery := postSearchTerm(q)
 
 	if h.indexerClient != nil && h.indexerClient.Available() && indexerQuery != "" {
 		idxResults, err := h.indexerClient.SearchPosts(indexerQuery, 0, limit)
@@ -58,7 +66,7 @@ func (h *Handler) searchPosts(q string, limit int) []PostView {
 
 	if len(results) < limit {
 		if strings.HasPrefix(q, "#") {
-			tag := strings.TrimPrefix(q, "#")
+			tag := postSearchTerm(q)
 			posts, err := h.db.GetPostsByTag(tag, 0, limit)
 			if err == nil {
 				for i := range posts {
@@ -95,7 +103,8 @@ func (h *Handler) searchPosts(q string, limit int) []PostView {
 }
 
 func (h *Handler) searchUsers(q string, limit int) []SearchUserView {
-	query := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(q, "@")))
+	q = normalizeSearchInput(q)
+	query := strings.ToLower(userSearchTerm(q))
 	if query == "" {
 		return nil
 	}
@@ -177,6 +186,18 @@ func searchUserView(profile storage.ProfileRow) SearchUserView {
 		Bio:         profile.Bio,
 		Website:     profile.Website,
 	}
+}
+
+func normalizeSearchInput(q string) string {
+	return strings.TrimSpace(q)
+}
+
+func userSearchTerm(q string) string {
+	return strings.TrimSpace(strings.TrimPrefix(normalizeSearchInput(q), "@"))
+}
+
+func postSearchTerm(q string) string {
+	return strings.TrimSpace(strings.TrimPrefix(normalizeSearchInput(q), "#"))
 }
 
 func normalizedUserSearchQuery(q string) string {

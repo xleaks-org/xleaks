@@ -224,7 +224,7 @@ func (h *Handler) searchPage(w http.ResponseWriter, r *http.Request) {
 	}
 	data := h.pageData(r, "search", "Search")
 
-	q := r.URL.Query().Get("q")
+	q := normalizeSearchInput(r.URL.Query().Get("q"))
 	data["Query"] = q
 
 	if q != "" {

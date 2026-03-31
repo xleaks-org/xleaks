@@ -220,7 +220,7 @@ func (h *Handler) handleSendDM(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
-	recipient := r.FormValue("recipient")
+	recipient := strings.TrimSpace(r.FormValue("recipient"))
 	content := strings.TrimSpace(r.FormValue("content"))
 	if recipient == "" || content == "" {
 		http.Error(w, "Recipient and content are required", http.StatusBadRequest)

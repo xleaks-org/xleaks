@@ -22,9 +22,7 @@ func (h *Handler) feedPartial(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if h.currentUser(r) == nil {
-		fmt.Fprint(w, `<div class="text-center py-12 text-gray-400">`+
-			`<p class="mb-4">Session expired</p>`+
-			`<a href="/" class="text-blue-500 hover:underline">Sign in again</a></div>`)
+		renderSessionExpiredPartial(w)
 		return
 	}
 
@@ -169,6 +167,12 @@ func renderPartialError(w http.ResponseWriter, status int, message string) {
 	)
 }
 
+func renderSessionExpiredPartial(w http.ResponseWriter) {
+	fmt.Fprint(w, `<div class="text-center py-12 text-gray-400">`+
+		`<p class="mb-4">Session expired</p>`+
+		`<a href="/" class="text-blue-500 hover:underline">Sign in again</a></div>`)
+}
+
 func parseFeedCursorQuery(value string) (int64, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -275,6 +279,12 @@ func validateHexSliceInput(values []string) error {
 
 // nodeStatusPartial returns the node status as an htmx partial.
 func (h *Handler) nodeStatusPartial(w http.ResponseWriter, r *http.Request) {
+	if h.currentUser(r) == nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		renderSessionExpiredPartial(w)
+		return
+	}
+
 	peers := 0
 	var uptimeSecs float64
 	var storageUsed, storageLimit int64
@@ -307,8 +317,13 @@ func (h *Handler) nodeStatusPartial(w http.ResponseWriter, r *http.Request) {
 
 // searchResultsPartial returns search results as an htmx partial.
 func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query().Get("q")
+	q := normalizeSearchInput(r.URL.Query().Get("q"))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	if h.currentUser(r) == nil {
+		renderSessionExpiredPartial(w)
+		return
+	}
 
 	if q == "" {
 		fmt.Fprint(w, `<div class="text-center py-12 text-gray-400"><p class="text-sm">Enter a search term.</p></div>`)
@@ -360,6 +375,11 @@ func (h *Handler) searchResultsPartial(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) trendingTagsPartial(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
+	if h.currentUser(r) == nil {
+		renderSessionExpiredPartial(w)
+		return
+	}
+
 	since := time.Now().Add(-24 * time.Hour).UnixMilli()
 	tags, err := h.db.GetTrendingTagsSince(since, 10)
 	if err != nil {
@@ -383,6 +403,11 @@ func (h *Handler) trendingTagsPartial(w http.ResponseWriter, r *http.Request) {
 // trendingPostsPartial returns trending posts as an htmx partial.
 func (h *Handler) trendingPostsPartial(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	if h.currentUser(r) == nil {
+		renderSessionExpiredPartial(w)
+		return
+	}
 
 	posts := make([]PostView, 0, 20)
 	if h.indexerClient != nil && h.indexerClient.Available() {
@@ -430,7 +455,7 @@ func (h *Handler) handleLike(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
-	target := r.FormValue("target")
+	target := strings.TrimSpace(r.FormValue("target"))
 	if target == "" {
 		http.Error(w, "missing target", http.StatusBadRequest)
 		return
@@ -478,7 +503,7 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
-	target := r.FormValue("target")
+	target := strings.TrimSpace(r.FormValue("target"))
 	if target == "" {
 		http.Error(w, "missing target", http.StatusBadRequest)
 		return
@@ -486,13 +511,17 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 
 	targetBytes, err := hex.DecodeString(target)
 	if err != nil {
-		http.Error(w, "Invalid target", http.StatusBadRequest)
+		http.Error(w, "invalid target", http.StatusBadRequest)
 		return
 	}
 
 	kp := h.getKeyPair(r)
-	if kp == nil || h.createPost == nil {
+	if kp == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
+		return
+	}
+	if h.repostPost == nil {
+		http.Error(w, "reposts not configured", http.StatusInternalServerError)
 		return
 	}
 
@@ -535,7 +564,7 @@ func (h *Handler) handleRepost(w http.ResponseWriter, r *http.Request) {
 
 // handleFollow subscribes to a user and redirects back to their profile.
 func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request) {
-	pubkeyHex := chi.URLParam(r, "pubkey")
+	pubkeyHex := strings.TrimSpace(chi.URLParam(r, "pubkey"))
 	pubkeyBytes, err := hex.DecodeString(pubkeyHex)
 	if err != nil {
 		http.Error(w, "invalid pubkey", http.StatusBadRequest)
@@ -562,7 +591,7 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request) {
 
 // handleUnfollow removes a subscription and redirects back to the profile.
 func (h *Handler) handleUnfollow(w http.ResponseWriter, r *http.Request) {
-	pubkeyHex := chi.URLParam(r, "pubkey")
+	pubkeyHex := strings.TrimSpace(chi.URLParam(r, "pubkey"))
 	pubkeyBytes, err := hex.DecodeString(pubkeyHex)
 	if err != nil {
 		http.Error(w, "invalid pubkey", http.StatusBadRequest)
