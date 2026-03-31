@@ -6,6 +6,19 @@ import (
 	"testing"
 )
 
+func requireNoStoreHeaders(t *testing.T, header http.Header) {
+	t.Helper()
+	if got := header.Get("Cache-Control"); got != "no-store, max-age=0" {
+		t.Fatalf("Cache-Control = %q, want %q", got, "no-store, max-age=0")
+	}
+	if got := header.Get("Pragma"); got != "no-cache" {
+		t.Fatalf("Pragma = %q, want no-cache", got)
+	}
+	if got := header.Get("Expires"); got != "0" {
+		t.Fatalf("Expires = %q, want 0", got)
+	}
+}
+
 func TestIdentityRoutesDisableCaching(t *testing.T) {
 	t.Parallel()
 
@@ -18,15 +31,7 @@ func TestIdentityRoutesDisableCaching(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
 	}
-	if got := rr.Header().Get("Cache-Control"); got != "no-store, max-age=0" {
-		t.Fatalf("Cache-Control = %q, want %q", got, "no-store, max-age=0")
-	}
-	if got := rr.Header().Get("Pragma"); got != "no-cache" {
-		t.Fatalf("Pragma = %q, want no-cache", got)
-	}
-	if got := rr.Header().Get("Expires"); got != "0" {
-		t.Fatalf("Expires = %q, want 0", got)
-	}
+	requireNoStoreHeaders(t, rr.Header())
 }
 
 func TestNonIdentityRoutesRemainCacheNeutral(t *testing.T) {
@@ -75,15 +80,7 @@ func TestDMRoutesDisableCaching(t *testing.T) {
 
 	router.ServeHTTP(rr, req)
 
-	if got := rr.Header().Get("Cache-Control"); got != "no-store, max-age=0" {
-		t.Fatalf("Cache-Control = %q, want %q", got, "no-store, max-age=0")
-	}
-	if got := rr.Header().Get("Pragma"); got != "no-cache" {
-		t.Fatalf("Pragma = %q, want no-cache", got)
-	}
-	if got := rr.Header().Get("Expires"); got != "0" {
-		t.Fatalf("Expires = %q, want 0", got)
-	}
+	requireNoStoreHeaders(t, rr.Header())
 }
 
 func TestNotificationRoutesDisableCaching(t *testing.T) {
@@ -95,13 +92,29 @@ func TestNotificationRoutesDisableCaching(t *testing.T) {
 
 	router.ServeHTTP(rr, req)
 
-	if got := rr.Header().Get("Cache-Control"); got != "no-store, max-age=0" {
-		t.Fatalf("Cache-Control = %q, want %q", got, "no-store, max-age=0")
-	}
-	if got := rr.Header().Get("Pragma"); got != "no-cache" {
-		t.Fatalf("Pragma = %q, want no-cache", got)
-	}
-	if got := rr.Header().Get("Expires"); got != "0" {
-		t.Fatalf("Expires = %q, want 0", got)
-	}
+	requireNoStoreHeaders(t, rr.Header())
+}
+
+func TestOwnProfileRouteDisablesCaching(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(&HandlerDeps{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	requireNoStoreHeaders(t, rr.Header())
+}
+
+func TestFollowingRouteDisablesCaching(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(&HandlerDeps{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/following", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	requireNoStoreHeaders(t, rr.Header())
 }

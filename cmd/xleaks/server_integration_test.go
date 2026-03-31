@@ -451,6 +451,94 @@ func TestMountedServerBrowserAuthBootstrapSupportsProtectedWebUIAndAPI(t *testin
 	}
 }
 
+func TestMountedServerBrowserAuthPersonalizedReadsDisableCaching(t *testing.T) {
+	t.Parallel()
+
+	const apiToken = "integration-token"
+	testServer := newMountedTestServerWithWebSocket(t, apiToken, false)
+	defer testServer.Close()
+
+	client := testServer.Client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	resp, err := client.PostForm(testServer.URL+"/auth/token", url.Values{
+		"token": []string{apiToken},
+		"next":  []string{"/signup"},
+	})
+	if err != nil {
+		t.Fatalf("POST /auth/token error = %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /auth/token status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+
+	resp, err = client.Get(testServer.URL + "/signup")
+	if err != nil {
+		t.Fatalf("GET /signup error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /signup status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	csrfCookie := findCookie(resp.Cookies(), "xleaks_csrf")
+	if csrfCookie == nil || csrfCookie.Value == "" {
+		t.Fatal("expected csrf cookie from signup page")
+	}
+
+	createBody := `{"passphrase":"correct horse battery staple"}`
+	req, err := http.NewRequest(http.MethodPost, testServer.URL+"/api/identity/create", strings.NewReader(createBody))
+	if err != nil {
+		t.Fatalf("NewRequest(POST /api/identity/create) error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", testServer.URL)
+	req.Header.Set("X-CSRF-Token", csrfCookie.Value)
+
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/identity/create error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /api/identity/create status = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+
+	var created struct {
+		Pubkey string `json:"pubkey"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response error = %v", err)
+	}
+	if created.Pubkey == "" {
+		t.Fatal("expected created pubkey in response")
+	}
+
+	for _, path := range []string{
+		"/api/feed",
+		"/api/profile",
+		"/api/following",
+		"/api/users/" + created.Pubkey + "/posts",
+	} {
+		resp, err := client.Get(testServer.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s error = %v", path, err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", path, resp.StatusCode, http.StatusOK)
+		}
+		requireNoStoreResponse(t, resp, path)
+	}
+}
+
 func TestMountedServerBrowserAuthLoginRateLimited(t *testing.T) {
 	t.Parallel()
 
@@ -654,4 +742,17 @@ func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
 		}
 	}
 	return nil
+}
+
+func requireNoStoreResponse(t *testing.T, resp *http.Response, path string) {
+	t.Helper()
+	if got := resp.Header.Get("Cache-Control"); got != "no-store, max-age=0" {
+		t.Fatalf("GET %s Cache-Control = %q, want %q", path, got, "no-store, max-age=0")
+	}
+	if got := resp.Header.Get("Pragma"); got != "no-cache" {
+		t.Fatalf("GET %s Pragma = %q, want no-cache", path, got)
+	}
+	if got := resp.Header.Get("Expires"); got != "0" {
+		t.Fatalf("GET %s Expires = %q, want 0", path, got)
+	}
 }

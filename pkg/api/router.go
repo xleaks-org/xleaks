@@ -112,22 +112,22 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 		r.Get("/posts/{cid}", h.GetPost)
 		r.Get("/posts/{cid}/thread", h.GetThread)
 		r.Get("/posts/{cid}/reactions", h.GetPostReactions)
-		r.Get("/users/{pubkey}/posts", h.GetUserPosts)
+		r.With(middleware.NoStore).Get("/users/{pubkey}/posts", h.GetUserPosts)
 
 		// Feed
-		r.Get("/feed", h.GetFeed)
+		r.With(middleware.NoStore).Get("/feed", h.GetFeed)
 
 		// Social actions
 		r.Post("/reactions", h.CreateReaction)
 		r.Post("/repost", h.CreateRepost)
 		r.Post("/follow/{pubkey}", h.Follow)
 		r.Delete("/follow/{pubkey}", h.Unfollow)
-		r.Get("/following", h.GetFollowing)
+		r.With(middleware.NoStore).Get("/following", h.GetFollowing)
 		r.Get("/users/{pubkey}/followers", h.GetFollowers)
 
 		// Profiles
-		r.Get("/profile", h.GetOwnProfile)
-		r.Put("/profile", h.UpdateProfile)
+		r.With(middleware.NoStore).Get("/profile", h.GetOwnProfile)
+		r.With(middleware.NoStore).Put("/profile", h.UpdateProfile)
 		r.Get("/users/{pubkey}", h.GetUserProfile)
 
 		// Search & Discovery
