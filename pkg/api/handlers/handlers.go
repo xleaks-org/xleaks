@@ -52,26 +52,27 @@ type EventBroadcaster func(eventType string, data interface{})
 
 // Handler holds all dependencies for HTTP API handlers.
 type Handler struct {
-	db                 *storage.DB
-	cas                *content.ContentStore
-	kp                 *identity.KeyPair
-	identity           *identity.Holder
-	posts              *social.PostService
-	reactions          *social.ReactionService
-	profiles           *social.ProfileService
-	dms                *social.DMService
-	follows            *social.FollowService
-	notifs             *social.NotificationService
-	feed               *feed.Manager
-	timeline           *feed.Timeline
-	indexerClient      *indexer.IndexerClient
-	p2pHost            *p2p.Host
-	cfg                *config.Config
-	cfgPath            string
-	apiTokenConfigured bool
-	broadcast          EventBroadcaster
-	onIdentityChange   func(*identity.KeyPair)
-	ensureTopic        func(string) error
+	db                   *storage.DB
+	cas                  *content.ContentStore
+	kp                   *identity.KeyPair
+	identity             *identity.Holder
+	posts                *social.PostService
+	reactions            *social.ReactionService
+	profiles             *social.ProfileService
+	dms                  *social.DMService
+	follows              *social.FollowService
+	notifs               *social.NotificationService
+	feed                 *feed.Manager
+	timeline             *feed.Timeline
+	indexerClient        *indexer.IndexerClient
+	p2pHost              *p2p.Host
+	cfg                  *config.Config
+	cfgPath              string
+	apiTokenConfigured   bool
+	broadcast            EventBroadcaster
+	onIdentityChange     func(*identity.KeyPair)
+	onStorageLimitChange func(int64)
+	ensureTopic          func(string) error
 }
 
 // SetBroadcaster sets the WebSocket event broadcaster.
@@ -141,6 +142,12 @@ func (h *Handler) SetAPITokenConfigured(configured bool) {
 // switch, and lock transitions.
 func (h *Handler) SetIdentityChangeFunc(fn func(*identity.KeyPair)) {
 	h.onIdentityChange = fn
+}
+
+// SetStorageLimitChangeFunc registers the runtime hook used when config
+// updates change the storage contribution limit.
+func (h *Handler) SetStorageLimitChangeFunc(fn func(int64)) {
+	h.onStorageLimitChange = fn
 }
 
 // SetTopicSubscriber registers a best-effort callback for joining runtime

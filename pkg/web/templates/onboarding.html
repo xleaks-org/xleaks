@@ -19,6 +19,12 @@
                 <input type="password" name="confirm" placeholder="Confirm passphrase" required
                     class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
             </div>
+            <div>
+                <label for="storage_limit_gb" class="block text-sm font-medium text-gray-300 mb-2">Storage contribution (GB)</label>
+                <input id="storage_limit_gb" type="number" name="storage_limit_gb" min="{{with .MinStorageLimitGB}}{{.}}{{else}}1{{end}}" step="1" required value="{{with .StorageLimitGB}}{{.}}{{else}}1{{end}}"
+                    class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none">
+                <p class="mt-2 text-xs text-gray-500">Share local storage with the network. Minimum {{with .MinStorageLimitGB}}{{.}}{{else}}1{{end}} GB.</p>
+            </div>
             <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full transition-colors">Create Identity</button>
         </form>
         <div class="relative my-8">

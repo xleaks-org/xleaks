@@ -600,6 +600,25 @@ func TestUnlockIdentityWrongPassphraseDoesNotLeakInternalError(t *testing.T) {
 	}
 }
 
+func TestCreateIdentityRejectsUserModeStorageLimitBelowMinimum(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	cfg.Node.MaxStorageGB = 0
+	h.SetConfig(cfg, "")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/identity/create", strings.NewReader(`{"passphrase":"correcthorsebattery"}`))
+	rr := httptest.NewRecorder()
+
+	h.CreateIdentity(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+	assertJSONErrorResponse(t, rr.Body.Bytes(), "storage_limit_gb must be at least 1 in user mode")
+}
+
 func TestSwitchIdentityWrongPassphraseDoesNotLeakInternalError(t *testing.T) {
 	t.Parallel()
 
@@ -1813,9 +1832,13 @@ func TestUpdateNodeConfigValidatedAndNormalized(t *testing.T) {
 	h.SetIndexerClient(idxClient)
 
 	bootstrapPeer := config.DefaultBootstrapPeers()[0]
+	updatedLimit := int64(-1)
+	h.SetStorageLimitChangeFunc(func(limit int64) {
+		updatedLimit = limit
+	})
 	body := strings.NewReader(fmt.Sprintf(`{
 		"max_connections": 100,
-		"storage_limit_gb": 0,
+		"storage_limit_gb": 1,
 		"bandwidth_limit_mbps": 250,
 		"enable_relay": false,
 		"enable_mdns": false,
@@ -1842,8 +1865,8 @@ func TestUpdateNodeConfigValidatedAndNormalized(t *testing.T) {
 	if cfg.Network.MaxPeers != 100 {
 		t.Fatalf("max peers = %d, want 100", cfg.Network.MaxPeers)
 	}
-	if cfg.Node.MaxStorageGB != 0 {
-		t.Fatalf("storage_limit_gb = %d, want 0", cfg.Node.MaxStorageGB)
+	if cfg.Node.MaxStorageGB != 1 {
+		t.Fatalf("storage_limit_gb = %d, want 1", cfg.Node.MaxStorageGB)
 	}
 	if cfg.Network.BandwidthLimitMbps != 250 {
 		t.Fatalf("bandwidth_limit_mbps = %d, want 250", cfg.Network.BandwidthLimitMbps)
@@ -1881,6 +1904,9 @@ func TestUpdateNodeConfigValidatedAndNormalized(t *testing.T) {
 	if !h.indexerClient.Available() {
 		t.Fatal("expected runtime indexer client to refresh known indexers")
 	}
+	if updatedLimit != int64(1024*1024*1024) {
+		t.Fatalf("runtime storage limit = %d, want %d", updatedLimit, int64(1024*1024*1024))
+	}
 }
 
 func TestUpdateNodeConfigRejectsInvalidUpdateAtomically(t *testing.T) {
@@ -1914,6 +1940,28 @@ func TestUpdateNodeConfigRejectsInvalidUpdateAtomically(t *testing.T) {
 	if !strings.Contains(resp["error"], "storage_limit_gb") {
 		t.Fatalf("error = %q, want to mention storage_limit_gb", resp["error"])
 	}
+}
+
+func TestUpdateNodeConfigRejectsUserModeStorageLimitBelowMinimum(t *testing.T) {
+	t.Parallel()
+
+	h, _ := testHandler(t)
+	cfg := config.DefaultConfig()
+	cfg.Node.MaxStorageGB = 5
+	h.SetConfig(cfg, "")
+
+	body := strings.NewReader(`{"storage_limit_gb": 0}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/node/config", body)
+	h.UpdateNodeConfig(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if cfg.Node.MaxStorageGB != 5 {
+		t.Fatalf("storage_limit_gb mutated to %d after rejected update", cfg.Node.MaxStorageGB)
+	}
+	assertJSONErrorResponse(t, w.Body.Bytes(), "storage_limit_gb must be at least 1 in user mode")
 }
 
 func TestUpdateNodeConfigRejectsRemoteWebUIWithoutOptIn(t *testing.T) {

@@ -44,6 +44,39 @@ func TestMaxStorageBytes(t *testing.T) {
 	}
 }
 
+func TestValidateStorageLimit(t *testing.T) {
+	t.Parallel()
+
+	t.Run("user mode requires minimum", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := DefaultConfig()
+		cfg.Node.MaxStorageGB = 0
+		if err := cfg.ValidateStorageLimit(); err == nil {
+			t.Fatal("expected validation error for zero user-mode storage limit")
+		}
+	})
+
+	t.Run("indexer mode allows zero", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := DefaultConfig()
+		cfg.Node.Mode = "indexer"
+		cfg.Node.MaxStorageGB = 0
+		if err := cfg.ValidateStorageLimit(); err != nil {
+			t.Fatalf("ValidateStorageLimit() error = %v", err)
+		}
+	})
+
+	t.Run("negative is always rejected", func(t *testing.T) {
+		t.Parallel()
+
+		if err := ValidateStorageLimitForMode("indexer", -1); err == nil {
+			t.Fatal("expected validation error for negative storage limit")
+		}
+	})
+}
+
 func TestSaveCreatesOwnerOnlyConfigFile(t *testing.T) {
 	t.Parallel()
 

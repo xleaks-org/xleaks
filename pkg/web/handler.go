@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/feed"
 	"github.com/xleaks-org/xleaks/pkg/identity"
 	"github.com/xleaks-org/xleaks/pkg/indexer"
@@ -20,26 +21,29 @@ type IdentityChangeFunc func(kp *identity.KeyPair)
 
 // Handler serves the web UI HTML pages.
 type Handler struct {
-	pages            map[string]*template.Template
-	landing          *template.Template
-	partials         *template.Template
-	db               *storage.DB
-	identity         *identity.Holder
-	sessions         *SessionManager
-	timeline         *feed.Timeline
-	createPost       CreatePostFunc
-	repostPost       RepostFunc
-	createReaction   ReactFunc
-	followUser       FollowFunc
-	unfollowUser     FollowFunc
-	updateProfile    UpdateProfileFunc
-	sendDM           SendDMFunc
-	nodeStatus       NodeStatusFunc
-	onIdentityChange IdentityChangeFunc
-	indexerClient    *indexer.IndexerClient
-	ensureTopic      func(string) error
-	enableWebSocket  bool
-	minPassphraseLen int
+	pages                map[string]*template.Template
+	landing              *template.Template
+	partials             *template.Template
+	db                   *storage.DB
+	identity             *identity.Holder
+	sessions             *SessionManager
+	cfg                  *config.Config
+	cfgPath              string
+	timeline             *feed.Timeline
+	createPost           CreatePostFunc
+	repostPost           RepostFunc
+	createReaction       ReactFunc
+	followUser           FollowFunc
+	unfollowUser         FollowFunc
+	updateProfile        UpdateProfileFunc
+	sendDM               SendDMFunc
+	nodeStatus           NodeStatusFunc
+	onIdentityChange     IdentityChangeFunc
+	onStorageLimitChange func(int64)
+	indexerClient        *indexer.IndexerClient
+	ensureTopic          func(string) error
+	enableWebSocket      bool
+	minPassphraseLen     int
 }
 
 // Close releases background resources owned by the handler.
@@ -79,6 +83,18 @@ func (h *Handler) SetSendDM(fn SendDMFunc) { h.sendDM = fn }
 // SetNodeStatus sets the node status callback.
 func (h *Handler) SetNodeStatus(fn NodeStatusFunc) {
 	h.nodeStatus = fn
+}
+
+// SetConfig sets the node configuration and save path used by onboarding.
+func (h *Handler) SetConfig(cfg *config.Config, cfgPath string) {
+	h.cfg = cfg
+	h.cfgPath = cfgPath
+}
+
+// SetStorageLimitChangeFunc registers the runtime hook used when onboarding
+// changes the storage contribution limit.
+func (h *Handler) SetStorageLimitChangeFunc(fn func(int64)) {
+	h.onStorageLimitChange = fn
 }
 
 // SetIndexerClient sets the indexer client for broader search capabilities.
@@ -336,6 +352,7 @@ func (h *Handler) signupPage(w http.ResponseWriter, r *http.Request) {
 	}
 	data := h.pageData(r, "", "Join XLeaks")
 	data["NeedsOnboarding"] = true
+	h.populateOnboardingStorageData(data, "")
 	h.renderPage(w, "onboarding.html", data)
 }
 
@@ -351,6 +368,7 @@ func (h *Handler) signinPage(w http.ResponseWriter, r *http.Request) {
 		data["Locked"] = true
 	} else {
 		data["NeedsOnboarding"] = true
+		h.populateOnboardingStorageData(data, "")
 	}
 	h.renderPage(w, "onboarding.html", data)
 }

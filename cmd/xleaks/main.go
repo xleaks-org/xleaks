@@ -116,8 +116,8 @@ func run() error {
 	replicator.StartStorageManager(ctx, maxStorage, 5*time.Minute)
 
 	cfgPath := defaultConfigPath
-	webRoutes := setupWebHandler(ctx, db, idHolder, svc, cfg, p2pHost, dataDir, idx, identitySync, ensureTopicSubscription)
-	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes, apiToken != "", identitySync, ensureTopicSubscription)
+	webRoutes := setupWebHandler(ctx, db, idHolder, svc, cfg, cfgPath, p2pHost, dataDir, idx, identitySync, ensureTopicSubscription, replicator.SetStorageLimit)
+	deps := buildAPIDeps(db, cas, kp, idHolder, svc, p2pHost, cfg, cfgPath, webRoutes, apiToken != "", identitySync, ensureTopicSubscription, replicator.SetStorageLimit)
 
 	server := api.NewServerWithConfig(api.ServerConfig{
 		ListenAddr:      cfg.API.ListenAddress,

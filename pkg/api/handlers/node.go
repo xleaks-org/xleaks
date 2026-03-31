@@ -275,10 +275,6 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		respondBadRequestError(w, err)
 		return
 	} else if ok {
-		if n < 0 {
-			respondError(w, http.StatusBadRequest, "storage_limit_gb must be 0 or greater")
-			return
-		}
 		next.Node.MaxStorageGB = n
 	}
 	if b, ok, err := optionalBoolField(updates, "enable_relay"); err != nil {
@@ -386,6 +382,10 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 		respondBadRequestError(w, err)
 		return
 	}
+	if err := next.ValidateStorageLimit(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// Persist to disk if we have a config path.
 	if h.cfgPath != "" {
@@ -397,6 +397,9 @@ func (h *Handler) UpdateNodeConfig(w http.ResponseWriter, r *http.Request) {
 	*h.cfg = *next
 	if refreshIndexers && h.indexerClient != nil {
 		h.indexerClient.SetIndexers(next.Indexer.KnownIndexers)
+	}
+	if h.onStorageLimitChange != nil {
+		h.onStorageLimitChange(next.MaxStorageBytes())
 	}
 	slog.Info("node config updated",
 		"updated_fields", sortedUpdateKeys(updates),

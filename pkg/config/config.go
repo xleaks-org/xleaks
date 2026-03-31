@@ -77,6 +77,8 @@ var defaultKnownIndexers = []string{
 	"http://xleaks.org:7471",
 }
 
+const MinUserStorageGB = 1
+
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
@@ -276,6 +278,37 @@ func (c *Config) DataDir() string {
 // IsIndexer returns true if the node is running in indexer mode.
 func (c *Config) IsIndexer() bool {
 	return c.Node.Mode == "indexer"
+}
+
+// MinRequiredStorageGBForMode returns the minimum allowed storage contribution
+// for the given node mode.
+func MinRequiredStorageGBForMode(mode string) int {
+	if strings.EqualFold(strings.TrimSpace(mode), "indexer") {
+		return 0
+	}
+	return MinUserStorageGB
+}
+
+// ValidateStorageLimitForMode validates storage_limit_gb for the given mode.
+func ValidateStorageLimitForMode(mode string, storageGB int) error {
+	if storageGB < 0 {
+		return fmt.Errorf("storage_limit_gb must be 0 or greater")
+	}
+
+	minGB := MinRequiredStorageGBForMode(mode)
+	if storageGB < minGB {
+		return fmt.Errorf("storage_limit_gb must be at least %d in user mode", minGB)
+	}
+
+	return nil
+}
+
+// ValidateStorageLimit validates the configured storage contribution.
+func (c *Config) ValidateStorageLimit() error {
+	if c == nil {
+		return nil
+	}
+	return ValidateStorageLimitForMode(c.Node.Mode, c.Node.MaxStorageGB)
 }
 
 // DefaultBootstrapPeers returns the built-in WAN bootstrap peers.

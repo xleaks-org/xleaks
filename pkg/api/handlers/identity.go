@@ -47,6 +47,12 @@ func (h *Handler) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("passphrase must be at least %d characters", minLen))
 		return
 	}
+	if h.cfg != nil {
+		if err := h.cfg.ValidateStorageLimit(); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 
 	if h.identity == nil {
 		respondError(w, http.StatusInternalServerError, "identity system not initialized")

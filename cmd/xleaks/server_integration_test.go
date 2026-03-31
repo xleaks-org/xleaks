@@ -716,6 +716,7 @@ func newMountedTestServerWithWebSocket(t *testing.T, apiToken string, enableWebS
 	cfg.Network.BootstrapPeers = nil
 	cfg.Indexer.KnownIndexers = nil
 	cfg.Logging.File = filepath.Join(cfg.Node.DataDir, "logs", "xleaks.log")
+	cfgPath := filepath.Join(cfg.DataDir(), "config.toml")
 
 	db, cas, err := setupDatabase(cfg)
 	if err != nil {
@@ -726,9 +727,8 @@ func newMountedTestServerWithWebSocket(t *testing.T, apiToken string, enableWebS
 	idHolder, kp := setupIdentity(cfg.DataDir(), db)
 	svc := setupServices(ctx, db, cas, kp, idHolder)
 	t.Cleanup(svc.Close)
-	webRoutes := setupWebHandler(ctx, db, idHolder, svc, cfg, nil, cfg.DataDir(), nil, func(*identity.KeyPair) {}, nil)
-	cfgPath := filepath.Join(cfg.DataDir(), "config.toml")
-	deps := buildAPIDeps(db, cas, kp, idHolder, svc, nil, cfg, cfgPath, webRoutes, apiToken != "", func(*identity.KeyPair) {}, nil)
+	webRoutes := setupWebHandler(ctx, db, idHolder, svc, cfg, cfgPath, nil, cfg.DataDir(), nil, func(*identity.KeyPair) {}, nil, nil)
+	deps := buildAPIDeps(db, cas, kp, idHolder, svc, nil, cfg, cfgPath, webRoutes, apiToken != "", func(*identity.KeyPair) {}, nil, nil)
 	server := api.NewServerWithConfig(api.ServerConfig{
 		ListenAddr:      cfg.API.ListenAddress,
 		APIToken:        apiToken,

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xleaks-org/xleaks/pkg/config"
 	"github.com/xleaks-org/xleaks/pkg/social"
 )
 
@@ -26,6 +27,7 @@ func (h *Handler) onboardingPage(w http.ResponseWriter, r *http.Request) {
 		data["Locked"] = true
 	} else {
 		data["NeedsOnboarding"] = true
+		h.populateOnboardingStorageData(data, "")
 	}
 	h.renderPage(w, "onboarding.html", data)
 }
@@ -51,10 +53,21 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		h.renderOnboardingError(w, r, "Passphrases do not match", true)
 		return
 	}
+	storageLimitRaw := r.FormValue("storage_limit_gb")
+	storageLimitGB, err := h.parseOnboardingStorageContribution(storageLimitRaw)
+	if err != nil {
+		h.renderOnboardingErrorWithStorage(w, r, err.Error(), true, storageLimitRaw)
+		return
+	}
+	if err := h.saveOnboardingStorageContribution(storageLimitGB); err != nil {
+		slog.Error("failed to save onboarding storage contribution", "error", err)
+		h.renderOnboardingErrorWithStorage(w, r, "Failed to save storage contribution", true, storageLimitRaw)
+		return
+	}
 	kp, mnemonic, err := h.identity.CreateAndSave(passphrase)
 	if err != nil {
 		slog.Error("onboarding identity create failed", "error", err)
-		h.renderOnboardingError(w, r, onboardingIdentityFailureMessage("create"), true)
+		h.renderOnboardingErrorWithStorage(w, r, onboardingIdentityFailureMessage("create"), true, storageLimitRaw)
 		return
 	}
 	h.notifyIdentityChange()
@@ -264,14 +277,90 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 // renderOnboardingError renders the onboarding page with an error message.
 func (h *Handler) renderOnboardingError(w http.ResponseWriter, r *http.Request, errMsg string, needsOnboarding bool) {
+	h.renderOnboardingErrorWithStorage(w, r, errMsg, needsOnboarding, "")
+}
+
+func (h *Handler) renderOnboardingErrorWithStorage(w http.ResponseWriter, r *http.Request, errMsg string, needsOnboarding bool, storageLimit string) {
 	data := h.pageData(r, "", "Get Started")
 	if needsOnboarding {
 		data["NeedsOnboarding"] = true
+		h.populateOnboardingStorageData(data, storageLimit)
 	} else {
 		data["Locked"] = true
 	}
 	data["Error"] = errMsg
 	h.renderPage(w, "onboarding.html", data)
+}
+
+func (h *Handler) onboardingMode() string {
+	if h.cfg != nil {
+		return h.cfg.Node.Mode
+	}
+	return config.DefaultConfig().Node.Mode
+}
+
+func (h *Handler) minOnboardingStorageGB() int {
+	return config.MinRequiredStorageGBForMode(h.onboardingMode())
+}
+
+func (h *Handler) populateOnboardingStorageData(data map[string]interface{}, storageLimit string) {
+	minGB := h.minOnboardingStorageGB()
+	data["MinStorageLimitGB"] = minGB
+
+	storageLimit = strings.TrimSpace(storageLimit)
+	if storageLimit != "" {
+		data["StorageLimitGB"] = storageLimit
+		return
+	}
+
+	value := minGB
+	if h.cfg != nil && h.cfg.Node.MaxStorageGB > value {
+		value = h.cfg.Node.MaxStorageGB
+	}
+	if value < 0 {
+		value = 0
+	}
+	data["StorageLimitGB"] = value
+}
+
+func (h *Handler) parseOnboardingStorageContribution(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, fmt.Errorf("Storage contribution must be at least %d GB", h.minOnboardingStorageGB())
+	}
+
+	storageLimitGB, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("Storage contribution must be a whole number of GB")
+	}
+	if err := config.ValidateStorageLimitForMode(h.onboardingMode(), storageLimitGB); err != nil {
+		return 0, fmt.Errorf("Storage contribution must be at least %d GB", h.minOnboardingStorageGB())
+	}
+
+	return storageLimitGB, nil
+}
+
+func (h *Handler) saveOnboardingStorageContribution(storageLimitGB int) error {
+	if h.cfg == nil {
+		return fmt.Errorf("configuration not available")
+	}
+
+	next := *h.cfg
+	next.Node.MaxStorageGB = storageLimitGB
+	if err := next.ValidateStorageLimit(); err != nil {
+		return err
+	}
+	if h.cfgPath != "" {
+		if err := next.Save(h.cfgPath); err != nil {
+			return err
+		}
+	}
+
+	*h.cfg = next
+	if h.onStorageLimitChange != nil {
+		h.onStorageLimitChange(next.MaxStorageBytes())
+	}
+	return nil
 }
 
 // renderSeedConfirmPage renders the seed phrase confirmation page.

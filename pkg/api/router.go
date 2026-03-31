@@ -38,6 +38,7 @@ type HandlerDeps struct {
 	APITokenConfigured bool
 	IndexerClient      *indexer.IndexerClient
 	IdentityChange     func(*identity.KeyPair)
+	StorageLimitChange func(int64)
 	EnsureTopic        func(string) error
 	WebHandler         chi.Router // optional: Go-based web UI routes
 	WSTickets          *WSTicketManager
@@ -88,6 +89,9 @@ func NewRouter(deps *HandlerDeps, wsHub *WSHub) http.Handler {
 	}
 	if deps.IdentityChange != nil {
 		h.SetIdentityChangeFunc(deps.IdentityChange)
+	}
+	if deps.StorageLimitChange != nil {
+		h.SetStorageLimitChangeFunc(deps.StorageLimitChange)
 	}
 	if deps.EnsureTopic != nil {
 		h.SetTopicSubscriber(deps.EnsureTopic)

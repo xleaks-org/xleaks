@@ -35,11 +35,13 @@ func setupWebHandler(
 	idHolder *identity.Holder,
 	svc *ServiceBundle,
 	cfg *config.Config,
+	cfgPath string,
 	p2pHost *p2p.Host,
 	dataDir string,
 	idx *indexer.Indexer,
 	identitySync func(*identity.KeyPair),
 	ensureTopic func(string) error,
+	storageLimitChange func(int64),
 ) chi.Router {
 	if cfg == nil || !cfg.API.EnableWebUI {
 		slog.Info("web UI disabled")
@@ -59,6 +61,8 @@ func setupWebHandler(
 	webHandler.SetTopicSubscriber(ensureTopic)
 	webHandler.SetWebSocketEnabled(cfg.API.EnableWebSocket)
 	webHandler.SetPassphraseMinLength(cfg.PassphraseMinLen())
+	webHandler.SetConfig(cfg, cfgPath)
+	webHandler.SetStorageLimitChangeFunc(storageLimitChange)
 
 	webHandler.SetCreatePost(func(ctx context.Context, text string, mediaCIDHexes []string, replyTo string) (string, error) {
 		mediaCIDs := make([][]byte, 0, len(mediaCIDHexes))
@@ -199,6 +203,7 @@ func buildAPIDeps(
 	apiTokenConfigured bool,
 	identitySync func(*identity.KeyPair),
 	ensureTopic func(string) error,
+	storageLimitChange func(int64),
 ) *api.HandlerDeps {
 	deps := &api.HandlerDeps{
 		DB:                 db,
@@ -219,6 +224,7 @@ func buildAPIDeps(
 		APITokenConfigured: false,
 		IndexerClient:      svc.Indexer,
 		IdentityChange:     identitySync,
+		StorageLimitChange: storageLimitChange,
 		EnsureTopic:        ensureTopic,
 		WebHandler:         webRoutes,
 	}

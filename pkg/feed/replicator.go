@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/xleaks-org/xleaks/pkg/content"
@@ -25,6 +26,8 @@ type Replicator struct {
 	cas *content.ContentStore
 	// OnFetchContent is called to request content from the network (set by P2P layer).
 	OnFetchContent func(ctx context.Context, cidHex string) ([]byte, error)
+	storageLimitMu sync.RWMutex
+	storageLimit   int64
 }
 
 // NewReplicator creates a new Replicator.
@@ -33,6 +36,23 @@ func NewReplicator(db *storage.DB, cas *content.ContentStore) *Replicator {
 		db:  db,
 		cas: cas,
 	}
+}
+
+// SetStorageLimit updates the active storage limit used by the background
+// eviction loop.
+func (r *Replicator) SetStorageLimit(maxBytes int64) {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	r.storageLimitMu.Lock()
+	r.storageLimit = maxBytes
+	r.storageLimitMu.Unlock()
+}
+
+func (r *Replicator) currentStorageLimit() int64 {
+	r.storageLimitMu.RLock()
+	defer r.storageLimitMu.RUnlock()
+	return r.storageLimit
 }
 
 // fetchAndStore fetches content by CID hex, validates it, stores it in the CAS,
@@ -140,6 +160,10 @@ func (r *Replicator) EvictStaleContent(maxBytes int64) error {
 // maxBytes. Eviction continues until usage drops below 90% of maxBytes.
 // The goroutine exits when the context is cancelled.
 func (r *Replicator) StartStorageManager(ctx context.Context, maxBytes int64, interval time.Duration) {
+	r.SetStorageLimit(maxBytes)
+	if interval <= 0 {
+		interval = defaultEvictionInterval
+	}
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -148,7 +172,7 @@ func (r *Replicator) StartStorageManager(ctx context.Context, maxBytes int64, in
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				r.checkAndEvict(maxBytes)
+				r.checkAndEvict(r.currentStorageLimit())
 			}
 		}
 	}()
