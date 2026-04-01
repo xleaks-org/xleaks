@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockStorage struct {
+	mu           sync.RWMutex
 	posts        map[string]bool
 	reactions    map[string]bool
 	follows      []followRecord
@@ -67,45 +69,63 @@ func (m *mockStorage) InsertPost(cid, author []byte, content string, replyTo, re
 	if m.insertErr != nil {
 		return m.insertErr
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.posts[string(cid)] = true
 	return nil
 }
 
 func (m *mockStorage) InsertPostMedia(postCID, mediaCID []byte, position int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.postMedia[string(postCID)] = append(m.postMedia[string(postCID)], string(mediaCID))
 	return nil
 }
 
 func (m *mockStorage) InsertMediaObject(cid, author []byte, mimeType string, size uint64, chunkCount uint32, width, height, duration uint32, thumbnailCID []byte, timestamp int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.media[string(cid)] = true
 	return nil
 }
 
 func (m *mockStorage) UpsertProfile(pubkey []byte, displayName, bio string, avatarCID, bannerCID []byte, website string, version uint64, updatedAt int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.profiles[string(pubkey)] = profileRecord{Version: version}
 	return nil
 }
 
 func (m *mockStorage) InsertReaction(cid, author, target []byte, reactionType string, timestamp int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.reactions[string(cid)] = true
 	return nil
 }
 
 func (m *mockStorage) InsertFollowEvent(author, target []byte, action string, timestamp int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.follows = append(m.follows, followRecord{Author: author, Target: target, Action: action, Timestamp: timestamp})
 	return nil
 }
 
 func (m *mockStorage) InsertDM(cid, author, recipient, encryptedContent, nonce []byte, timestamp int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.dms = append(m.dms, dmRecord{CID: cid, Author: author, Recipient: recipient, EncryptedContent: encryptedContent, Nonce: nonce, Timestamp: timestamp})
 	return nil
 }
 
 func (m *mockStorage) PostExists(cid []byte) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.posts[string(cid)]
 }
 
 func (m *mockStorage) GetProfileVersion(pubkey []byte) (uint64, bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	p, ok := m.profiles[string(pubkey)]
 	if !ok {
 		return 0, false, nil
@@ -122,35 +142,60 @@ func (m *mockStorage) UpdateFollowerCount(_ []byte) error {
 }
 
 func (m *mockStorage) SetMediaFetched(cid []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.mediaFetched[string(cid)] = true
 	return nil
 }
 
 func (m *mockStorage) ShouldPinAuthor(author []byte) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.shouldPin[string(author)], nil
 }
 
 func (m *mockStorage) TrackContentForAuthor(cid, author []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.tracked[string(cid)] = true
 	return nil
 }
 
 func (m *mockStorage) TrackReactionContent(cid, author, target []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.tracked[string(cid)] = true
 	return nil
 }
 
 func (m *mockStorage) TrackContentForDM(cid, author, recipient []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.tracked[string(cid)] = true
 	return nil
 }
 
 func (m *mockStorage) TrackContentForMedia(cid, mediaObjectCID []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.tracked[string(cid)] = true
 	return nil
 }
 
+func (m *mockStorage) SetShouldPin(author []byte, shouldPin bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.shouldPin[string(author)] = shouldPin
+}
+
+func (m *mockStorage) MediaFetched(cid []byte) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.mediaFetched[string(cid)]
+}
+
 type mockCAS struct {
+	mu   sync.RWMutex
 	data map[string][]byte
 }
 
@@ -159,6 +204,8 @@ func newMockCAS() *mockCAS {
 }
 
 func (m *mockCAS) Put(cid []byte, data []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.data[string(cid)] = data
 	return nil
 }
@@ -168,11 +215,15 @@ func (m *mockCAS) PutReader(cid []byte, r io.Reader) error {
 	if err != nil {
 		return err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.data[string(cid)] = data
 	return nil
 }
 
 func (m *mockCAS) Has(cid []byte) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	_, ok := m.data[string(cid)]
 	return ok
 }
@@ -644,7 +695,7 @@ func TestHandleMessage_MediaObject_AutoFetchesPinnedAuthorContent(t *testing.T) 
 	}
 
 	data, obj := signedMediaObject(t, kp, fileCID, chunkCID, thumbCID, len(fileData))
-	db.shouldPin[string(kp.PublicKeyBytes())] = true
+	db.SetShouldPin(kp.PublicKeyBytes(), true)
 
 	mp.SetAutoFetchMedia(true)
 	mp.SetMediaFetcher(func(ctx context.Context, cidHex string) ([]byte, error) {
@@ -664,7 +715,7 @@ func TestHandleMessage_MediaObject_AutoFetchesPinnedAuthorContent(t *testing.T) 
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if cas.Has(obj.Cid) && cas.Has(obj.ThumbnailCid) && db.mediaFetched[string(obj.Cid)] {
+		if cas.Has(obj.Cid) && cas.Has(obj.ThumbnailCid) && db.MediaFetched(obj.Cid) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -693,7 +744,7 @@ func TestHandleMessage_MediaObject_AutoFetchesPinnedAuthorContentFromTempFiles(t
 	}
 
 	data, obj := signedMediaObject(t, kp, fileCID, chunkCID, thumbCID, len(fileData))
-	db.shouldPin[string(kp.PublicKeyBytes())] = true
+	db.SetShouldPin(kp.PublicKeyBytes(), true)
 
 	tempDir := t.TempDir()
 	filePath := tempDir + "/file-media"
@@ -723,7 +774,7 @@ func TestHandleMessage_MediaObject_AutoFetchesPinnedAuthorContentFromTempFiles(t
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if cas.Has(obj.Cid) && cas.Has(obj.ThumbnailCid) && db.mediaFetched[string(obj.Cid)] {
+		if cas.Has(obj.Cid) && cas.Has(obj.ThumbnailCid) && db.MediaFetched(obj.Cid) {
 			for _, path := range []string{filePath, thumbPath} {
 				if _, err := os.Stat(path); !os.IsNotExist(err) {
 					t.Fatalf("expected fetched temp file %s to be removed", path)
