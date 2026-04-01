@@ -51,8 +51,12 @@ jobs:
           host: ${{ env.SSH_HOST }}
           username: ${{ env.SSH_USER }}
           key: ${{ env.SSH_KEY }}
+          command_timeout: 20m
           script: |
             cd /opt/xleaks
-            git pull origin main
+            git pull --ff-only origin main
             make build
-            sudo systemctl restart xleaks
+            install -m 0755 bin/xleaks /usr/local/bin/xleaks.new
+            mv /usr/local/bin/xleaks.new /usr/local/bin/xleaks
+            systemctl restart xleaks-node
+            systemctl is-active --quiet xleaks-node
